@@ -64,42 +64,44 @@ Cloudflare **Workers**（ingest、consumer、api、console、cron）· **D1**（
 
 ## 快速开始
 
-> 下面命令描述的是目标部署方式，部分能力会分期落地——见[路线图](#路线图)。
+**完整分步教程：[`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)**（English: [`DEPLOY.md`](./DEPLOY.md)）。简版：
 
-**前置**：Node.js 18+、一个 Cloudflare 账号、`wrangler`（`npm i -g wrangler`）。
+**前置**：Node.js 18+、开通 **Workers Paid 套餐**的 Cloudflare 账号（Queues 需要付费套餐）、一个接入 Cloudflare 的域名。
 
 ```bash
 # 1. 克隆
 git clone https://github.com/qiayue/pvuv.ai.git
 cd pvuv.ai
-npm install
+npm install                                    # 会同时生成打分配置
 
 # 2. 创建 Cloudflare 资源
-wrangler d1 create pvuv
-wrangler kv namespace create BLOCKLIST
-wrangler kv namespace create SITE_CONFIG
-wrangler queues create INGEST_QUEUE
+npx wrangler d1 create pvuv-db
+npx wrangler kv namespace create BLOCKLIST
+npx wrangler kv namespace create SITE_CONFIG
+npx wrangler queues create pvuv-ingest
+npx wrangler queues create pvuv-ingest-dlq
 
-# 3. 配置 —— 复制占位配置并填入你的 ID（切勿提交真实 ID）
-cp config.example.toml config.local.toml     # 评分权重/阈值（已 gitignore）
-#   然后把第 2 步得到的 D1/KV/Queue ID 填进各 workers/*/wrangler.toml
+# 3. 配置 —— 替换 wrangler.toml 和 workers/*/wrangler.toml 里的
+#    PLACEHOLDER_* 占位 id，把路由 pattern 改成你的域名，
+#    （可选）私有调参：
+cp config.example.toml config.local.toml       # 已 gitignore
+npm run config:gen
 
-# 4. 设置密钥（绝不写进任何文件）
-wrangler secret put HMAC_KEY                  # Cookie 签名 / 判定完整性
-wrangler secret put AI_API_KEY                # 可选，AI 分析用
+# 4. 建表、部署、设密钥（三处 HMAC_KEY 必须是同一个值）
+npm run db:migrate:remote
+npm run deploy:all
+npx wrangler secret put HMAC_KEY       -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY       -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN      -c workers/api/wrangler.toml
+npx wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml
 
-# 5. 建表
-wrangler d1 execute pvuv --file=./shared/schema.sql
-
-# 6. 部署 Workers
-wrangler deploy --config workers/ingest/wrangler.toml
-wrangler deploy --config workers/consumer/wrangler.toml
-wrangler deploy --config workers/api/wrangler.toml
-wrangler deploy --config workers/console/wrangler.toml
-wrangler deploy --config workers/cron/wrangler.toml
+# 5. 构建并托管 SDK
+npm run build:sdk
+cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 ```
 
-在 Cloudflare 后台（或用 routes）**绑定域名**：`js` + `in` → ingest/静态，`api` → api Worker，主域 → 控制台。
+然后在控制台域名登录、注册站点、把生成的嵌入代码贴到你的网站。DNS 配置、验证步骤和排障：[`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)。
 
 ## 接入一个站点
 
@@ -112,7 +114,9 @@ wrangler deploy --config workers/cron/wrangler.toml
         data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
 ```
 
-可选属性：`data-spa="true"`（SPA 路由追踪）、`data-api`（自建反代地址，见 [`PROJECT_PLAN.zh-CN.md` §12](./PROJECT_PLAN.zh-CN.md)）、`data-exclude="/admin/*"`、`data-sensors="off"`（关闭移动端传感器信号，供合规）。
+可选属性：`data-spa="true"`（SPA 路由追踪）、`data-api`（上报地址覆盖 / 自建反代，见 [`PROJECT_PLAN.zh-CN.md` §12](./PROJECT_PLAN.zh-CN.md)）、`data-exclude="/admin/*"`、`data-sensors="off"`（关闭移动端传感器信号，供合规）。
+
+> **自部署必须设置 `data-api`** 指向你自己的上报域名（如 `data-api="https://in.example.com"`）——SDK 内置默认值是参考域名。控制台生成的嵌入代码会自动带上适配你部署的值。
 
 ## 配置
 

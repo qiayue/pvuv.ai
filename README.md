@@ -64,42 +64,44 @@ Cloudflare **Workers** (ingest, consumer, api, console, cron) · **D1** (SQLite,
 
 ## Quick start
 
-> The commands below describe the intended deployment. Some pieces land incrementally — check the [roadmap](#roadmap).
+**Full step-by-step guide: [`DEPLOY.md`](./DEPLOY.md)** (中文: [`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)). The short version:
 
-**Prerequisites:** Node.js 18+, a Cloudflare account, and `wrangler` (`npm i -g wrangler`).
+**Prerequisites:** Node.js 18+, a Cloudflare account on the **Workers Paid plan** (Queues requires it), and a domain on Cloudflare.
 
 ```bash
 # 1. Clone
 git clone https://github.com/qiayue/pvuv.ai.git
 cd pvuv.ai
-npm install
+npm install                                    # also generates the scoring config
 
 # 2. Create Cloudflare resources
-wrangler d1 create pvuv
-wrangler kv namespace create BLOCKLIST
-wrangler kv namespace create SITE_CONFIG
-wrangler queues create INGEST_QUEUE
+npx wrangler d1 create pvuv-db
+npx wrangler kv namespace create BLOCKLIST
+npx wrangler kv namespace create SITE_CONFIG
+npx wrangler queues create pvuv-ingest
+npx wrangler queues create pvuv-ingest-dlq
 
-# 3. Configure — copy placeholders and fill in your IDs (never commit real IDs)
-cp config.example.toml config.local.toml     # scoring weights/thresholds (gitignored)
-#   then paste the D1/KV/Queue IDs from step 2 into each workers/*/wrangler.toml
+# 3. Configure — replace the PLACEHOLDER_* ids in wrangler.toml and
+#    workers/*/wrangler.toml, set your domains in the route patterns,
+#    and (optionally) tune scoring privately:
+cp config.example.toml config.local.toml       # gitignored
+npm run config:gen
 
-# 4. Set secrets (never put these in any file)
-wrangler secret put HMAC_KEY                  # cookie signing / verdict integrity
-wrangler secret put AI_API_KEY                # optional, for AI analysis
+# 4. Create the schema, deploy, set secrets (same HMAC_KEY on all three)
+npm run db:migrate:remote
+npm run deploy:all
+npx wrangler secret put HMAC_KEY       -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY       -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN      -c workers/api/wrangler.toml
+npx wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml
 
-# 5. Apply the database schema
-wrangler d1 execute pvuv --file=./shared/schema.sql
-
-# 6. Deploy the Workers
-wrangler deploy --config workers/ingest/wrangler.toml
-wrangler deploy --config workers/consumer/wrangler.toml
-wrangler deploy --config workers/api/wrangler.toml
-wrangler deploy --config workers/console/wrangler.toml
-wrangler deploy --config workers/cron/wrangler.toml
+# 5. Build + host the SDK
+npm run build:sdk
+cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 ```
 
-**Bind your domains** in the Cloudflare dashboard (or via routes): `js` + `in` → ingest/static, `api` → api Worker, apex → console.
+Then sign in at your console domain, register a site, and embed the snippet it prints. Details, DNS notes, verification steps, and troubleshooting: [`DEPLOY.md`](./DEPLOY.md).
 
 ## Add it to a site
 
@@ -112,7 +114,9 @@ Register a site in the console to get a `site_id`, then embed:
         data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
 ```
 
-Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (self-hosted reverse-proxy endpoint, see [`PROJECT_PLAN.md` §12](./PROJECT_PLAN.md)), `data-exclude="/admin/*"`, `data-sensors="off"` (disable mobile-sensor signals for compliance).
+Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (ingest endpoint override / self-hosted reverse proxy, see [`PROJECT_PLAN.md` §12](./PROJECT_PLAN.md)), `data-exclude="/admin/*"`, `data-sensors="off"` (disable mobile-sensor signals for compliance).
+
+> **Self-hosted deployments must set `data-api`** to their own ingest host (e.g. `data-api="https://in.example.com"`) — the SDK's built-in default points at the reference domain. The console generates a snippet with the right values for your deployment.
 
 ## Configuration
 

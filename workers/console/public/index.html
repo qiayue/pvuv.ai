@@ -49,6 +49,10 @@
   <div class="snippet" id="snippet">
     <b>Site created — embed this snippet:</b>
     <pre id="snippetCode"></pre>
+    <p style="color:#8b93a1;font-size:12px;margin:8px 0 0">
+      data-api must point at your ingest host — adjust it if yours is not
+      in.&lt;your-domain&gt;. See DEPLOY.md.
+    </p>
   </div>
 </main>
 <script>
@@ -82,11 +86,15 @@ document.getElementById('create').addEventListener('submit', async (e) => {
   const data = await r.json();
   if (!r.ok) { document.getElementById('err').textContent = data.error || 'failed'; return; }
   document.getElementById('err').textContent = '';
-  const attrs = [`data-site="${data.site_id}"`];
+  // src: f.js as hosted by this console deployment (DEPLOY.md step 8);
+  // data-api: ingest host, assumed in.<apex> per the reference layout —
+  // deployers adjust if theirs differs (the SDK default is in.pvuv.ai).
+  const apex = location.hostname.replace(/^(www|console)\./, '');
+  const attrs = [`data-site="${data.site_id}"`, `data-api="https://in.${apex}"`];
   if (data.adguard_mode !== 'off') attrs.push(`data-adguard="${data.adguard_mode}"`);
   if (data.adclient) attrs.push(`data-adclient="${data.adclient}"`);
   document.getElementById('snippetCode').textContent =
-    `<script defer src="https://js.pvuv.ai/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+    `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
   document.getElementById('snippet').style.display = 'block';
   loadSites();
 });
