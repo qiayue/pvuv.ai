@@ -25,6 +25,16 @@
   .scard .stat .k { color: #8b93a1; font-size: 11px; }
   .scard .foot { color: #8b93a1; font-size: 11.5px; margin-top: 12px; display: flex; justify-content: space-between; }
   .scard .badge { color: #6ee7a0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  details { flex: 1 1 220px; }
+  details > summary { list-style: none; cursor: pointer; user-select: none;
+                      display: block; text-align: center; padding: 10px 16px; border-radius: 8px;
+                      border: 1px solid #313847; background: #171a21; color: #cdd3dc; font-weight: 600; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary:hover { background: #1d222c; border-color: #3b4457; }
+  details[open] > summary { border-radius: 8px 8px 0 0; background: #1d222c; color: #e6e8eb; }
+  details[open] { flex-basis: 100%; }
+  details > form.create, details > .snippet { border-top: 0; border-radius: 0 0 8px 8px; margin-top: -1px; }
   form.create { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 18px; display: grid; gap: 10px;
                 grid-template-columns: 1fr 1fr; }
   form.create label { font-size: 13px; color: #8b93a1; display: block; }
@@ -49,32 +59,38 @@
   </div>
   <div id="sites">loading…</div>
 
-  <h2>Homepage settings</h2>
-  <form class="create" id="homeSettings">
-    <div><label>Site name (shown on your public homepage)<input id="hsName" maxlength="100" placeholder="Web analytics"></label></div>
-    <div><label>Description<input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
-    <p class="err" id="hsMsg"></p>
-    <button type="submit">Save homepage settings</button>
-  </form>
+  <div class="actions">
+    <details id="addPanel">
+      <summary>+ Add a site</summary>
+      <form class="create" id="create">
+        <div><label>Site name<input id="name" required placeholder="My Blog"></label></div>
+        <div><label>Domains (comma-separated)<input id="domains" required placeholder="example.com, www.example.com"></label></div>
+        <div><label>Ad protection mode
+          <select id="agmode"><option value="off">off</option><option value="loose">loose</option>
+            <option value="balanced">balanced</option><option value="strict">strict</option></select></label></div>
+        <div><label>AdSense client (optional)<input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
+        <p class="err" id="err"></p>
+        <button type="submit">Create site</button>
+      </form>
+      <div class="snippet" id="snippet">
+        <b>Site created — embed this snippet:</b>
+        <pre id="snippetCode"></pre>
+        <p style="color:#8b93a1;font-size:12px;margin:8px 0 0">
+          data-api must point at your ingest host — adjust it if yours is not
+          in.&lt;your-domain&gt;. See DEPLOY.md.
+        </p>
+      </div>
+    </details>
 
-  <h2>Add a site</h2>
-  <form class="create" id="create">
-    <div><label>Site name<input id="name" required placeholder="My Blog"></label></div>
-    <div><label>Domains (comma-separated)<input id="domains" required placeholder="example.com, www.example.com"></label></div>
-    <div><label>Ad protection mode
-      <select id="agmode"><option value="off">off</option><option value="loose">loose</option>
-        <option value="balanced">balanced</option><option value="strict">strict</option></select></label></div>
-    <div><label>AdSense client (optional)<input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
-    <p class="err" id="err"></p>
-    <button type="submit">Create site</button>
-  </form>
-  <div class="snippet" id="snippet">
-    <b>Site created — embed this snippet:</b>
-    <pre id="snippetCode"></pre>
-    <p style="color:#8b93a1;font-size:12px;margin:8px 0 0">
-      data-api must point at your ingest host — adjust it if yours is not
-      in.&lt;your-domain&gt;. See DEPLOY.md.
-    </p>
+    <details id="homePanel">
+      <summary>Homepage settings</summary>
+      <form class="create" id="homeSettings">
+        <div><label>Site name (shown on your public homepage)<input id="hsName" maxlength="100" placeholder="Web analytics"></label></div>
+        <div><label>Description<input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
+        <p class="err" id="hsMsg"></p>
+        <button type="submit">Save homepage settings</button>
+      </form>
+    </details>
   </div>
 </main>
 <script>
