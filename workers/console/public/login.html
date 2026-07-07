@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — pvuv.ai</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb;
+         display: grid; place-items: center; min-height: 100vh; }
+  .card { width: min(360px, 92vw); background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 28px; }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  p.sub { margin: 0 0 20px; color: #8b93a1; font-size: 13px; }
+  label { display: block; font-size: 13px; color: #8b93a1; margin: 12px 0 4px; }
+  input { width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid #313847; background: #0f1115; color: inherit; font: inherit; }
+  button { width: 100%; margin-top: 18px; padding: 10px; border: 0; border-radius: 6px; background: #3b82f6; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button:hover { background: #2f6fd6; }
+  .err { color: #f87171; font-size: 13px; margin-top: 10px; min-height: 1em; }
+</style>
+</head>
+<body>
+<form class="card" id="f">
+  <h1>pvuv.ai</h1>
+  <p class="sub">self-hosted analytics · sign in</p>
+  <label for="email">Email</label>
+  <input id="email" type="email" autocomplete="username" required>
+  <label for="pw">Password</label>
+  <input id="pw" type="password" autocomplete="current-password" required>
+  <button type="submit">Sign in</button>
+  <div class="err" id="err"></div>
+</form>
+<script>
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: email.value, password: pw.value }),
+  });
+  if (r.ok) location.href = '/';
+  else document.getElementById('err').textContent = (await r.json()).error || 'login failed';
+});
+</script>
+</body>
+</html>

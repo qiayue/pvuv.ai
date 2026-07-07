@@ -10,6 +10,8 @@
 import { enrichEvent, parseUA, isChromiumUA, hashIP, fingerprintHash, type RequestContext } from './enrich';
 import { scoreRealtime } from './score';
 import { classifyAsn } from '../../../shared/asn';
+import { signVerdictState, verifyVerdictState, type VerdictState } from '../../../shared/ids';
+import type { XPayload, Verdict } from '../../../shared/flags';
 import {
   MAX_REQUEST_EVENTS, type IncomingEvent, type EventRow,
 } from '../../../shared/events';
@@ -51,8 +53,7 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/v') {
-      // TODO(step 5): edge-local fast verdict (<80ms), signed _pv_v state.
-      return respond(501, 'not implemented');
+      return handleVerdict(request, env);
     }
 
     return respond(404, 'not found');
@@ -155,6 +156,106 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
     return respond(503);
   }
   return respond(204);
+}
+
+// ---------------------------------------------------------------------------
+// POST /v — fast ad-load verdict (§8): everything edge-local (KV + request
+// context, no per-request D1 on the happy path), target <80ms. The signed
+// _pv_v state carried by the client stacks behavioral evidence across pages
+// (§7.1 progressive verdict): a bot verdict is sticky, page count and
+// interaction accumulate.
+// ---------------------------------------------------------------------------
+
+interface VerdictRequest {
+  s: string;
+  vid?: string;
+  sid?: string;
+  /** authenticity signals, same obfuscated shape as /in */
+  x?: XPayload;
+  /** whether human interaction has occurred on this page (0/1) */
+  i?: 0 | 1;
+  /** current _pv_v cookie value (cookies don't cross origins, so it rides the body) */
+  state?: string;
+}
+
+async function handleVerdict(request: Request, env: Env): Promise<Response> {
+  if (!env.HMAC_KEY) {
+    console.error('HMAC_KEY secret is not set');
+    return respond(500);
+  }
+
+  let body: VerdictRequest;
+  try {
+    body = JSON.parse(await request.text()) as VerdictRequest;
+  } catch {
+    return respond(400, 'bad json');
+  }
+  if (!body || typeof body.s !== 'string') return respond(400, 'bad request');
+
+  // Unknown/inactive site or origin mismatch → fail-open for ads (§7.4:
+  // never cost the owner revenue on plumbing problems) but issue no state.
+  const site = await getSiteConfig(env, body.s);
+  const originHost = requestOriginHost(request);
+  if (!site || site.status !== 'active' || !originHost || !domainAllowed(originHost, site.allowed_domains)) {
+    return json({ v: 'clean', ok: 1 });
+  }
+
+  const prior: VerdictState | null = body.state
+    ? await verifyVerdictState(env.HMAC_KEY, body.state)
+    : null;
+
+  const cf = (request as Request & { cf?: IncomingRequestCfProperties }).cf;
+  const ua = request.headers.get('user-agent');
+  const uaInfo = parseUA(ua);
+  const asnType = classifyAsn(typeof cf?.asn === 'number' ? cf.asn : undefined, cf?.asOrganization);
+
+  const ip = request.headers.get('cf-connecting-ip');
+  const { ip24_hash } = await hashIP(env.HMAC_KEY, ip);
+  const fp = body.x?.x7
+    ? await fingerprintHash(env.HMAC_KEY, body.x.x7, ua, undefined, undefined, undefined)
+    : null;
+  const blocklisted = await isBlocklisted(env.BLOCKLIST, ip24_hash, fp);
+
+  const interacted = body.i === 1 || prior?.i === 1;
+  const scored = scoreRealtime({
+    x: body.x,
+    asnType,
+    isCrawler: uaInfo.isCrawler,
+    chromiumUA: isChromiumUA(ua),
+    headers: request.headers,
+    ipTimezone: cf?.timezone,
+    os: uaInfo.os,
+    deviceType: uaInfo.device_type,
+    hadInteraction: interacted,
+    isPageLeave: false,
+    blocklisted,
+  });
+
+  // progressive stacking: once judged bot, stay bot for this state chain (§7.3)
+  let verdict: Verdict = scored.verdict;
+  if (prior && (prior.v === 'bot' || prior.v === 'crawler') && verdict !== 'bot') {
+    verdict = prior.v;
+  }
+
+  const newState: VerdictState = {
+    v: verdict,
+    p: (prior?.p ?? 0) + 1,
+    i: interacted ? 1 : 0,
+    d: prior?.d ?? 0,
+    ts: Date.now(),
+  };
+  const state = await signVerdictState(env.HMAC_KEY, newState);
+
+  // ok=1 → load now; suspect → client requires stronger interaction evidence
+  // (§7.4); bot/crawler → never (verified crawlers get the page, not the ads)
+  return json({ v: verdict, ok: verdict === 'clean' ? 1 : 0, state });
+}
+
+function json(data: unknown): Response {
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+  });
 }
 
 // ---------------------------------------------------------------------------

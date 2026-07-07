@@ -401,13 +401,120 @@ import type { XPayload } from '../../shared/flags';
   }
 
   // -------------------------------------------------------------------------
+  // adguard progressive ad loading (§7): decide only WHETHER to inject
+  // Google's script, never modify it (§7.4 boundary). Fail-open on any
+  // infrastructure problem — a missed block is cheaper than lost revenue.
+  // -------------------------------------------------------------------------
+
+  const agMode = script.getAttribute('data-adguard') || 'off';
+  const adClient = script.getAttribute('data-adclient') || '';
+  const VERDICT_TTL_MS = 7 * 86400e3;
+  const VERDICT_TIMEOUT_MS = parseInt(script.getAttribute('data-adguard-timeout') || '', 10) || 300;
+
+  function decodeState(cookieVal: string): { v: string; p: number; i: number; ts: number } | null {
+    try {
+      const payload = cookieVal.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(payload));
+    } catch {
+      return null;
+    }
+  }
+
+  function adguard(): void {
+    let injected = false;
+    let blocked = false;
+
+    const inject = (): void => {
+      if (injected || blocked) return;
+      injected = true;
+      const s = doc.createElement('script');
+      s.async = true;
+      s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(adClient);
+      s.crossOrigin = 'anonymous';
+      doc.head.appendChild(s);
+    };
+
+    // ① local hard signals: never load, no network needed (§7.2)
+    if (x.x1 === 1 || x.x2 === 1 || x.x8 === 1) return;
+
+    const callVerdict = (state: string | null): Promise<{ v: string; ok: number; state?: string }> =>
+      fetch(api + '/v', {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain' },
+        body: JSON.stringify({ s: siteId, vid, sid: session(), x, i: interacted ? 1 : 0, state: state || undefined }),
+      }).then((r) => r.json() as Promise<{ v: string; ok: number; state?: string }>);
+
+    const saveState = (res: { state?: string }): void => {
+      if (res.state) setCookie(COOKIE.VERDICT, res.state, VERDICT_TTL_MS / 1000);
+    };
+
+    // ② signed-cookie fast path: returning visitors decide with zero latency
+    // (verified server-side on the next /v; local parse is display-only)
+    const vc = readCookie(COOKIE.VERDICT);
+    const prior = vc ? decodeState(vc) : null;
+    if (prior && Date.now() - prior.ts < VERDICT_TTL_MS) {
+      if (prior.v === 'bot' || prior.v === 'crawler') {
+        blocked = true;
+        callVerdict(vc).then(saveState).catch(() => { /* stay blocked */ });
+        return;
+      }
+      if (prior.v === 'clean') {
+        inject();
+        // background re-check stacks evidence → blocks from page 2 (§7.3)
+        callVerdict(vc).then(saveState).catch(() => { /* keep cookie */ });
+        return;
+      }
+    }
+
+    // ③ new or suspect visitor: fast verdict and first interaction race (§7.2)
+    let verdict = ''; // '' = pending, then clean/suspect/bot/crawler/timeout
+    const evaluate = (): void => {
+      if (injected || blocked) return;
+      if (verdict === 'bot' || verdict === 'crawler') { blocked = true; return; }
+      if (verdict === 'timeout') { inject(); return; } // fail-open (§7.4)
+      if (agMode === 'loose') { if (verdict === 'clean') inject(); return; }
+      if (agMode === 'strict') { if (verdict === 'clean' && interacted) inject(); return; }
+      // balanced (default): ① passes OR ② occurs; suspect needs interaction
+      if (verdict === 'clean') { inject(); return; }
+      if (interacted && (verdict === 'suspect' || verdict === '')) inject();
+    };
+
+    (['mousemove', 'touchstart', 'scroll', 'keydown'] as const).forEach((t) => {
+      win.addEventListener(t, () => setTimeout(evaluate, 0), { once: true, passive: true });
+    });
+
+    const timer = setTimeout(() => {
+      if (!verdict) { verdict = 'timeout'; evaluate(); }
+    }, VERDICT_TIMEOUT_MS);
+
+    callVerdict(vc)
+      .then((res) => {
+        clearTimeout(timer);
+        saveState(res);
+        if (!verdict || verdict === 'timeout') {
+          verdict = res.v;
+          evaluate();
+        }
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        if (!verdict) { verdict = 'timeout'; evaluate(); }
+      });
+  }
+
+  // -------------------------------------------------------------------------
   // go
   // -------------------------------------------------------------------------
 
-  if (doc.readyState === 'loading') {
-    doc.addEventListener('DOMContentLoaded', () => { plantHoneypot(); pageview(); });
-  } else {
+  function start(): void {
     plantHoneypot();
     pageview();
+    if (agMode !== 'off' && adClient) adguard();
+  }
+
+  if (doc.readyState === 'loading') {
+    doc.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
   }
 })();

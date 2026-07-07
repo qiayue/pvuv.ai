@@ -10,15 +10,16 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 account_id = "PLACEHOLDER_ACCOUNT_ID"
 
+# KV: daily job writes confirmed clusters to the blocklist (M2)
+# (top-level key — must stay above the first [table] header)
+kv_namespaces = [
+  { binding = "BLOCKLIST", id = "PLACEHOLDER_KV_BLOCKLIST_ID" }
+]
+
 [triggers]
 crons = [
   "5 * * * *",   # hourly rollup (at :05, after the hour closes)
   "30 3 * * *"   # daily population/batch analysis (M2 — no-op stub in M1)
-]
-
-# KV: daily job writes confirmed clusters to the blocklist (M2)
-kv_namespaces = [
-  { binding = "BLOCKLIST", id = "PLACEHOLDER_KV_BLOCKLIST_ID" }
 ]
 
 [[d1_databases]]

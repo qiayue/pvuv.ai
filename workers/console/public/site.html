@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — pvuv.ai</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; }
+  header a { color: #7ab3ff; text-decoration: none; }
+  header b { font-size: 16px; }
+  header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
+  main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
+  .card .v { font-size: 22px; font-weight: 700; }
+  .card .k { color: #8b93a1; font-size: 12px; }
+  .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; }
+  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .b-clean { background: #14331f; color: #6ee7a0; } .b-suspect { background: #33290f; color: #fbbf24; }
+  .b-bot { background: #331414; color: #f87171; } .b-crawler { background: #1d2733; color: #93b4d6; }
+  .flags { color: #8b93a1; font-size: 12px; }
+  svg text { fill: #8b93a1; font-size: 10px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: #aeb6c2; margin-top: 8px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .muted { color: #8b93a1; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← sites</a><b id="title">…</b>
+  <select id="period"><option value="7d">7 days</option><option value="30d" selected>30 days</option><option value="90d">90 days</option></select>
+</header>
+<main>
+  <div class="cards" id="cards"></div>
+
+  <h2>Pageviews</h2>
+  <div class="panel" id="chart"></div>
+
+  <div class="grid2">
+    <div><h2>Top pages</h2><div class="panel" id="pages"></div></div>
+    <div><h2>Sources</h2><div class="panel" id="sources"></div></div>
+  </div>
+  <div class="grid2">
+    <div><h2>Countries</h2><div class="panel" id="countries"></div></div>
+    <div><h2>Devices</h2><div class="panel" id="devices"></div></div>
+  </div>
+
+  <h2>Traffic quality</h2>
+  <div class="grid2">
+    <div class="panel" id="quality"></div>
+    <div class="panel" id="flags"></div>
+  </div>
+
+  <h2>High-score traffic (drill-down)</h2>
+  <div class="panel" id="traffic"></div>
+</main>
+<script>
+const site = new URLSearchParams(location.search).get('id');
+if (!site) location.href = '/';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+const get = async (p, qs = '') =>
+  (await guard(await fetch(`/api/sites/${site}/${p}?period=${document.getElementById('period').value}${qs}`))).json();
+
+// mirrors shared/flags.ts bit definitions (evidence labels, §11.2)
+const FLAG_LABELS = {
+  0x0001: 'webdriver', 0x0002: 'automation residue', 0x0004: 'UA/env contradiction',
+  0x0008: 'datacenter ASN', 0x0010: 'Sec-Fetch missing', 0x0020: 'timezone/IP mismatch',
+  0x0040: 'no interaction & no leave', 0x0080: 'software WebGL', 0x0100: 'mechanical timing',
+  0x0200: 'blocklisted cluster', 0x0400: 'honeypot', 0x0800: 'screen/device contradiction',
+  0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
+};
+const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
+
+function table(el, headers, rows) {
+  document.getElementById(el).innerHTML = rows.length
+    ? `<table><tr>${headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>` +
+      rows.map((r) => `<tr>${r.map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('') + '</table>'
+    : '<p class="muted">no data yet</p>';
+}
+
+function lineChart(points) {
+  const el = document.getElementById('chart');
+  if (!points.length) { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
+  const W = 980, H = 180, P = 28;
+  const max = Math.max(...points.map((p) => p.value ?? 0), 1);
+  const xs = (i) => P + (i * (W - 2 * P)) / Math.max(points.length - 1, 1);
+  const ys = (v) => H - P - ((v ?? 0) * (H - 2 * P)) / max;
+  const line = points.map((p, i) => `${xs(i).toFixed(1)},${ys(p.value).toFixed(1)}`).join(' ');
+  const labels = points.filter((_, i) => i % Math.ceil(points.length / 8) === 0);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
+    <polyline points="${line}" fill="none" stroke="#3b82f6" stroke-width="2"/>
+    ${points.map((p, i) => `<circle cx="${xs(i)}" cy="${ys(p.value)}" r="2.5" fill="#3b82f6"><title>${p.day}: ${fmt(p.value)}</title></circle>`).join('')}
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 8}" text-anchor="middle">${p.day.slice(5)}</text>`).join('')}
+    <text x="${P - 4}" y="${ys(max) + 4}" text-anchor="end">${fmt(max)}</text>
+  </svg>`;
+}
+
+function donut(t) {
+  const total = t.clean + t.suspect + t.bot + t.crawler || 1;
+  const colors = { clean: '#34d399', suspect: '#fbbf24', bot: '#f87171', crawler: '#64748b' };
+  let off = 0;
+  const C = 2 * Math.PI * 40;
+  const segs = Object.keys(colors).map((k) => {
+    const frac = t[k] / total;
+    const seg = `<circle r="40" cx="60" cy="60" fill="none" stroke="${colors[k]}" stroke-width="16"
+      stroke-dasharray="${(frac * C).toFixed(1)} ${C.toFixed(1)}" stroke-dashoffset="${(-off * C).toFixed(1)}"
+      transform="rotate(-90 60 60)"/>`;
+    off += frac;
+    return seg;
+  }).join('');
+  document.getElementById('quality').innerHTML = `
+    <div style="display:flex;gap:20px;align-items:center">
+      <svg viewBox="0 0 120 120" width="130">${segs}
+        <text x="60" y="58" text-anchor="middle" style="font-size:15px;fill:#e6e8eb;font-weight:700">${((t.clean + t.suspect) / total * 100).toFixed(1)}%</text>
+        <text x="60" y="74" text-anchor="middle">counted</text></svg>
+      <div class="legend" style="flex-direction:column;align-items:flex-start">
+        <span><i class="dot" style="background:#34d399"></i>clean ${fmt(t.clean)}</span>
+        <span><i class="dot" style="background:#fbbf24"></i>suspect ${fmt(t.suspect)} <span class="muted">(counted, flagged)</span></span>
+        <span><i class="dot" style="background:#f87171"></i>bot ${fmt(t.bot)} <span class="muted">(excluded)</span></span>
+        <span><i class="dot" style="background:#64748b"></i>verified crawler ${fmt(t.crawler)} <span class="muted">(separate)</span></span>
+      </div>
+    </div>`;
+}
+
+async function load() {
+  document.getElementById('title').textContent = site;
+
+  const o = await get('overview');
+  const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
+  document.getElementById('cards').innerHTML = [
+    ['Pageviews', fmt(o.pv)], ['Visitors (Σ daily)', fmt(o.uv)], ['Sessions', fmt(o.sessions)],
+    ['Bounce rate', o.bounce_rate == null ? '–' : (o.bounce_rate * 100).toFixed(1) + '%'],
+    ['Avg. session', dur(o.avg_duration_ms)], ['Human share', cleanShare + '%'],
+  ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+  lineChart((await get('timeseries', '&metric=pv')).points);
+
+  const pages = await get('breakdown', '&dim=page');
+  table('pages', ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],
+    pages.rows.map((r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)]));
+
+  const sources = await get('breakdown', '&dim=source');
+  table('sources', ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'],
+    sources.rows.map((r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+
+  const countries = await get('breakdown', '&dim=country');
+  table('countries', ['Country', 'PV', 'PV clean', 'Visitors'],
+    countries.rows.map((r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+
+  const devices = await get('breakdown', '&dim=device');
+  table('devices', ['Device', 'PV', 'PV clean', 'Visitors'],
+    devices.rows.map((r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+
+  const qy = await get('quality');
+  donut(qy.totals);
+  const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  document.getElementById('flags').innerHTML = firedFlags.length
+    ? '<table><tr><th>Signal</th><th class="num">Events</th></tr>' +
+      firedFlags.map(([k, n]) => `<tr><td>${esc(k.toLowerCase().replace(/_/g, ' '))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
+    : '<p class="muted">no signals fired</p>';
+
+  const tr = await get('traffic', '&min_score=30&limit=50');
+  document.getElementById('traffic').innerHTML = tr.rows.length
+    ? '<table><tr><th>Time</th><th>Event</th><th>Path</th><th>Where</th><th>Agent</th><th class="num">Score</th><th>Verdict</th><th>Evidence</th></tr>' +
+      tr.rows.map((r) => `<tr>
+        <td>${new Date(r.ts).toISOString().slice(5, 16).replace('T', ' ')}</td>
+        <td>${esc(r.event)}</td><td>${esc(r.path)}</td>
+        <td>${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''}</td>
+        <td>${esc(r.browser)}/${esc(r.os)}</td>
+        <td class="num">${r.bot_score}</td>
+        <td><span class="badge b-${esc(r.verdict)}">${esc(r.verdict)}</span> <span class="muted">${esc(r.score_stage)}</span></td>
+        <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
+      </tr>`).join('') + '</table>'
+    : '<p class="muted">nothing above the threshold — looking clean</p>';
+}
+
+document.getElementById('period').addEventListener('change', load);
+load();
+</script>
+</body>
+</html>

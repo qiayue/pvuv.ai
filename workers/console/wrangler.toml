@@ -5,7 +5,11 @@
 #
 # All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
 # Secrets:
-#   wrangler secret put HMAC_KEY -c workers/console/wrangler.toml  (session cookies)
+#   wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml  (session cookies)
+#   wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml  (owner login)
+#
+# NOTE: keep all top-level keys (routes, kv_namespaces, …) ABOVE the first
+# [table] header, or TOML nests them into that table and the binding is lost.
 
 name = "pvuv-console"
 main = "src/index.ts"
@@ -16,16 +20,20 @@ routes = [
   { pattern = "pvuv.ai/*", zone_name = "pvuv.ai" }
 ]
 
-# Static assets (single-file HTML console + sdk/dist/f.js is served separately
+# KV: write-through site-config cache on site create/update (§5 whitelist)
+kv_namespaces = [
+  { binding = "SITE_CONFIG", id = "PLACEHOLDER_KV_SITE_CONFIG_ID" }
+]
+
+[vars]
+# Owner login email (M1 single-owner console). Not a secret; the password is.
+ADMIN_EMAIL = "admin@example.com"
+
+# Static assets (single-file HTML console; sdk/dist/f.js is served separately
 # from js.pvuv.ai — see PROJECT_PLAN.md §2 "Static hosting")
 [assets]
 directory = "public"
 binding = "ASSETS"
-
-# KV: write-through site-config cache on site create/update
-kv_namespaces = [
-  { binding = "SITE_CONFIG", id = "PLACEHOLDER_KV_SITE_CONFIG_ID" }
-]
 
 [[d1_databases]]
 binding = "DB"

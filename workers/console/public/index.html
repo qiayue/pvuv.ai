@@ -1,12 +1,101 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>pvuv.ai console</title>
-  <!-- Plain single-file HTML console (no framework). Built in step 5. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sites — pvuv.ai</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid #262b36; }
+  header b { font-size: 17px; }
+  header button { background: none; border: 1px solid #313847; color: #8b93a1; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  main { max-width: 860px; margin: 28px auto; padding: 0 16px; }
+  h2 { font-size: 16px; margin: 26px 0 10px; }
+  .site { display: flex; justify-content: space-between; align-items: center; background: #171a21; border: 1px solid #262b36;
+          border-radius: 8px; padding: 14px 18px; margin-bottom: 10px; }
+  .site a { color: #7ab3ff; text-decoration: none; font-weight: 600; }
+  .site .dom { color: #8b93a1; font-size: 13px; }
+  .site code { color: #8b93a1; font-size: 12px; }
+  form.create { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 18px; display: grid; gap: 10px;
+                grid-template-columns: 1fr 1fr; }
+  form.create label { font-size: 13px; color: #8b93a1; display: block; }
+  form.create input, form.create select { width: 100%; padding: 8px 9px; margin-top: 3px; border-radius: 6px; border: 1px solid #313847;
+                background: #0f1115; color: inherit; font: inherit; }
+  form.create button { grid-column: span 2; padding: 10px; border: 0; border-radius: 6px; background: #3b82f6; color: #fff; font-weight: 600; cursor: pointer; }
+  .snippet { display: none; margin-top: 14px; background: #0c1117; border: 1px solid #2b3a2e; border-radius: 8px; padding: 14px; }
+  .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; }
+  .err { color: #f87171; font-size: 13px; grid-column: span 2; min-height: 1em; margin: 0; }
+</style>
 </head>
 <body>
-  <p>pvuv.ai console — coming in M1 step 5.</p>
+<header><b>pvuv.ai</b><button id="logout">Sign out</button></header>
+<main>
+  <h2>Your sites</h2>
+  <div id="sites">loading…</div>
+
+  <h2>Add a site</h2>
+  <form class="create" id="create">
+    <div><label>Site name<input id="name" required placeholder="My Blog"></label></div>
+    <div><label>Domains (comma-separated)<input id="domains" required placeholder="example.com, www.example.com"></label></div>
+    <div><label>Ad protection mode
+      <select id="agmode"><option value="off">off</option><option value="loose">loose</option>
+        <option value="balanced">balanced</option><option value="strict">strict</option></select></label></div>
+    <div><label>AdSense client (optional)<input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
+    <p class="err" id="err"></p>
+    <button type="submit">Create site</button>
+  </form>
+  <div class="snippet" id="snippet">
+    <b>Site created — embed this snippet:</b>
+    <pre id="snippetCode"></pre>
+  </div>
+</main>
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+
+async function loadSites() {
+  const r = await guard(await fetch('/api/sites'));
+  const { sites } = await r.json();
+  const el = document.getElementById('sites');
+  if (!sites.length) { el.innerHTML = '<p style="color:#8b93a1">No sites yet — add one below.</p>'; return; }
+  el.innerHTML = sites.map((s) => `
+    <div class="site">
+      <div>
+        <a href="/site.html?id=${esc(s.site_id)}">${esc(s.name)}</a>
+        <div class="dom">${esc(JSON.parse(s.allowed_domains).join(', '))} · adguard: ${esc(s.adguard_mode)}</div>
+      </div>
+      <code>${esc(s.site_id)}</code>
+    </div>`).join('');
+}
+
+document.getElementById('create').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('name').value,
+    domains: document.getElementById('domains').value.split(',').map((d) => d.trim()).filter(Boolean),
+    adguard_mode: document.getElementById('agmode').value,
+    adclient: document.getElementById('adclient').value.trim() || undefined,
+  };
+  const r = await guard(await fetch('/api/sites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+  const data = await r.json();
+  if (!r.ok) { document.getElementById('err').textContent = data.error || 'failed'; return; }
+  document.getElementById('err').textContent = '';
+  const attrs = [`data-site="${data.site_id}"`];
+  if (data.adguard_mode !== 'off') attrs.push(`data-adguard="${data.adguard_mode}"`);
+  if (data.adclient) attrs.push(`data-adclient="${data.adclient}"`);
+  document.getElementById('snippetCode').textContent =
+    `<script defer src="https://js.pvuv.ai/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+  document.getElementById('snippet').style.display = 'block';
+  loadSites();
+});
+
+document.getElementById('logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.href = '/login.html';
+});
+loadSites();
+</script>
 </body>
 </html>
