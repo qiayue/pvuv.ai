@@ -38,7 +38,7 @@ document.getElementById('f').addEventListener('submit', async (e) => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: email.value, password: pw.value }),
   });
-  if (r.ok) location.href = '/';
+  if (r.ok) location.href = '/sites.html';
   else document.getElementById('err').textContent = (await r.json()).error || 'login failed';
 });
 </script>

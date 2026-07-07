@@ -37,7 +37,7 @@
 </head>
 <body>
 <header>
-  <a href="/">← sites</a><b id="title">…</b>
+  <a href="/sites.html">← sites</a><b id="title">…</b>
   <select id="period"><option value="7d">7 days</option><option value="30d" selected>30 days</option><option value="90d">90 days</option></select>
 </header>
 <main>
@@ -66,7 +66,7 @@
 </main>
 <script>
 const site = new URLSearchParams(location.search).get('id');
-if (!site) location.href = '/';
+if (!site) location.href = '/sites.html';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
