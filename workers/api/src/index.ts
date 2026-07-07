@@ -14,7 +14,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from './queries';
+import { parsePeriod, siteTimezone, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from './queries';
 import { verifySession } from './auth';
 import { hmacSign } from '../../../shared/ids';
 
@@ -47,7 +47,8 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   await authorize(request, env, siteId);
 
-  const period = parsePeriod(url.searchParams.get('period'));
+  // period is resolved in the site's own timezone (rollups are keyed on it)
+  const period = parsePeriod(url.searchParams.get('period'), await siteTimezone(env.DB, siteId));
   const q = url.searchParams;
 
   if (resource === 'overview') return json(await overview(env.DB, siteId, period));

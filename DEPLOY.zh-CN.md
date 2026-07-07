@@ -154,8 +154,12 @@ npm run deploy:console
 
 1. 打开 `https://example.com/login.html`，用 Google 或 GitHub 登录(邮箱须在
    `ADMIN_EMAILS` 里)。
-2. 在 **Add a site** 填：站点名、被统计站点的域名（如
-   `blog.example.org, www.blog.example.org`）、adguard 模式、可选的 AdSense id。
+2. 点 **New site** 填：站点名、被统计站点的域名（如
+   `blog.example.org, www.blog.example.org`）、adguard 模式、可选 AdSense id，
+   以及**时区**。所有统计（今天/本月/每日 rollup）都按这个时区的日历天归集。
+   它默认取你的账号默认时区（在 ⚙ 齿轮 →「默认时区」里设），且**站点创建后
+   不可更改**——选你想用来出报表的那个。站长在任何时区都能统计任何时区的站点，
+   这个选项只决定「天」怎么切。
 3. 复制生成的嵌入代码，形如：
 
 ```html

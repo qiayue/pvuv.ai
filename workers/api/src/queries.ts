@@ -9,6 +9,8 @@
  */
 
 import { FLAG, ALL_FLAGS, type FlagName } from '../../../shared/flags';
+import { localYMD, localMidnightUtc, addDays, weekdayMon0, dayStr } from '../../../shared/tz';
+import { monthSuffix } from '../../../shared/events';
 
 // ---------------------------------------------------------------------------
 // periods: "7d" | "30d" | "90d" → inclusive UTC day range
@@ -21,74 +23,72 @@ export interface Period {
   endTs: number; // exclusive
 }
 
-const DAY_MS = 86400e3;
-
-/** UTC start-of-week (Monday) for a UTC-midnight date. */
-function weekStart(d: Date): Date {
-  const dow = (d.getUTCDay() + 6) % 7; // 0 = Monday
-  return new Date(d.getTime() - dow * DAY_MS);
-}
+type YMD = { y: number; m0: number; d: number };
 
 /**
- * Resolve a period token to an inclusive UTC day range (all analytics are
- * keyed on UTC days, matching the daily rollups). Supports rolling windows
+ * Resolve a period token to an inclusive day range in the SITE'S timezone
+ * (analytics are keyed on the site's local calendar day, matching the daily
+ * rollups). `start`/`end` are local day strings; `startTs`/`endTs` are the UTC
+ * instants bounding them (for raw-events queries). Supports rolling windows
  * (`7d`/`30d`/`90d`, up to 730d) and calendar presets: today, yesterday,
  * this_week, last_week, this_month, last_month, this_year.
  */
-export function parsePeriod(raw: string | null): Period {
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+export function parsePeriod(raw: string | null, tz = 'UTC', now: number = Date.now()): Period {
+  const today = localYMD(now, tz);
   const token = (raw ?? '30d').toLowerCase();
 
-  let start = today;
-  let end = today;
+  let start: YMD = today;
+  let end: YMD = today;
 
   const rolling = token.match(/^(\d{1,4})d$/);
   if (rolling) {
     const days = Math.min(parseInt(rolling[1], 10) || 30, 730);
-    start = new Date(today.getTime() - (days - 1) * DAY_MS);
+    start = addDays(today.y, today.m0, today.d, -(days - 1));
   } else {
-    const y = today.getUTCFullYear();
-    const mo = today.getUTCMonth();
     switch (token) {
       case 'today': break;
-      case 'yesterday': start = end = new Date(today.getTime() - DAY_MS); break;
-      case 'this_week': start = weekStart(today); break;
+      case 'yesterday': start = end = addDays(today.y, today.m0, today.d, -1); break;
+      case 'this_week': start = addDays(today.y, today.m0, today.d, -weekdayMon0(today.y, today.m0, today.d)); break;
       case 'last_week': {
-        const ws = weekStart(today);
-        end = new Date(ws.getTime() - DAY_MS);
-        start = new Date(ws.getTime() - 7 * DAY_MS);
+        const mon = addDays(today.y, today.m0, today.d, -weekdayMon0(today.y, today.m0, today.d));
+        end = addDays(mon.y, mon.m0, mon.d, -1);
+        start = addDays(mon.y, mon.m0, mon.d, -7);
         break;
       }
-      case 'this_month': start = new Date(Date.UTC(y, mo, 1)); break;
-      case 'last_month':
-        start = new Date(Date.UTC(y, mo - 1, 1));
-        end = new Date(Date.UTC(y, mo, 1) - DAY_MS);
+      case 'this_month': start = { y: today.y, m0: today.m0, d: 1 }; break;
+      case 'last_month': {
+        const firstThis = { y: today.y, m0: today.m0, d: 1 };
+        end = addDays(firstThis.y, firstThis.m0, firstThis.d, -1);
+        start = { y: end.y, m0: end.m0, d: 1 };
         break;
-      case 'this_year': start = new Date(Date.UTC(y, 0, 1)); break;
-      default: start = new Date(today.getTime() - 29 * DAY_MS); // 30d
+      }
+      case 'this_year': start = { y: today.y, m0: 0, d: 1 }; break;
+      default: start = addDays(today.y, today.m0, today.d, -29); // 30d
     }
   }
 
+  const endNext = addDays(end.y, end.m0, end.d, 1);
   return {
-    start: dayStr(start),
-    end: dayStr(end),
-    startTs: start.getTime(),
-    endTs: end.getTime() + DAY_MS,
+    start: dayStr(start.y, start.m0, start.d),
+    end: dayStr(end.y, end.m0, end.d),
+    startTs: localMidnightUtc(tz, start.y, start.m0, start.d),
+    endTs: localMidnightUtc(tz, endNext.y, endNext.m0, endNext.d),
   };
 }
 
-function dayStr(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+/** A site's fixed display/aggregation timezone (defaults to UTC). */
+export async function siteTimezone(db: D1Database, siteId: string): Promise<string> {
+  const row = await db.prepare('SELECT timezone FROM sites WHERE site_id = ?').bind(siteId).first<{ timezone: string }>();
+  return row?.timezone || 'UTC';
 }
 
-/** Existing events_YYYYMM tables overlapping the period. */
+/** Existing events_YYYYMM tables overlapping the period's UTC ts span. */
 async function eventTables(db: D1Database, period: Period): Promise<string[]> {
   const rows = await db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'events_[0-9][0-9][0-9][0-9][0-9][0-9]'")
     .all<{ name: string }>();
-  const lo = period.start.slice(0, 7).replace('-', '');
-  const hi = period.end.slice(0, 7).replace('-', '');
+  const lo = monthSuffix(period.startTs);
+  const hi = monthSuffix(period.endTs - 1);
   return rows.results
     .map((r) => r.name)
     .filter((n) => { const s = n.slice(7); return s >= lo && s <= hi; })

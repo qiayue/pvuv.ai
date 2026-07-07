@@ -24,7 +24,8 @@ CREATE TABLE users (
   email       TEXT UNIQUE,
   name        TEXT,
   created_at  INTEGER NOT NULL,
-  status      TEXT DEFAULT 'active'
+  status      TEXT DEFAULT 'active',
+  timezone    TEXT DEFAULT 'UTC'             -- user default for new sites (added by 0004)
 );
 
 -- sites
@@ -38,7 +39,8 @@ CREATE TABLE sites (
   adclient        TEXT,                      -- ca-pub-xxx
   settings        TEXT,
   created_at      INTEGER NOT NULL,
-  status          TEXT DEFAULT 'active'
+  status          TEXT DEFAULT 'active',
+  timezone        TEXT DEFAULT 'UTC'         -- display/aggregation tz, IMMUTABLE (added by 0004)
 );
 
 -- raw events (monthly-partitioned; initial month 202607)

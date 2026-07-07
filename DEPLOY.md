@@ -161,9 +161,14 @@ npm run deploy:console
 
 1. Open `https://example.com/login.html`, sign in with Google or GitHub
    (the email must be in `ADMIN_EMAILS`).
-2. Click **Add a site**: name, the domain(s) the site runs on
+2. Click **New site**: name, the domain(s) the site runs on
    (e.g. `blog.example.org, www.blog.example.org`), adguard mode, optional
-   AdSense client id.
+   AdSense client id, and the **timezone**. All stats (today / this month /
+   daily rollups) are aggregated by this timezone's calendar day. It defaults
+   to your account default (set it under the ⚙ gear → *Default timezone*) and
+   **cannot be changed after the site is created** — pick the one you want to
+   report in. Owners in any timezone can measure sites in any timezone; the
+   choice only affects how days are drawn.
 3. Copy the embed snippet it prints. It looks like:
 
 ```html

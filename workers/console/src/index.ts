@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -27,6 +27,7 @@ import {
   isProvider, configuredProviders, oauthStart, oauthCallback,
   clearStateCookie, OAuthError,
 } from './oauth';
+import { isValidTimezone } from '../../../shared/tz';
 
 export interface Env {
   DB: D1Database;
@@ -180,7 +181,23 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   const user = await verifySession(env.HMAC_KEY, request.headers.get('cookie'));
   if (!user) throw new ApiError(401, 'auth required');
 
-  if (request.method === 'GET' && path === '/api/me') return json({ user });
+  if (request.method === 'GET' && path === '/api/me') {
+    return json({ user, timezone: await userTimezone(env, user) });
+  }
+
+  // user default timezone for new sites (users.timezone)
+  if (request.method === 'POST' && path === '/api/settings/timezone') {
+    let tzBody: { timezone?: string };
+    try { tzBody = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    const tz = (tzBody.timezone ?? '').trim();
+    if (!isValidTimezone(tz)) return json({ error: 'invalid timezone' }, 400);
+    // upsert so it works even if the users row isn't present yet
+    await env.DB.prepare(`
+      INSERT INTO users (user_id, timezone, created_at) VALUES (?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET timezone = excluded.timezone
+    `).bind(user, tz, Date.now()).run();
+    return json({ ok: true, timezone: tz });
+  }
 
   // instance settings: homepage name/description
   if (request.method === 'POST' && path === '/api/settings') {
@@ -249,7 +266,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/sites') {
     if (request.method === 'GET') {
       const rows = await env.DB.prepare(
-        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, created_at, status FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
+        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
       ).bind(user).all();
       return json({ sites: rows.results });
     }
@@ -260,10 +277,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   const m = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/([a-z_]+)(?:\/([^/]+)\/([a-z_]+))?$/);
   if (m && request.method === 'GET') {
     const [, siteId, resource, subId, subResource] = m;
-    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    const site = await env.DB.prepare('SELECT owner_id, timezone FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string; timezone: string }>();
     if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
 
-    const period = parsePeriod(url.searchParams.get('period'));
+    // period resolved in the site's own timezone (rollups are keyed on it)
+    const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
     const q = url.searchParams;
     if (resource === 'overview') return json(await overview(env.DB, siteId, period));
     if (resource === 'timeseries') return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period));
@@ -355,7 +373,7 @@ function redirect(location: string, setCookie?: string): Response {
 const ADGUARD_MODES = new Set(['off', 'loose', 'balanced', 'strict']);
 
 async function createSite(request: Request, env: Env, owner: string): Promise<Response> {
-  let body: { name?: string; domains?: string[]; adguard_mode?: string; adclient?: string };
+  let body: { name?: string; domains?: string[]; adguard_mode?: string; adclient?: string; timezone?: string };
   try {
     body = await request.json();
   } catch {
@@ -371,11 +389,17 @@ async function createSite(request: Request, env: Env, owner: string): Promise<Re
   const adguardMode = ADGUARD_MODES.has(body.adguard_mode ?? '') ? body.adguard_mode! : 'off';
   const adclient = body.adclient && /^ca-pub-\d{6,20}$/.test(body.adclient) ? body.adclient : null;
 
+  // timezone is fixed at creation (immutable). Fall back to the user's default,
+  // then UTC. Reject an invalid IANA id rather than silently store a bad tz.
+  let timezone = (body.timezone ?? '').trim();
+  if (!timezone) timezone = await userTimezone(env, owner);
+  if (!isValidTimezone(timezone)) return json({ error: `invalid timezone: ${timezone}` }, 400);
+
   const siteId = generateSiteId();
   await env.DB.prepare(`
-    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, Date.now()).run();
+    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, timezone, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, timezone, Date.now()).run();
 
   // write-through KV so ingest sees the new site immediately (§5 whitelist);
   // shape must match the ingest worker's SiteConfig
@@ -387,7 +411,13 @@ async function createSite(request: Request, env: Env, owner: string): Promise<Re
     status: 'active',
   }), { expirationTtl: 300 });
 
-  return json({ site_id: siteId, name, domains, adguard_mode: adguardMode, adclient });
+  return json({ site_id: siteId, name, domains, adguard_mode: adguardMode, adclient, timezone });
+}
+
+/** The user's default timezone for new sites (users.timezone), fallback UTC. */
+async function userTimezone(env: Env, userId: string): Promise<string> {
+  const row = await env.DB.prepare('SELECT timezone FROM users WHERE user_id = ?').bind(userId).first<{ timezone: string }>();
+  return row?.timezone || 'UTC';
 }
 
 function json(data: unknown, status = 200, setCookie?: string): Response {

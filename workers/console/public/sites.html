@@ -89,6 +89,8 @@
         <select id="agmode"><option value="off">off</option><option value="loose">loose</option>
           <option value="balanced">balanced</option><option value="strict">strict</option></select></label></div>
       <div><label>AdSense client (optional)<input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
+      <div><label>Timezone <span style="color:#e0a34a">(can't be changed later)</span>
+        <select id="tz"></select></label></div>
       <p class="err" id="err"></p>
       <button type="submit">Create site</button>
     </form>
@@ -109,6 +111,12 @@
       <div class="full"><label>Description<input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
       <p class="err" id="hsMsg"></p>
       <button type="submit">Save</button>
+    </form>
+    <form class="create" id="tzSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full"><label>Default timezone for new sites
+        <select id="tzDefault"></select></label></div>
+      <p class="err" id="tzMsg"></p>
+      <button type="submit">Save default timezone</button>
     </form>
   </section>
 </main>
@@ -152,7 +160,7 @@ async function loadSites() {
         <div class="stat"><div class="v">…</div><div class="k">Visitors</div></div>
         <div class="stat"><div class="v">…</div><div class="k">Sessions</div></div>
       </div>
-      <div class="foot"><span>adguard: ${esc(s.adguard_mode)}</span><span class="badge" id="hs-${esc(s.site_id)}"></span></div>
+      <div class="foot"><span>${esc(s.timezone || 'UTC')} · adguard: ${esc(s.adguard_mode)}</span><span class="badge" id="hs-${esc(s.site_id)}"></span></div>
     </a>`).join('') + '</div>';
 
   // fetch each site's overview in parallel and fill its card
@@ -172,6 +180,36 @@ async function loadSites() {
 }
 document.getElementById('period').addEventListener('change', loadSites);
 
+// --- timezones -------------------------------------------------------------
+const TZ_LIST = (() => {
+  try { return Intl.supportedValuesOf('timeZone'); } catch {
+    return ['UTC','Asia/Shanghai','Asia/Hong_Kong','Asia/Tokyo','Asia/Singapore','Asia/Kolkata',
+            'Europe/London','Europe/Paris','Europe/Berlin','America/New_York','America/Chicago',
+            'America/Los_Angeles','America/Sao_Paulo','Australia/Sydney'];
+  }
+})();
+const browserTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } })();
+function fillTzSelect(sel, selected) {
+  sel.innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"${z === selected ? ' selected' : ''}>${esc(z)}</option>`).join('');
+}
+let userTz = 'UTC';
+async function loadUserTz() {
+  try { userTz = (await (await fetch('/api/me')).json()).timezone || browserTz || 'UTC'; } catch { userTz = browserTz || 'UTC'; }
+  if (!TZ_LIST.includes(userTz)) userTz = 'UTC';
+  fillTzSelect(document.getElementById('tz'), userTz);            // new-site form default
+  fillTzSelect(document.getElementById('tzDefault'), userTz);     // settings panel
+}
+document.getElementById('tzSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const tz = document.getElementById('tzDefault').value;
+  const r = await guard(await fetch('/api/settings/timezone', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ timezone: tz }),
+  }));
+  const el = document.getElementById('tzMsg');
+  if (r.ok) { userTz = tz; fillTzSelect(document.getElementById('tz'), tz); el.style.color = '#6ee7a0'; el.textContent = 'saved'; }
+  else { el.style.color = ''; el.textContent = 'save failed'; }
+});
+
 document.getElementById('create').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = {
@@ -179,6 +217,7 @@ document.getElementById('create').addEventListener('submit', async (e) => {
     domains: document.getElementById('domains').value.split(',').map((d) => d.trim()).filter(Boolean),
     adguard_mode: document.getElementById('agmode').value,
     adclient: document.getElementById('adclient').value.trim() || undefined,
+    timezone: document.getElementById('tz').value,
   };
   const r = await guard(await fetch('/api/sites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
   const data = await r.json();
@@ -226,6 +265,7 @@ document.getElementById('homeSettings').addEventListener('submit', async (e) => 
 
 loadSites();
 loadHomeSettings();
+loadUserTz();
 </script>
 </body>
 </html>

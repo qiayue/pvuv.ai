@@ -1,50 +1,80 @@
 /**
  * Hourly rollup (PROJECT_PLAN.md §9.1, §9.3, §18.4).
  *
- * Recomputes the current UTC day's rollup_page_daily / rollup_source_daily /
- * rollup_site_daily from raw events + sessions (idempotent INSERT OR REPLACE
- * keyed by the tables' primary keys — safe to run every hour). The first
- * runs after midnight also recompute yesterday to absorb late events.
+ * Recomputes each site's rollup_page_daily / rollup_source_daily /
+ * rollup_site_daily for its recent LOCAL calendar days, from raw events +
+ * sessions. Every rollup row's `day` is the site's local day (in the site's
+ * fixed timezone), because unique-visitor counts can't be re-bucketed into a
+ * different timezone after the fact — so the timezone is chosen at site
+ * creation and the daily buckets follow it.
  *
- * Clean bucket = verdict NOT IN ('bot','crawler') (§9.3: suspect is counted
- * but flagged; dashboards default to clean and can switch).
+ * Idempotent (INSERT OR REPLACE keyed by the tables' primary keys), so it is
+ * safe to run hourly. Each run recomputes the site's local today + yesterday
+ * to keep the current day fresh and settle the just-closed day. A local day's
+ * UTC span can straddle a month boundary, so events are read from a UNION of
+ * the covering monthly partitions.
+ *
+ * Clean bucket = verdict NOT IN ('bot','crawler') (§9.3).
  */
 
 import type { Env } from './index';
+import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
+import { monthSuffix, eventsTableName } from '../../../shared/events';
 
 export async function runHourlyRollup(env: Env): Promise<void> {
-  const now = new Date();
-  const days = [dayStr(now)];
-  if (now.getUTCHours() < 2) days.push(dayStr(new Date(now.getTime() - 86400e3)));
+  const now = Date.now();
+  const existing = await existingEventTables(env.DB);
 
-  for (const day of days) {
-    await rollupDay(env.DB, day);
+  const sites = await env.DB
+    .prepare("SELECT site_id, COALESCE(timezone, 'UTC') AS timezone FROM sites WHERE status = 'active'")
+    .all<{ site_id: string; timezone: string }>();
+
+  for (const site of sites.results) {
+    const tz = site.timezone || 'UTC';
+    const t = localYMD(now, tz);
+    const yday = addDays(t.y, t.m0, t.d, -1);
+    for (const ymd of [t, yday]) {
+      const span = localDaySpan(tz, ymd.y, ymd.m0, ymd.d);
+      await rollupSiteDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing);
+    }
   }
 }
 
-function dayStr(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+/** All existing events_YYYYMM partitions. */
+async function existingEventTables(db: D1Database): Promise<Set<string>> {
+  const rows = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'events_[0-9][0-9][0-9][0-9][0-9][0-9]'")
+    .all<{ name: string }>();
+  return new Set(rows.results.map((r) => r.name));
 }
 
-async function rollupDay(db: D1Database, day: string): Promise<void> {
-  const table = `events_${day.slice(0, 7).replace('-', '')}`;
-  const exists = await db
-    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?")
-    .bind(table)
-    .first();
-  if (!exists) return;
+/** Monthly partitions covering a UTC [start, end) span that actually exist. */
+function tablesForSpan(startTs: number, endTs: number, existing: Set<string>): string[] {
+  const months = new Set([monthSuffix(startTs), monthSuffix(endTs - 1)]);
+  return [...months].map(eventsTableName).filter((t) => existing.has(t));
+}
 
-  // day filter on the indexed ts column (UTC midnight bounds), not strftime()
-  const start = Date.parse(`${day}T00:00:00Z`);
-  const end = start + 86400e3;
+/** A UNION-ALL subquery over the span's partitions, scoped to one site. */
+function eventSpan(tables: string[], cols: string, siteId: string, startTs: number, endTs: number):
+  { sql: string; binds: unknown[] } {
+  const parts = tables.map((t) => `SELECT ${cols} FROM ${t} WHERE site_id = ? AND ts >= ? AND ts < ?`);
+  return { sql: `(${parts.join(' UNION ALL ')})`, binds: tables.flatMap(() => [siteId, startTs, endTs]) };
+}
+
+async function rollupSiteDay(
+  db: D1Database, siteId: string, day: string, startTs: number, endTs: number, existing: Set<string>,
+): Promise<void> {
+  const tables = tablesForSpan(startTs, endTs, existing);
+  if (tables.length === 0) return; // no events partition for this day yet
 
   const stmts: D1PreparedStatement[] = [];
 
   // --- rollup_page_daily ---------------------------------------------------
+  const pageEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict, hostname, path, duration_ms', siteId, startTs, endTs);
   stmts.push(db.prepare(`
     INSERT OR REPLACE INTO rollup_page_daily
       (site_id, day, hostname, path, pv, uv, sessions, bounces, total_duration_ms, pv_clean, uv_clean)
-    SELECT site_id, ?1, hostname, path,
+    SELECT site_id, ?, hostname, path,
       SUM(event = 'pageview'),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END),
@@ -52,14 +82,12 @@ async function rollupDay(db: D1Database, day: string): Promise<void> {
       SUM(CASE WHEN event = 'page_leave' THEN COALESCE(duration_ms, 0) ELSE 0 END),
       SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')),
       COUNT(DISTINCT CASE WHEN event = 'pageview' AND verdict NOT IN ('bot','crawler') THEN visitor_id END)
-    FROM ${table}
-    WHERE ts >= ?2 AND ts < ?3
+    FROM ${pageEv.sql}
     GROUP BY site_id, hostname, path
-  `).bind(day, start, end));
+  `).bind(day, ...pageEv.binds));
 
-  // bounces are a session-level fact attributed to the entry page (§9.3);
-  // match on hostname too so a shared path on a multi-hostname site doesn't
-  // get the same bounce count written into every hostname's row
+  // bounces: session-level, attributed to (hostname, entry_page); scoped to
+  // this site + local day
   stmts.push(db.prepare(`
     UPDATE rollup_page_daily SET bounces = (
       SELECT COUNT(*) FROM sessions s
@@ -67,16 +95,16 @@ async function rollupDay(db: D1Database, day: string): Promise<void> {
         AND s.entry_page = rollup_page_daily.path
         AND (s.entry_host = rollup_page_daily.hostname OR s.entry_host IS NULL)
         AND s.is_bounce = 1
-        AND s.started_at >= ?2 AND s.started_at < ?3
+        AND s.started_at >= ? AND s.started_at < ?
     )
-    WHERE day = ?1
-  `).bind(day, start, end));
+    WHERE site_id = ? AND day = ?
+  `).bind(startTs, endTs, siteId, day));
 
-  // --- rollup_source_daily (session-attributed dimensions) ------------------
+  // --- rollup_source_daily (from sessions) ---------------------------------
   stmts.push(db.prepare(`
     INSERT OR REPLACE INTO rollup_source_daily
       (site_id, day, source, medium, campaign, pv, uv, sessions, conversions, revenue_usd, pv_clean, uv_clean)
-    SELECT site_id, ?1,
+    SELECT site_id, ?,
       COALESCE(source, '(direct)'), COALESCE(medium, ''), COALESCE(campaign, ''),
       SUM(pageviews),
       COUNT(DISTINCT visitor_id),
@@ -85,18 +113,17 @@ async function rollupDay(db: D1Database, day: string): Promise<void> {
       SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN pageviews ELSE 0 END),
       COUNT(DISTINCT CASE WHEN verdict NOT IN ('bot','crawler') THEN visitor_id END)
     FROM sessions
-    WHERE started_at >= ?2 AND started_at < ?3
+    WHERE site_id = ? AND started_at >= ? AND started_at < ?
     GROUP BY site_id, COALESCE(source, '(direct)'), COALESCE(medium, ''), COALESCE(campaign, '')
-  `).bind(day, start, end));
+  `).bind(day, siteId, startTs, endTs));
 
-  // --- rollup_site_daily -----------------------------------------------------
-  // event-derived totals + verdict split (pageview events, §11.3 crawler kept
-  // separate from bot share)
+  // --- rollup_site_daily ---------------------------------------------------
+  const siteEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict', siteId, startTs, endTs);
   stmts.push(db.prepare(`
     INSERT OR REPLACE INTO rollup_site_daily
       (site_id, day, pv, uv, sessions, bounce_rate, avg_duration_ms,
        bot_count, suspect_count, crawler_count, clean_count, conversions, revenue_usd)
-    SELECT site_id, ?1,
+    SELECT site_id, ?,
       SUM(event = 'pageview'),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END),
@@ -106,28 +133,23 @@ async function rollupDay(db: D1Database, day: string): Promise<void> {
       SUM(event = 'pageview' AND verdict = 'crawler'),
       SUM(event = 'pageview' AND verdict = 'clean'),
       0, 0
-    FROM ${table}
-    WHERE ts >= ?2 AND ts < ?3
+    FROM ${siteEv.sql}
     GROUP BY site_id
-  `).bind(day, start, end));
+  `).bind(day, ...siteEv.binds));
 
-  // session-derived metrics (bounce rate §9.3 inverse definition, avg dwell)
+  // session-derived metrics (bounce rate §9.3, avg dwell)
   stmts.push(db.prepare(`
     UPDATE rollup_site_daily SET
       bounce_rate = (
         SELECT ROUND(AVG(CASE WHEN s.is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4)
-        FROM sessions s
-        WHERE s.site_id = rollup_site_daily.site_id
-          AND s.started_at >= ?2 AND s.started_at < ?3
+        FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       ),
       avg_duration_ms = (
         SELECT CAST(AVG(s.duration_ms) AS INTEGER)
-        FROM sessions s
-        WHERE s.site_id = rollup_site_daily.site_id
-          AND s.started_at >= ?2 AND s.started_at < ?3
+        FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       )
-    WHERE day = ?1
-  `).bind(day, start, end));
+    WHERE site_id = ? AND day = ?
+  `).bind(siteId, startTs, endTs, siteId, startTs, endTs, siteId, day));
 
   await db.batch(stmts);
 }
