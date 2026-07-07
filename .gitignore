@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# ---- Editor / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

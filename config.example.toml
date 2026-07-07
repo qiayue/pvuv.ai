@@ -1,0 +1,88 @@
+# pvuv.ai — scoring configuration (EXAMPLE)
+#
+# Copy to `config.local.toml` (gitignored) and tune privately.
+# The scoring engine reads weights/thresholds from here, not from hardcoded
+# values, so you can adjust detection WITHOUT exposing your tuning to
+# fraudsters. The values below are conservative starting defaults, not
+# production-tuned. See PROJECT_PLAN.md §6 and §21.
+#
+# NOTE: This file contains NO secrets. Secrets (HMAC_KEY, AI_API_KEY, etc.)
+# go through `wrangler secret put`, never into any file.
+
+# ------------------------------------------------------------------
+# Verdict bands — bot_score (0–100) maps to a verdict
+# ------------------------------------------------------------------
+[bands]
+clean_max   = 29     # 0..29   -> clean
+suspect_max = 69     # 30..69  -> suspect
+# 70..100 -> bot
+# verified crawlers are classified separately, regardless of score
+
+# ------------------------------------------------------------------
+# Signal weights — added to bot_score when the signal fires.
+# "hard" signals force score = 100 (definitive bot).
+# Negative values are trust credits (subtracted).
+# Bit values correspond to bot_flags (see shared/flags.ts).
+# ------------------------------------------------------------------
+[weights]
+webdriver              = "hard"   # 0x0001 navigator.webdriver === true
+automation_residue     = "hard"   # 0x0002 _phantom / __nightmare / $cdc_* / callPhantom
+ua_clienthints_mismatch = 25      # 0x0004 UA vs Sec-CH-UA contradiction
+datacenter_asn         = 35       # 0x0008 request from a hosting/datacenter ASN
+sec_fetch_missing      = 25       # 0x0010 Sec-Fetch-* headers absent
+timezone_ip_mismatch   = 20       # 0x0020 JS timezone vs IP geo / cf.timezone
+zero_interaction_noleave = 20     # 0x0040 no interaction AND no page_leave
+software_webgl         = 15       # 0x0080 SwiftShader / llvmpipe / Mesa OffScreen
+mechanical_timing      = 15       # 0x0100 near-zero inter-event interval CV
+blocklist_cluster      = 40       # 0x0200 matches a KV-blocklisted cluster
+honeypot               = "hard"   # 0x0400 hidden honeypot link followed
+screen_device_mismatch = 10       # 0x0800 per contradiction (screen / touch / cores)
+mobile_no_motion       = 15       # 0x1000 mobile UA but no motion data (Android)
+motion_static          = 10       # 0x2000 accel-incl-gravity perfectly constant
+
+[trust_credits]
+# Subtracted from bot_score (make legit traffic look cleaner).
+residential_or_mobile_asn = 10
+has_interaction           = 10
+has_page_leave            = 10
+
+# ------------------------------------------------------------------
+# Detection toggles
+# ------------------------------------------------------------------
+[detection]
+expensive_checks_enabled   = true   # canvas/WebGL via requestIdleCallback
+expensive_checks_sample    = 1.0    # 0.0–1.0 sampling rate for expensive checks
+mobile_sensors_enabled     = true   # Android-only, passive, coarse (see §4.6)
+honeypot_enabled           = true
+
+# ------------------------------------------------------------------
+# Population / batch analysis thresholds (daily Cron)
+# ------------------------------------------------------------------
+[population]
+fp_cluster_min_visitors    = 20     # fp_hash shared by >= N visitor_ids -> flag
+ip24_share_threshold       = 0.30   # a /24 contributing >= 30% of site traffic -> flag
+interval_cv_bot_ceiling    = 0.20   # per-visitor interval CV <= this -> mechanical
+path_signature_min_count   = 50     # identical path+dwell signature repeated >= N -> flag
+baseline_deviation_sigma   = 4.0    # MAD-based deviation to raise an anomaly
+
+# ------------------------------------------------------------------
+# Cross-site blocklist behavior
+# ------------------------------------------------------------------
+[blocklist]
+default_ttl_days           = 14     # entries expire unless refreshed by new evidence
+hard_signal_permanent      = true   # webdriver/automation/honeypot -> no expiry
+share_bare_ip              = false  # prefer fingerprint+behavior over raw IP (CGNAT safety)
+
+# ------------------------------------------------------------------
+# Ad protection (adguard) defaults — per-site owners can override
+# ------------------------------------------------------------------
+[adguard]
+default_mode               = "balanced"  # off | loose | balanced | strict | custom
+verdict_timeout_ms         = 300         # /v timeout; on timeout -> fail-open (load ads)
+shadow_days                = 7           # new sites: record-only before enforcing
+
+# ------------------------------------------------------------------
+# Data retention
+# ------------------------------------------------------------------
+[retention]
+raw_events_days            = 90     # raw events kept for drill-down; older -> aggregates only
