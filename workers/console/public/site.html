@@ -38,7 +38,22 @@
 <body>
 <header>
   <a href="/sites.html">← sites</a><b id="title">…</b>
-  <select id="period"><option value="7d">7 days</option><option value="30d" selected>30 days</option><option value="90d">90 days</option></select>
+  <select id="period" aria-label="Date range">
+    <optgroup label="Rolling">
+      <option value="today">Today</option>
+      <option value="7d">Last 7 days</option>
+      <option value="30d" selected>Last 30 days</option>
+      <option value="90d">Last 90 days</option>
+    </optgroup>
+    <optgroup label="Calendar">
+      <option value="yesterday">Yesterday</option>
+      <option value="this_week">This week</option>
+      <option value="last_week">Last week</option>
+      <option value="this_month">This month</option>
+      <option value="last_month">Last month</option>
+      <option value="this_year">This year</option>
+    </optgroup>
+  </select>
 </header>
 <main>
   <div class="cards" id="cards"></div>

@@ -21,17 +21,60 @@ export interface Period {
   endTs: number; // exclusive
 }
 
+const DAY_MS = 86400e3;
+
+/** UTC start-of-week (Monday) for a UTC-midnight date. */
+function weekStart(d: Date): Date {
+  const dow = (d.getUTCDay() + 6) % 7; // 0 = Monday
+  return new Date(d.getTime() - dow * DAY_MS);
+}
+
+/**
+ * Resolve a period token to an inclusive UTC day range (all analytics are
+ * keyed on UTC days, matching the daily rollups). Supports rolling windows
+ * (`7d`/`30d`/`90d`, up to 730d) and calendar presets: today, yesterday,
+ * this_week, last_week, this_month, last_month, this_year.
+ */
 export function parsePeriod(raw: string | null): Period {
-  const m = (raw ?? '').match(/^(\d{1,3})d$/);
-  const days = Math.min(m ? parseInt(m[1], 10) : 30, 365) || 30;
   const now = new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const start = new Date(end.getTime() - (days - 1) * 86400e3);
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const token = (raw ?? '30d').toLowerCase();
+
+  let start = today;
+  let end = today;
+
+  const rolling = token.match(/^(\d{1,4})d$/);
+  if (rolling) {
+    const days = Math.min(parseInt(rolling[1], 10) || 30, 730);
+    start = new Date(today.getTime() - (days - 1) * DAY_MS);
+  } else {
+    const y = today.getUTCFullYear();
+    const mo = today.getUTCMonth();
+    switch (token) {
+      case 'today': break;
+      case 'yesterday': start = end = new Date(today.getTime() - DAY_MS); break;
+      case 'this_week': start = weekStart(today); break;
+      case 'last_week': {
+        const ws = weekStart(today);
+        end = new Date(ws.getTime() - DAY_MS);
+        start = new Date(ws.getTime() - 7 * DAY_MS);
+        break;
+      }
+      case 'this_month': start = new Date(Date.UTC(y, mo, 1)); break;
+      case 'last_month':
+        start = new Date(Date.UTC(y, mo - 1, 1));
+        end = new Date(Date.UTC(y, mo, 1) - DAY_MS);
+        break;
+      case 'this_year': start = new Date(Date.UTC(y, 0, 1)); break;
+      default: start = new Date(today.getTime() - 29 * DAY_MS); // 30d
+    }
+  }
+
   return {
     start: dayStr(start),
     end: dayStr(end),
     startTs: start.getTime(),
-    endTs: end.getTime() + 86400e3,
+    endTs: end.getTime() + DAY_MS,
   };
 }
 
