@@ -12,10 +12,11 @@
  *   GET  /api/sites/:id/(overview|timeseries|breakdown|quality|traffic)
  *   GET  /api/sites/:id/visitors/:vid/profile
  *
- * M1 auth: single owner account — ADMIN_EMAIL is a plain var; the password
- * comes ONLY from `wrangler secret put ADMIN_PASSWORD` (§22: no secrets in
- * files). Sessions are HMAC-signed cookies; queries reuse the api worker's
- * query layer against the same D1.
+ * Auth: OAuth-only (Google / GitHub). Single-tenant — every email in
+ * ADMIN_EMAILS (a plain var, comma-separated) shares one 'admin' owner and
+ * one site list; non-admin emails are refused. Sessions are HMAC-signed
+ * cookies, re-issued (sliding expiry) on any authenticated API hit. Queries
+ * reuse the api worker's query layer against the same D1.
  */
 
 import { parsePeriod, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from '../../api/src/queries';
@@ -23,7 +24,7 @@ import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
 import {
-  isProvider, configuredProviders, oauthStart, oauthCallback, isEmailAllowed,
+  isProvider, configuredProviders, oauthStart, oauthCallback,
   clearStateCookie, OAuthError,
 } from './oauth';
 
@@ -33,12 +34,10 @@ export interface Env {
   ASSETS: Fetcher;
   /** Secrets via `wrangler secret put` — never in any file. */
   HMAC_KEY: string;
-  ADMIN_PASSWORD: string;
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_SECRET?: string;
   /** Plain vars (workers/console/wrangler.toml [vars]) */
-  ADMIN_EMAIL: string;
-  ALLOWED_EMAILS?: string;
+  ADMIN_EMAILS: string;
   GOOGLE_CLIENT_ID?: string;
   GITHUB_CLIENT_ID?: string;
 }
@@ -50,13 +49,23 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) {
+      let resp: Response;
       try {
-        return await api(request, env, url);
+        resp = await api(request, env, url);
       } catch (err) {
         if (err instanceof ApiError) return json({ error: err.message }, err.status);
         console.error('console api error', err);
         return json({ error: 'internal error' }, 500);
       }
+      // sliding session: any authenticated API hit (which every open console
+      // page makes) re-issues the cookie with a fresh 7-day expiry, so the
+      // session stays alive as long as the dashboard is in use. Skip when the
+      // response already sets a cookie (login / logout / oauth callback).
+      if (!resp.headers.has('set-cookie')) {
+        const user = await verifySession(env.HMAC_KEY, request.headers.get('cookie'));
+        if (user) resp.headers.append('set-cookie', await sessionCookie(env, user));
+      }
+      return resp;
     }
     if (url.pathname === '/' || url.pathname === '/index.html') {
       return homepage(request, env);
@@ -149,15 +158,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ name: s.site_name, description: s.site_description });
   }
 
-  if (request.method === 'POST' && path === '/api/login') return login(request, env);
-
   if (request.method === 'POST' && path === '/api/logout') {
     return json({ ok: true }, 200, serializeCookie(SESSION_COOKIE, '', { maxAgeSeconds: 0, httpOnly: true }));
   }
 
-  // which login methods this deployment offers (login.html renders buttons)
+  // which login providers this deployment offers (login.html renders buttons)
   if (request.method === 'GET' && path === '/api/auth/providers') {
-    return json({ password: !!env.ADMIN_PASSWORD, providers: configuredProviders(env) });
+    return json({ providers: configuredProviders(env) });
   }
 
   // OAuth: /api/auth/:provider/start → redirect; /callback → set session
@@ -280,35 +287,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
-// login / session
+// login / session — OAuth only (Google / GitHub); no password login
 // ---------------------------------------------------------------------------
 
-async function login(request: Request, env: Env): Promise<Response> {
-  if (!env.HMAC_KEY || !env.ADMIN_PASSWORD || !env.ADMIN_EMAIL) {
-    console.error('HMAC_KEY / ADMIN_PASSWORD secrets or ADMIN_EMAIL var not set');
-    return json({ error: 'server not configured' }, 500);
-  }
-  let body: { email?: string; password?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: 'bad json' }, 400);
-  }
-
-  // constant-time-ish compares via HMAC (never compare secrets directly)
-  const [pwGot, pwWant] = await Promise.all([
-    hmacSign(env.HMAC_KEY, `pw|${body.password ?? ''}`),
-    hmacSign(env.HMAC_KEY, `pw|${env.ADMIN_PASSWORD}`),
-  ]);
-  const emailOk = (body.email ?? '').toLowerCase() === env.ADMIN_EMAIL.toLowerCase();
-  if (!emailOk || pwGot !== pwWant) return json({ error: 'invalid credentials' }, 401);
-
-  const userId = await resolveUser(env, env.ADMIN_EMAIL, 'Owner');
-  return json({ ok: true, user: userId }, 200, await sessionCookie(env, userId));
-}
-
-// OAuth callback: verify + exchange, gate by allowlist, issue a session, then
-// redirect the browser back into the console (errors bounce to the login page)
+// OAuth callback: verify + exchange, gate by the admin allowlist, issue a
+// session, then redirect back into the console (errors bounce to /login.html).
 async function oauthCallbackHandler(request: Request, env: Env, url: URL, provider: 'google' | 'github'): Promise<Response> {
   let identity;
   try {
@@ -317,8 +300,10 @@ async function oauthCallbackHandler(request: Request, env: Env, url: URL, provid
     const code = e instanceof OAuthError ? e.code : 'oauth_failed';
     return redirect('/login.html?error=' + encodeURIComponent(code), clearStateCookie());
   }
-  if (!isEmailAllowed(env, identity.email)) {
-    return redirect('/login.html?error=not_allowed', clearStateCookie());
+  // single-tenant: only configured admin emails may sign in (§ open-source
+  // note: this build is single-tenant — all admins share one site list)
+  if (!isAdminEmail(env, identity.email)) {
+    return redirect('/login.html?error=not_admin', clearStateCookie());
   }
   const userId = await resolveUser(env, identity.email, identity.name ?? identity.email);
   const setSession = await sessionCookie(env, userId);
@@ -329,16 +314,24 @@ async function oauthCallbackHandler(request: Request, env: Env, url: URL, provid
   });
 }
 
-/** Map a verified email to a stable user_id; the owner keeps 'admin' so
- *  existing sites stay attached. Upserts the users row. */
+/** Single-tenant: every admin email maps to the SAME 'admin' owner, so all
+ *  configured admins share one site list. Records who signed in (by email)
+ *  in the users table for reference. */
 async function resolveUser(env: Env, email: string, name: string): Promise<string> {
-  const isOwner = env.ADMIN_EMAIL && email.toLowerCase() === env.ADMIN_EMAIL.toLowerCase();
-  const userId = isOwner ? ADMIN_USER_ID : `email:${email.toLowerCase()}`;
   await env.DB.prepare(`
     INSERT INTO users (user_id, email, name, created_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, name = excluded.name
-  `).bind(userId, email.toLowerCase(), name.slice(0, 100), Date.now()).run();
-  return userId;
+  `).bind(ADMIN_USER_ID, email.toLowerCase(), name.slice(0, 100), Date.now()).run();
+  return ADMIN_USER_ID;
+}
+
+/** True when the email is one of the configured admin emails (ADMIN_EMAILS,
+ *  comma-separated). Case-insensitive. */
+function isAdminEmail(env: Env, email: string): boolean {
+  const e = email.toLowerCase();
+  return (env.ADMIN_EMAILS ?? '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    .includes(e);
 }
 
 /** Build the signed session Set-Cookie header (format verified by api/auth.ts). */

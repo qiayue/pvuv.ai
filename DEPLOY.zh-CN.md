@@ -89,7 +89,9 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 - `workers/console/wrangler.toml` → `pattern = "example.com/*", zone_name = "example.com"`
   （也可以用 `console.example.com/*` 这样的子域，但需要相应调整嵌入代码里的
   `data-api`，见第 9 步）
-- `workers/console/wrangler.toml` 的 `[vars] ADMIN_EMAIL` → 你的登录邮箱。
+- `workers/console/wrangler.toml` 的 `[vars] ADMIN_EMAILS` → 你的管理员邮箱
+  (逗号分隔多个)。本版本是**单租户**:列表里的所有人共享同一个站点列表(你
+  自己的站点),其他人一律拒绝。登录只走 OAuth——第 7 步配置渠道。
 
 路由只对经过 Cloudflare 代理的主机名生效。如果 `in.`、`api.` 还没有 DNS 记录，
 在 Cloudflare DNS 面板加占位记录：类型 `AAAA`、名称 `in`（以及 `api`）、内容
@@ -116,15 +118,22 @@ cookie 要由 api 验证，ingest 签发 `_pv_v` 判定 cookie：
 ```bash
 openssl rand -base64 32        # 生成一个密钥，下面三处复用同一个值
 
-npx wrangler secret put HMAC_KEY       -c workers/ingest/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/api/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml
-npx wrangler secret put API_TOKEN      -c workers/api/wrangler.toml      # 外部系统服务端调 API 用
-npx wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml  # 控制台登录密码
+npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml   # 外部系统服务端调 API 用
 ```
 
 密钥即时生效，不用重新部署。`HMAC_KEY` 没设置之前，`/in` 和 `/v` 会刻意返回
 500，而不是带着空密钥运行。
+
+**控制台登录只走 OAuth**——必须先配置 Google 和/或 GitHub 才能登录(下一节详述)。
+以 Google 为例最少要:
+
+```bash
+# 在 workers/console/wrangler.toml 的 [vars] 里设 GOOGLE_CLIENT_ID,然后:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+```
 
 ## 8. 构建并托管 SDK
 
@@ -143,7 +152,8 @@ npm run deploy:console
 
 ## 9. 注册第一个站点
 
-1. 打开 `https://example.com/login.html`，用 `ADMIN_EMAIL` + `ADMIN_PASSWORD` 登录。
+1. 打开 `https://example.com/login.html`，用 Google 或 GitHub 登录(邮箱须在
+   `ADMIN_EMAILS` 里)。
 2. 在 **Add a site** 填：站点名、被统计站点的域名（如
    `blog.example.org, www.blog.example.org`）、adguard 模式、可选的 AdSense id。
 3. 复制生成的嵌入代码，形如：
@@ -188,15 +198,16 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 - **一小时内**：指标卡/趋势图/各维度表填充——它们读预聚合表，cron 每小时
   `:05` 重算。
 
-## 可选:Google / GitHub 登录
+## Google / GitHub 登录(必需)
 
-控制台支持密码登录(仅站主),以及可选的 Google、GitHub 社交登录。某个渠道只有
-在其 client id 和 secret 都设置后,才会出现在登录页。
+控制台**只支持 OAuth 登录**——用 Google 和/或 GitHub,没有密码登录。某个渠道
+只有在其 client id 和 secret 都设置后才会出现在登录页,所以你至少要配一个。
 
-**访问由邮箱白名单控制**——OAuth 是身份认证,不是开放注册。`ADMIN_EMAIL` 永远
-允许;其他人加进 `workers/console/wrangler.toml` 的 `ALLOWED_EMAILS`(逗号分隔)。
-身份以验证过的邮箱为准,所以同一邮箱用 Google 或 GitHub 登录是同一个账号;
-`ADMIN_EMAIL` 映射到站主及其已建站点。
+**单租户 / 管理员白名单。** OAuth 是身份认证,不是开放注册。只有
+`workers/console/wrangler.toml` 里 `ADMIN_EMAILS`(逗号分隔)列出的邮箱能登录,
+其他人一律以「非管理员」拒绝。所有管理员共享**同一个**站点列表(你自己的站点)
+——身份以验证过的邮箱为准,同一邮箱用 Google 或 GitHub 登录是同一个账号。
+(让陌生人各自注册独立账号的真·多租户,不在这个开源版范围内。)
 
 **Google:** 在 [Google Cloud Console](https://console.cloud.google.com/) →
 API 和服务 → 凭据,创建 OAuth 客户端(类型:Web 应用),授权重定向 URI 填
@@ -246,7 +257,7 @@ npm run deploy:console
 | `/in` 返回 204 但没数据 | 页面 `Origin` 与站点 `allowed_domains` 不匹配（按设计静默丢弃）——检查注册的域名；站点信息修改后 KV 缓存最多 5 分钟刷新 |
 | `/in` 返回 403 | 请求没有 `Origin`/`Referer` 头（服务器直发会被拒） |
 | 指标卡空但钻取有数据 | rollup 每小时 `:05` 跑——等下一轮 |
-| 控制台登录失败 | `ADMIN_PASSWORD` 密钥或 `ADMIN_EMAIL` 变量不匹配 |
+| 无法登录 / 提示「非管理员」 | 你的邮箱不在 `ADMIN_EMAILS` 里,或没配置任何 OAuth 渠道 |
 | API 返回 401 | 缺少/错误的 `Authorization: Bearer <API_TOKEN>` 或 console 会话 cookie |
 | 部署时 Queue 报错 | Queues 需要 Workers Paid 套餐；`pvuv-ingest` 和 `pvuv-ingest-dlq` 都要先建好 |
 
@@ -269,7 +280,8 @@ npx wrangler dev -c workers/ingest/wrangler.toml -c workers/consumer/wrangler.to
 
 # console（可以开另一个终端——但同一 persist 目录不要同时跑多个 dev 会话）：
 npx wrangler dev -c workers/console/wrangler.toml --persist-to .wrangler/dev \
-  --port 8790 --var HMAC_KEY:dev-key --var ADMIN_PASSWORD:dev-pass
+  --port 8790 --var HMAC_KEY:dev-key --var ADMIN_EMAILS:you@example.com \
+  --var GOOGLE_CLIENT_ID:... --var GOOGLE_CLIENT_SECRET:...
 
 # 本地触发每小时 rollup：
 npx wrangler dev -c workers/cron/wrangler.toml --persist-to .wrangler/dev \

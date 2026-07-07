@@ -11,13 +11,20 @@
   header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid #262b36; }
   header b { font-size: 17px; }
   header button { background: none; border: 1px solid #313847; color: #8b93a1; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-  main { max-width: 860px; margin: 28px auto; padding: 0 16px; }
+  main { max-width: 960px; margin: 28px auto; padding: 0 16px; }
   h2 { font-size: 16px; margin: 26px 0 10px; }
-  .site { display: flex; justify-content: space-between; align-items: center; background: #171a21; border: 1px solid #262b36;
-          border-radius: 8px; padding: 14px 18px; margin-bottom: 10px; }
-  .site a { color: #7ab3ff; text-decoration: none; font-weight: 600; }
-  .site .dom { color: #8b93a1; font-size: 13px; }
-  .site code { color: #8b93a1; font-size: 12px; }
+  .head { display: flex; align-items: baseline; justify-content: space-between; }
+  .head select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 4px 8px; font-size: 13px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .scard { display: block; background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 16px; text-decoration: none; color: inherit; }
+  .scard:hover { border-color: #3b4457; background: #191d26; }
+  .scard .name { font-weight: 700; font-size: 15px; }
+  .scard .dom { color: #8b93a1; font-size: 12px; margin-top: 2px; word-break: break-all; }
+  .scard .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+  .scard .stat .v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .scard .stat .k { color: #8b93a1; font-size: 11px; }
+  .scard .foot { color: #8b93a1; font-size: 11.5px; margin-top: 12px; display: flex; justify-content: space-between; }
+  .scard .badge { color: #6ee7a0; }
   form.create { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 18px; display: grid; gap: 10px;
                 grid-template-columns: 1fr 1fr; }
   form.create label { font-size: 13px; color: #8b93a1; display: block; }
@@ -32,7 +39,14 @@
 <body>
 <header><b>pvuv.ai</b><a href="/health.html" style="color:#7ab3ff;text-decoration:none;font-size:13px">Self-check</a><button id="logout" style="margin-left:auto">Sign out</button></header>
 <main>
-  <h2>Your sites</h2>
+  <div class="head">
+    <h2>Your sites</h2>
+    <select id="period">
+      <option value="7d">last 7 days</option>
+      <option value="30d" selected>last 30 days</option>
+      <option value="90d">last 90 days</option>
+    </select>
+  </div>
   <div id="sites">loading…</div>
 
   <h2>Homepage settings</h2>
@@ -67,20 +81,46 @@
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+const dur = (ms) => ms == null ? '–' : ms >= 60000 ? Math.floor(ms/60000)+'m '+Math.round(ms%60000/1000)+'s' : Math.round((ms||0)/1000)+'s';
+
 async function loadSites() {
+  const period = document.getElementById('period').value;
   const r = await guard(await fetch('/api/sites'));
   const { sites } = await r.json();
   const el = document.getElementById('sites');
   if (!sites.length) { el.innerHTML = '<p style="color:#8b93a1">No sites yet — add one below.</p>'; return; }
-  el.innerHTML = sites.map((s) => `
-    <div class="site">
-      <div>
-        <a href="/site.html?id=${esc(s.site_id)}">${esc(s.name)}</a>
-        <div class="dom">${esc(JSON.parse(s.allowed_domains).join(', '))} · adguard: ${esc(s.adguard_mode)}</div>
+
+  // one card per site, each showing its own overview so all sites' numbers
+  // are visible at a glance on this page; click a card for the full dashboard
+  el.innerHTML = '<div class="cards">' + sites.map((s) => `
+    <a class="scard" href="/site.html?id=${esc(s.site_id)}" data-id="${esc(s.site_id)}">
+      <div class="name">${esc(s.name)}</div>
+      <div class="dom">${esc(JSON.parse(s.allowed_domains).join(', '))}</div>
+      <div class="stats" id="st-${esc(s.site_id)}">
+        <div class="stat"><div class="v">…</div><div class="k">Pageviews</div></div>
+        <div class="stat"><div class="v">…</div><div class="k">Visitors</div></div>
+        <div class="stat"><div class="v">…</div><div class="k">Sessions</div></div>
       </div>
-      <code>${esc(s.site_id)}</code>
-    </div>`).join('');
+      <div class="foot"><span>adguard: ${esc(s.adguard_mode)}</span><span class="badge" id="hs-${esc(s.site_id)}"></span></div>
+    </a>`).join('') + '</div>';
+
+  // fetch each site's overview in parallel and fill its card
+  await Promise.all(sites.map(async (s) => {
+    try {
+      const o = await (await fetch(`/api/sites/${s.site_id}/overview?period=${period}`)).json();
+      const human = o.pv ? (((o.clean_count + o.suspect_count) / o.pv) * 100).toFixed(0) : 0;
+      document.getElementById('st-' + s.site_id).innerHTML = `
+        <div class="stat"><div class="v">${fmt(o.pv)}</div><div class="k">Pageviews</div></div>
+        <div class="stat"><div class="v">${fmt(o.uv)}</div><div class="k">Visitors</div></div>
+        <div class="stat"><div class="v">${fmt(o.sessions)}</div><div class="k">Sessions</div></div>`;
+      document.getElementById('hs-' + s.site_id).textContent = o.pv ? human + '% human' : 'no data yet';
+    } catch {
+      document.getElementById('hs-' + s.site_id).textContent = '';
+    }
+  }));
 }
+document.getElementById('period').addEventListener('change', loadSites);
 
 document.getElementById('create').addEventListener('submit', async (e) => {
   e.preventDefault();

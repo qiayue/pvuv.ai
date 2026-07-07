@@ -3,14 +3,13 @@
  *
  * A provider is only offered when both its client id (var) and client secret
  * (wrangler secret) are configured. Identity is keyed on the provider-verified
- * email, so signing in with Google or GitHub under the same address is the
- * same account. Access is gated by an allowlist (see isEmailAllowed) — OAuth
- * is authentication, not open registration.
+ * email; the caller gates which emails may sign in (ADMIN_EMAILS) — OAuth is
+ * authentication, not open registration.
  *
  * Secrets (never in files):
  *   GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_SECRET   (wrangler secret put)
  * Vars (workers/console/wrangler.toml [vars]):
- *   GOOGLE_CLIENT_ID, GITHUB_CLIENT_ID, ALLOWED_EMAILS (optional, comma-sep)
+ *   GOOGLE_CLIENT_ID, GITHUB_CLIENT_ID
  */
 
 import { hmacSign, hmacVerify, serializeCookie, parseCookies } from '../../../shared/ids';
@@ -19,8 +18,6 @@ export type Provider = 'google' | 'github';
 
 export interface OAuthEnv {
   HMAC_KEY: string;
-  ADMIN_EMAIL?: string;
-  ALLOWED_EMAILS?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
@@ -68,17 +65,6 @@ export function configuredProviders(env: OAuthEnv): Provider[] {
 
 function redirectUri(origin: string, p: Provider): string {
   return `${origin}/api/auth/${p}/callback`;
-}
-
-// --- allowlist -------------------------------------------------------------
-
-/** Owner (ADMIN_EMAIL) is always allowed; others must be in ALLOWED_EMAILS. */
-export function isEmailAllowed(env: OAuthEnv, email: string): boolean {
-  const e = email.toLowerCase();
-  if (env.ADMIN_EMAIL && e === env.ADMIN_EMAIL.toLowerCase()) return true;
-  const list = (env.ALLOWED_EMAILS ?? '')
-    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  return list.includes(e);
 }
 
 // --- signed state (CSRF) ---------------------------------------------------

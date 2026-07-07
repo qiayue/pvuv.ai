@@ -11,60 +11,45 @@
          display: grid; place-items: center; min-height: 100vh; }
   .card { width: min(360px, 92vw); background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 28px; }
   h1 { margin: 0 0 4px; font-size: 20px; }
-  p.sub { margin: 0 0 20px; color: #8b93a1; font-size: 13px; }
-  label { display: block; font-size: 13px; color: #8b93a1; margin: 12px 0 4px; }
-  input { width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid #313847; background: #0f1115; color: inherit; font: inherit; }
-  button { width: 100%; margin-top: 18px; padding: 10px; border: 0; border-radius: 6px; background: #3b82f6; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-  button:hover { background: #2f6fd6; }
-  .err { color: #f87171; font-size: 13px; margin-top: 10px; min-height: 1em; }
+  p.sub { margin: 0 0 22px; color: #8b93a1; font-size: 13px; }
   .oauth a { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px;
-             padding: 10px; border: 1px solid #313847; border-radius: 6px; color: inherit; text-decoration: none; font-weight: 600; }
+             padding: 11px; border: 1px solid #313847; border-radius: 6px; color: inherit; text-decoration: none; font-weight: 600; }
   .oauth a:hover { background: #1d222c; }
-  .sep { display: flex; align-items: center; gap: 10px; color: #5b6472; font-size: 12px; margin: 18px 0 4px; }
-  .sep::before, .sep::after { content: ''; flex: 1; height: 1px; background: #262b36; }
-  #pwform[hidden] { display: none; }
+  .err { color: #f87171; font-size: 13px; margin-top: 14px; min-height: 1em; }
+  .note { color: #8b93a1; font-size: 13px; margin-top: 14px; }
 </style>
 </head>
 <body>
 <div class="card">
   <h1>pvuv.ai</h1>
   <p class="sub">self-hosted analytics · sign in</p>
-
   <div class="oauth" id="oauth"></div>
-  <div class="sep" id="sep" hidden>or</div>
-
-  <form id="pwform">
-    <label for="email">Email</label>
-    <input id="email" type="email" autocomplete="username" required>
-    <label for="pw">Password</label>
-    <input id="pw" type="password" autocomplete="current-password" required>
-    <button type="submit">Sign in</button>
-  </form>
   <div class="err" id="err"></div>
 </div>
 <script>
-const ERR = { not_allowed: 'That account is not permitted to sign in.', bad_state: 'Login session expired — please try again.', no_email: 'No verified email from the provider.', token_exchange: 'OAuth exchange failed.', userinfo: 'Could not read your profile from the provider.' };
+const ERR = {
+  not_admin: 'That account is not an admin — login not allowed.',
+  bad_state: 'Login session expired — please try again.',
+  bad_request: 'Login was interrupted — please try again.',
+  no_email: 'No verified email was returned by the provider.',
+  token_exchange: 'OAuth exchange failed — check the provider configuration.',
+  userinfo: 'Could not read your profile from the provider.',
+  oauth_failed: 'Sign-in failed — please try again.',
+};
 const qerr = new URLSearchParams(location.search).get('error');
-if (qerr) document.getElementById('err').textContent = ERR[qerr] || 'Sign-in failed (' + qerr + ').';
+if (qerr) document.getElementById('err').textContent = ERR[qerr] || ('Sign-in failed (' + qerr + ').');
 
 const LABEL = { google: 'Continue with Google', github: 'Continue with GitHub' };
 fetch('/api/auth/providers').then((r) => r.json()).then((cfg) => {
   const box = document.getElementById('oauth');
-  box.innerHTML = (cfg.providers || []).map((p) => `<a href="/api/auth/${p}/start">${LABEL[p] || p}</a>`).join('');
-  const pw = document.getElementById('pwform');
-  if (!cfg.password) { pw.hidden = true; }
-  else if ((cfg.providers || []).length) document.getElementById('sep').hidden = false;
-}).catch(() => {});
-
-document.getElementById('pwform').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const r = await fetch('/api/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: email.value, password: pw.value }),
-  });
-  if (r.ok) location.href = '/sites.html';
-  else document.getElementById('err').textContent = (await r.json()).error || 'login failed';
+  const providers = cfg.providers || [];
+  if (!providers.length) {
+    box.innerHTML = '<p class="note">No login provider is configured. The deployer must set up Google or GitHub OAuth — see DEPLOY.md.</p>';
+    return;
+  }
+  box.innerHTML = providers.map((p) => `<a href="/api/auth/${p}/start">${LABEL[p] || p}</a>`).join('');
+}).catch(() => {
+  document.getElementById('err').textContent = 'Could not reach the server.';
 });
 </script>
 </body>

@@ -92,7 +92,10 @@ The route patterns default to `pvuv.ai`. Point them at your own zone:
 - `workers/console/wrangler.toml` → `pattern = "example.com/*", zone_name = "example.com"`
   (or a subdomain like `console.example.com/*` — but then adjust the embed
   snippet's `data-api`, see step 9)
-- `workers/console/wrangler.toml` `[vars] ADMIN_EMAIL` → your login email.
+- `workers/console/wrangler.toml` `[vars] ADMIN_EMAILS` → your admin email(s),
+  comma-separated. This build is **single-tenant**: everyone listed shares one
+  site list (your own sites); anyone else is refused. Login is OAuth-only —
+  you'll configure a provider in step 7.
 
 Routes only fire for hostnames proxied by Cloudflare. If `in.` / `api.` have
 no DNS records yet, add proxied placeholder records in the Cloudflare DNS
@@ -121,15 +124,22 @@ and the ingest worker signs the `_pv_v` verdict cookie:
 ```bash
 openssl rand -base64 32        # generate one key, reuse it below
 
-npx wrangler secret put HMAC_KEY       -c workers/ingest/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/api/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml
-npx wrangler secret put API_TOKEN      -c workers/api/wrangler.toml      # for external/server-side API access
-npx wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml  # console login password
+npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml   # for external/server-side API access
 ```
 
 Secrets take effect immediately; no redeploy needed. Until `HMAC_KEY` is set,
 `/in` and `/v` deliberately return 500 rather than run with a missing key.
+
+**Console login is OAuth-only** — set up Google and/or GitHub before you can
+sign in (next section covers it in detail). At minimum, for Google:
+
+```bash
+# set GOOGLE_CLIENT_ID in workers/console/wrangler.toml [vars], then:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+```
 
 ## 8. Build and host the SDK
 
@@ -149,8 +159,8 @@ npm run deploy:console
 
 ## 9. Register your first site
 
-1. Open `https://example.com/login.html`, sign in with `ADMIN_EMAIL` +
-   `ADMIN_PASSWORD`.
+1. Open `https://example.com/login.html`, sign in with Google or GitHub
+   (the email must be in `ADMIN_EMAILS`).
 2. Click **Add a site**: name, the domain(s) the site runs on
    (e.g. `blog.example.org, www.blog.example.org`), adguard mode, optional
    AdSense client id.
@@ -201,18 +211,20 @@ that `POST /in` returns **204**. Data timeline:
   the pre-aggregated rollups, which the cron worker recomputes at `:05` every
   hour.
 
-## Optional: Google / GitHub login
+## Google / GitHub login (required)
 
-The console supports password login (owner only) and, optionally, social login
-with Google and/or GitHub. A provider appears on the sign-in page only when
-both its client id and secret are set.
+The console is **OAuth-only** — sign in with Google and/or GitHub; there is no
+password login. A provider appears on the sign-in page only when both its
+client id and secret are set, so you must configure at least one.
 
-**Access is gated by an allowlist** — OAuth is authentication, not open
-registration. `ADMIN_EMAIL` is always allowed; add any additional emails to
-`ALLOWED_EMAILS` (comma-separated) in `workers/console/wrangler.toml`. A
-verified email is the identity, so signing in with Google or GitHub under the
-same address is the same account; `ADMIN_EMAIL` maps to the owner and its
-existing sites.
+**Single-tenant / admin allowlist.** OAuth is authentication, not open
+registration. Only emails listed in `ADMIN_EMAILS` (comma-separated, in
+`workers/console/wrangler.toml`) may sign in; anyone else is refused with
+"not an admin". Every admin shares **one** site list (your own sites) — a
+verified email is the identity, so Google and GitHub under the same address
+are the same account. (Running a true multi-tenant instance where strangers
+register their own separate accounts is out of scope for this open-source
+build.)
 
 **Google:** in [Google Cloud Console](https://console.cloud.google.com/) →
 APIs & Services → Credentials, create an OAuth client (type: Web application)
@@ -267,7 +279,7 @@ don't publish identical landing copy (duplicate content in search engines).
 | `/in` returns 204 but no data | The page's `Origin` host doesn't match the site's `allowed_domains` (mismatches are dropped silently by design) — check the domains you registered; note the KV site cache refreshes within 5 minutes of a site edit |
 | `/in` returns 403 | Request has no `Origin`/`Referer` header (server-to-server calls are rejected) |
 | Cards empty, drill-down has data | Rollups run hourly at `:05` — wait for the next run |
-| Console login fails | `ADMIN_PASSWORD` secret or `ADMIN_EMAIL` var mismatch |
+| Can't sign in / "not an admin" | your email isn't in `ADMIN_EMAILS`, or no OAuth provider is configured |
 | API returns 401 | Missing/wrong `Authorization: Bearer <API_TOKEN>` or console session cookie |
 | Queue errors on deploy | Queues need the Workers Paid plan; both `pvuv-ingest` and `pvuv-ingest-dlq` must exist |
 
@@ -291,7 +303,8 @@ npx wrangler dev -c workers/ingest/wrangler.toml -c workers/consumer/wrangler.to
 # console (separate terminal is fine — but stop other dev sessions using the
 # same persist dir before starting a new one):
 npx wrangler dev -c workers/console/wrangler.toml --persist-to .wrangler/dev \
-  --port 8790 --var HMAC_KEY:dev-key --var ADMIN_PASSWORD:dev-pass
+  --port 8790 --var HMAC_KEY:dev-key --var ADMIN_EMAILS:you@example.com \
+  --var GOOGLE_CLIENT_ID:... --var GOOGLE_CLIENT_SECRET:...
 
 # trigger the hourly rollup locally:
 npx wrangler dev -c workers/cron/wrangler.toml --persist-to .wrangler/dev \

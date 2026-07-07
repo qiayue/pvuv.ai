@@ -25,8 +25,11 @@ interface DiagEnv {
   DB: D1Database;
   SITE_CONFIG: KVNamespace;
   HMAC_KEY?: string;
-  ADMIN_PASSWORD?: string;
-  ADMIN_EMAIL?: string;
+  ADMIN_EMAILS?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
 }
 
 const REQUIRED_TABLES = [
@@ -86,14 +89,22 @@ export async function runDiagnostics(env: DiagEnv): Promise<Check[]> {
   // 3. secrets / vars present (presence only — never their values)
   const secretRows: Array<[string, unknown, string]> = [
     ['HMAC_KEY (secret)', env.HMAC_KEY, 'wrangler secret put HMAC_KEY -c workers/console/wrangler.toml (same value on ingest + api)'],
-    ['ADMIN_PASSWORD (secret)', env.ADMIN_PASSWORD, 'wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml'],
-    ['ADMIN_EMAIL (var)', env.ADMIN_EMAIL, 'set [vars] ADMIN_EMAIL in workers/console/wrangler.toml'],
+    ['ADMIN_EMAILS (var)', env.ADMIN_EMAILS, 'set [vars] ADMIN_EMAILS in workers/console/wrangler.toml (comma-separated)'],
   ];
   for (const [label, val, fix] of secretRows) {
     checks.push(val
       ? { key: `secret:${label}`, label, status: 'ok', detail: 'set' }
       : { key: `secret:${label}`, label, status: 'fail', detail: 'not set', fix });
   }
+
+  // login providers: at least one OAuth provider must be configured, or nobody
+  // can sign in (there is no password login)
+  const googleOk = !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+  const githubOk = !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET);
+  checks.push(googleOk || githubOk
+    ? { key: 'oauth', label: 'Login provider configured', status: 'ok', detail: `${[googleOk && 'Google', githubOk && 'GitHub'].filter(Boolean).join(' + ')} ready` }
+    : { key: 'oauth', label: 'Login provider configured', status: 'fail', detail: 'no OAuth provider set — nobody can sign in',
+        fix: 'Configure Google and/or GitHub OAuth (client id var + secret). See DEPLOY.md.' });
 
   // 4. scoring config loaded and sane
   try {

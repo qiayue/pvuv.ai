@@ -90,13 +90,16 @@ npm run config:gen
 # 4. 建表、部署、设密钥（三处 HMAC_KEY 必须是同一个值）
 npm run db:migrate:remote
 npm run deploy:all
-npx wrangler secret put HMAC_KEY       -c workers/ingest/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/api/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml
-npx wrangler secret put API_TOKEN      -c workers/api/wrangler.toml
-npx wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml
 
-# 5. 构建并托管 SDK
+# 5. 控制台登录只走 OAuth——配置 Google 和/或 GitHub
+#    (在 console/wrangler.toml [vars] 设 ADMIN_EMAILS + GOOGLE_CLIENT_ID)：
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+
+# 6. 构建并托管 SDK
 npm run build:sdk
 cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 ```

@@ -90,18 +90,21 @@ npm run config:gen
 # 4. Create the schema, deploy, set secrets (same HMAC_KEY on all three)
 npm run db:migrate:remote
 npm run deploy:all
-npx wrangler secret put HMAC_KEY       -c workers/ingest/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/api/wrangler.toml
-npx wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml
-npx wrangler secret put API_TOKEN      -c workers/api/wrangler.toml
-npx wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml
 
-# 5. Build + host the SDK
+# 5. Console login is OAuth-only — configure Google and/or GitHub
+#    (set ADMIN_EMAILS + GOOGLE_CLIENT_ID in console/wrangler.toml [vars]):
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+
+# 6. Build + host the SDK
 npm run build:sdk
 cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 ```
 
-Then sign in at your console domain, register a site, and embed the snippet it prints. Details, DNS notes, verification steps, and troubleshooting: [`DEPLOY.md`](./DEPLOY.md).
+Then sign in at your console domain with Google/GitHub (your email must be in `ADMIN_EMAILS`), register a site, and embed the snippet it prints. Details, OAuth setup, DNS notes, verification, and troubleshooting: [`DEPLOY.md`](./DEPLOY.md).
 
 ## Add it to a site
 
