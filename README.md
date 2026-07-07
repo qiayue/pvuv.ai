@@ -124,7 +124,7 @@ Scoring weights, verdict thresholds, and the blocklist are **tunable and deploym
 
 ## Attribution
 
-Deployments ship with a minimal default homepage whose footer links to [pvuv.ai](https://pvuv.ai) and this GitHub repository — on the deployed instance's **homepage only** (dashboard and inner pages carry no links, and nothing is ever injected into the websites you measure). You are welcome to replace the default homepage with your own; free / self-hosted deployments must keep the two footer links intact on it. Removing or hiding them requires a commercial license (contact the author).
+Deployments ship with a minimal default homepage whose footer links to [pvuv.ai](https://pvuv.ai) and this GitHub repository — on the deployed instance's **homepage only** (dashboard and inner pages carry no links, and nothing is ever injected into the websites you measure). You are welcome to replace the default homepage with your own (`workers/console/public/home.html`); the console worker appends the attribution footer to it automatically. Free / self-hosted deployments must keep these links intact; removing or hiding them requires a commercial license (contact the author).
 
 This is an additional term under [AGPL-3.0 §7(b)](https://www.gnu.org/licenses/agpl-3.0.html#section7), which permits requiring the preservation of specified author attributions in modified versions.
 

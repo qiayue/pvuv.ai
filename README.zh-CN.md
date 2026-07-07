@@ -124,7 +124,7 @@ cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 
 ## 署名（Attribution）
 
-部署自带一个极简默认首页，其页脚链接指向 [pvuv.ai](https://pvuv.ai) 和本 GitHub 仓库——**仅在部署实例自己的首页**（后台和内页没有链接，也绝不会向被统计的网站注入任何内容）。默认首页欢迎替换成你自己的；免费/自托管部署需在首页保留这两个页脚链接，移除或隐藏需要商业授权（联系作者）。
+部署自带一个极简默认首页，其页脚链接指向 [pvuv.ai](https://pvuv.ai) 和本 GitHub 仓库——**仅在部署实例自己的首页**（后台和内页没有链接，也绝不会向被统计的网站注入任何内容）。默认首页欢迎替换成你自己的（`workers/console/public/home.html`）；署名页脚会由 console Worker 自动追加到自定义页面上。免费/自托管部署需保留这两个链接，移除或隐藏需要商业授权（联系作者）。
 
 依据是 [AGPL-3.0 §7(b)](https://www.gnu.org/licenses/agpl-3.0.html#section7)：该条款允许在许可证之上附加「要求保留指定作者署名」的附加条款。
 

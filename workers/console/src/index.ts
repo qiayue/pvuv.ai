@@ -67,14 +67,32 @@ const DEFAULT_HOME = {
   site_description: 'This site runs a self-hosted analytics instance.',
 };
 
+/** Attribution footer (README "Attribution", AGPL-3.0 §7(b) additional term).
+ *  Appended automatically to custom home.html pages so deployers don't need
+ *  to (and must not forget to) include it themselves. Inline-styled so it
+ *  renders sanely regardless of the page's own CSS. */
+const ATTRIBUTION_FOOTER =
+  '<div style="padding:16px;text-align:center;font:12.5px/1.6 system-ui,sans-serif;color:#8a8f98">' +
+  'Powered by <a href="https://pvuv.ai" style="color:inherit">pvuv.ai</a> · ' +
+  '<a href="https://github.com/qiayue/pvuv.ai" style="color:inherit">open source</a></div>';
+
 async function homepage(request: Request, env: Env): Promise<Response> {
   const origin = new URL(request.url).origin;
 
   // full override: workers/console/public/home.html (uploaded on deploy if
-  // present locally; gitignored so it never enters the public repo)
+  // present locally; gitignored so it never enters the public repo).
+  // The attribution footer is streamed in at document end — it appears on
+  // the homepage even when the custom page doesn't include it.
   const custom = await env.ASSETS.fetch(new Request(`${origin}/home`));
   if (custom.ok) {
-    return new Response(custom.body, {
+    const withFooter = new HTMLRewriter()
+      .onDocument({
+        end(end) {
+          end.append(ATTRIBUTION_FOOTER, { html: true });
+        },
+      })
+      .transform(new Response(custom.body, custom));
+    return new Response(withFooter.body, {
       status: 200,
       headers: { 'content-type': 'text/html; charset=utf-8' },
     });

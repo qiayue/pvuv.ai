@@ -188,11 +188,12 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 2. **完全自定义页面。** 新建 `workers/console/public/home.html`，写任意 HTML，
    重新部署 console——它会整页替换默认首页。该文件已 **gitignore**，你的落地页
    文案永远不会进公开仓库，`git pull` 也不会冲突。官方 pvuv.ai 首页就按这个
-   方式做。
+   方式做。署名页脚由 Worker **自动追加**到页面末尾——你不需要（也不应）自己
+   写进 HTML。
 3. **默认。** 什么都不做，就是自带的极简页面。
 
-无论用哪一层，免费部署都需在首页保留页脚的两个署名链接（pvuv.ai + GitHub），
-见 README「署名」。默认页刻意极简，是为了避免成千上万个部署发布一模一样的
+无论用哪一层，首页都会带页脚的两个署名链接（pvuv.ai + GitHub）；免费部署需
+保留它们，见 README「署名」。默认页刻意极简，是为了避免成千上万个部署发布一模一样的
 落地页文案（搜索引擎重复内容）。
 
 ## 常见问题排查
