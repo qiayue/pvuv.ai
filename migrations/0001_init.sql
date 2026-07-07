@@ -1,3 +1,5 @@
+-- AUTO-COPIED from shared/schema.sql (canonical) — keep in sync.
+
 -- ============================================================================
 -- pvuv.ai D1 schema — PROJECT_PLAN.md §9.2 (M1 DDL, incl. M2+ placeholders)
 -- ============================================================================

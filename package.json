@@ -9,7 +9,8 @@
     "url": "https://github.com/qiayue/pvuv.ai"
   },
   "scripts": {
-    "build:sdk": "node sdk/build.mjs",
+    "postinstall": "node scripts/gen-config.mjs",
+    "build:sdk": "npm run config:gen && node sdk/build.mjs",
     "config:gen": "node scripts/gen-config.mjs",
 
     "dev:ingest": "wrangler dev -c workers/ingest/wrangler.toml",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260101.0",
     "esbuild": "^0.25.0",
+    "smol-toml": "^1.3.0",
     "typescript": "^5.7.0",
     "wrangler": "^4.0.0"
   }
