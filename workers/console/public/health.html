@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-check — pvuv.ai</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; }
+  header a { color: #7ab3ff; text-decoration: none; }
+  header b { font-size: 16px; }
+  main { max-width: 780px; margin: 24px auto; padding: 0 16px; }
+  p.lead { color: #8b93a1; }
+  .step { background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 16px 18px; margin: 14px 0; }
+  .step h2 { font-size: 15px; margin: 0 0 4px; }
+  .step .hint { color: #8b93a1; font-size: 13px; margin: 0 0 12px; }
+  #env, #ingest, #e2e, #verdict { display: flex; flex-direction: column; }
+  .row { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-top: 1px solid #1d222c; }
+  .row:first-of-type { border-top: 0; }
+  .ico { flex: none; width: 20px; text-align: center; font-weight: 700; }
+  .ok { color: #34d399; } .warn { color: #fbbf24; } .fail { color: #f87171; } .pending { color: #64748b; }
+  .row .body { flex: 1; }
+  .row .label { font-weight: 600; }
+  .row .detail { color: #8b93a1; font-size: 13px; }
+  .row .fix { color: #fbbf24; font-size: 13px; margin-top: 2px; }
+  button { padding: 9px 18px; border: 0; border-radius: 7px; background: #3b82f6; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button:hover { background: #2f6fd6; } button:disabled { opacity: .5; cursor: default; }
+  input { padding: 8px 10px; border-radius: 6px; border: 1px solid #313847; background: #0f1115; color: inherit; font: inherit; width: 320px; max-width: 100%; }
+  label.small { display: block; color: #8b93a1; font-size: 13px; margin: 4px 0; }
+  .summary { border-radius: 10px; padding: 16px 18px; margin: 14px 0; font-weight: 600; }
+  .summary.good { background: #12331f; color: #6ee7a0; border: 1px solid #1f5136; }
+  .summary.bad { background: #331616; color: #f9a8a8; border: 1px solid #5b2626; }
+  code { background: #0c1117; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  .kv { font-size: 13px; color: #8b93a1; margin-top: 8px; }
+  a.doc { color: #7ab3ff; }
+</style>
+</head>
+<body>
+<header><a href="/sites.html">← console</a><b>Deployment self-check</b></header>
+<main>
+  <p class="lead">This runs each part of your deployment end to end and tells you what works and what to fix. Nothing here touches your real sites' data — the live test uses a hidden <code>__pvuv_selftest</code> site.</p>
+
+  <div class="step">
+    <h2>1 · Environment</h2>
+    <p class="hint">Database, schema/migrations, secrets, scoring config, and KV — checked on the server.</p>
+    <div id="env"><div class="row"><span class="ico pending">•</span><div class="body"><span class="detail">not run yet</span></div></div></div>
+  </div>
+
+  <div class="step">
+    <h2>2 · Ingest endpoint</h2>
+    <p class="hint">Where your <code>f.js</code> sends events. Default is <code>in.&lt;your-domain&gt;</code> — change it if your ingest host differs.</p>
+    <label class="small">Ingest base URL</label>
+    <input id="ingestUrl" placeholder="https://in.example.com">
+    <div id="ingest" style="margin-top:10px"></div>
+  </div>
+
+  <div class="step">
+    <h2>3 · End-to-end event flow</h2>
+    <p class="hint">Sends a real test event to the ingest endpoint, then waits for it to appear in the database — proving ingest → Queue → consumer → D1, plus server-side enrichment and bot scoring.</p>
+    <div id="e2e"></div>
+  </div>
+
+  <div class="step">
+    <h2>4 · Fast verdict (/v)</h2>
+    <p class="hint">The ad-load decision endpoint used by adguard.</p>
+    <div id="verdict"></div>
+  </div>
+
+  <div id="summary"></div>
+  <p><button id="run">Run self-check</button></p>
+  <p class="kv">Trouble? See the <a class="doc" href="https://github.com/qiayue/pvuv.ai/blob/main/DEPLOY.md#troubleshooting">deployment troubleshooting guide</a>.</p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ICON = { ok: '✓', warn: '!', fail: '✕', pending: '•' };
+let worst = 'ok';
+const worse = (a, b) => (['ok','warn','fail'].indexOf(b) > ['ok','warn','fail'].indexOf(a) ? b : a);
+
+function rowHtml(status, label, detail, fix) {
+  return `<div class="row"><span class="ico ${status}">${ICON[status]}</span><div class="body">
+    <div class="label">${esc(label)}</div>
+    <div class="detail">${esc(detail)}</div>
+    ${fix ? `<div class="fix">→ ${esc(fix)}</div>` : ''}
+  </div></div>`;
+}
+function setRows(el, rows) { $(el).innerHTML = rows.join('') || '<div class="row"><span class="detail">—</span></div>'; }
+
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+const defaultIngest = () => `https://in.${location.hostname.replace(/^(www|console)\./, '')}`;
+
+async function run() {
+  worst = 'ok';
+  $('run').disabled = true;
+  $('summary').innerHTML = '';
+
+  // step 1 — environment
+  setRows('env', [rowHtml('pending', 'Checking…', '')]);
+  let checks = [];
+  try {
+    checks = (await (await guard(await fetch('/api/diagnostics'))).json()).checks;
+  } catch (e) { setRows('env', [rowHtml('fail', 'Could not run server checks', String(e))]); }
+  setRows('env', checks.map((c) => { worst = worse(worst, c.status); return rowHtml(c.status, c.label, c.detail, c.fix); }));
+
+  // step 2 — ingest reachability + ensure self-test site
+  const ingest = ($('ingestUrl').value || defaultIngest()).replace(/\/+$/, '');
+  $('ingestUrl').value = ingest;
+  let selftest;
+  try {
+    selftest = await (await guard(await fetch('/api/diagnostics/selftest-site', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ host: location.hostname }),
+    }))).json();
+  } catch (e) { setRows('ingest', [rowHtml('fail', 'Could not create self-test site', String(e))]); $('run').disabled = false; return; }
+
+  const marker = 'diag-' + Date.now() + '-' + Math.floor(performance.now());
+  const testEvent = { s: selftest.site_id, e: 'pageview', u: location.origin + '/__pvuv_selftest', vid: marker, sid: marker, sw: screen.width, sh: screen.height, lang: navigator.language, ts: Date.now() };
+
+  let ingestReachable = false;
+  try {
+    const r = await fetch(ingest + '/in', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify(testEvent) });
+    ingestReachable = r.status === 204;
+    setRows('ingest', [rowHtml(ingestReachable ? 'ok' : 'fail',
+      `POST ${ingest}/in`,
+      ingestReachable ? 'reachable, test event accepted (204)' : `unexpected status ${r.status}`,
+      ingestReachable ? undefined : 'Confirm the ingest worker is deployed and its route points at this host. Check DNS (proxied) for the ingest subdomain.')]);
+  } catch (e) {
+    setRows('ingest', [rowHtml('fail', `POST ${ingest}/in`, 'not reachable: ' + e,
+      'Deploy the ingest worker and bind its route; verify the ingest URL above and its DNS record (proxied).')]);
+  }
+  worst = worse(worst, ingestReachable ? 'ok' : 'fail');
+
+  // step 3 — end-to-end: poll until the event lands in D1
+  if (ingestReachable) {
+    setRows('e2e', [rowHtml('pending', 'Waiting for the test event to reach the database…', 'ingest → Queue → consumer → D1')]);
+    let found = null;
+    for (let i = 0; i < 12 && !found; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const res = await (await guard(await fetch(`/api/diagnostics/probe?site=${selftest.site_id}&vid=${encodeURIComponent(marker)}`))).json();
+        if (res.found) found = res.row;
+      } catch { /* keep polling */ }
+    }
+    if (found) {
+      setRows('e2e', [
+        rowHtml('ok', 'End-to-end flow works', 'the test event was ingested, scored, and stored'),
+        rowHtml('ok', 'Server-side enrichment', `country=${found.country ?? '–'}, browser=${found.browser ?? '–'}/${found.os ?? '–'}, network=${found.asn_type ?? '–'}`),
+        rowHtml('ok', 'Bot scoring', `score=${found.bot_score}, verdict=${found.verdict}, stage=${found.score_stage}`),
+      ]);
+    } else {
+      worst = worse(worst, 'fail');
+      setRows('e2e', [rowHtml('fail', 'Test event never reached the database',
+        'ingest accepted it but it did not appear within ~18s',
+        'The Queue or consumer may be misconfigured. Confirm the pvuv-ingest queue exists, the consumer worker is deployed and bound to it, and DB ids match across workers.')]);
+    }
+  } else {
+    setRows('e2e', [rowHtml('pending', 'Skipped', 'ingest endpoint was not reachable')]);
+  }
+
+  // step 4 — /v fast verdict
+  try {
+    const r = await fetch(ingest + '/v', { method: 'POST', headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ s: selftest.site_id, vid: marker, sid: marker, sw: screen.width, sh: screen.height, lang: navigator.language, i: 0 }) });
+    const v = await r.json();
+    const okv = r.ok && typeof v.v === 'string' && (v.ok === 0 || v.ok === 1);
+    setRows('verdict', [rowHtml(okv ? 'ok' : 'fail', `POST ${ingest}/v`,
+      okv ? `verdict=${v.v}, load ads=${v.ok ? 'yes' : 'no'}` : `unexpected response (status ${r.status})`,
+      okv ? undefined : 'Confirm the ingest worker (which also serves /v) is deployed with HMAC_KEY set.')]);
+    worst = worse(worst, okv ? 'ok' : 'fail');
+  } catch (e) {
+    worst = worse(worst, 'fail');
+    setRows('verdict', [rowHtml('fail', `POST ${ingest}/v`, 'not reachable: ' + e)]);
+  }
+
+  // summary
+  $('summary').innerHTML = worst === 'fail'
+    ? `<div class="summary bad">Some checks failed — see the → fixes above.</div>`
+    : worst === 'warn'
+    ? `<div class="summary good">Core flow works. A few warnings above are non-blocking (e.g. rollups run hourly).</div>`
+    : `<div class="summary good">All good — your deployment is fully working. 🎉</div>`;
+  $('run').disabled = false;
+}
+
+$('ingestUrl').value = defaultIngest();
+$('run').addEventListener('click', run);
+// make sure we're logged in before showing anything actionable
+fetch('/api/me').then((r) => { if (r.status === 401) location.href = '/login.html'; });
+</script>
+</body>
+</html>

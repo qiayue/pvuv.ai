@@ -21,6 +21,7 @@
 import { parsePeriod, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
+import { runDiagnostics, probeEvent } from './diagnostics';
 
 export interface Env {
   DB: D1Database;
@@ -171,10 +172,54 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true });
   }
 
+  // --- self-check (health.html) ------------------------------------------
+  if (request.method === 'GET' && path === '/api/diagnostics') {
+    return json({ checks: await runDiagnostics(env) });
+  }
+  // ensure a dedicated self-test site whose allowed_domains = this console's
+  // host, so a browser test event from health.html passes the ingest whitelist
+  if (request.method === 'POST' && path === '/api/diagnostics/selftest-site') {
+    // the browser reports its own hostname — the test event's Origin will be
+    // this exact host, so the self-test site must be whitelisted for it
+    // (deriving it from request.url is unreliable: wrangler dev reports the
+    // route pattern host, not the address the browser actually used)
+    let reqHost = '';
+    try { reqHost = ((await request.json()) as { host?: string }).host ?? ''; } catch { /* body optional */ }
+    const host = /^[a-z0-9.-]+$/i.test(reqHost) ? reqHost.toLowerCase() : new URL(request.url).hostname;
+    const existing = await env.DB.prepare(
+      "SELECT site_id FROM sites WHERE owner_id = ? AND name = '__pvuv_selftest'",
+    ).bind(user).first<{ site_id: string }>();
+    let siteId = existing?.site_id;
+    if (siteId) {
+      // refresh the whitelist in case the console host changed since last run
+      await env.DB.prepare('UPDATE sites SET allowed_domains = ? WHERE site_id = ?')
+        .bind(JSON.stringify([host]), siteId).run();
+    } else {
+      siteId = generateSiteId();
+      await env.DB.prepare(`
+        INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, created_at)
+        VALUES (?, '__pvuv_selftest', ?, ?, 'balanced', ?)
+      `).bind(siteId, user, JSON.stringify([host]), Date.now()).run();
+    }
+    // (re)write the KV cache so ingest sees it immediately
+    await env.SITE_CONFIG.put(`site:${siteId}`, JSON.stringify({
+      site_id: siteId, allowed_domains: [host], adguard_mode: 'balanced', adclient: null, status: 'active',
+    }), { expirationTtl: 300 });
+    return json({ site_id: siteId, host });
+  }
+  if (request.method === 'GET' && path === '/api/diagnostics/probe') {
+    const siteId = url.searchParams.get('site') ?? '';
+    const vid = url.searchParams.get('vid') ?? '';
+    if (!/^[A-Za-z0-9]{4,16}$/.test(siteId) || !vid) return json({ error: 'bad params' }, 400);
+    const owns = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!owns || owns.owner_id !== user) throw new ApiError(403, 'not your site');
+    return json(await probeEvent(env, siteId, vid, Date.now()));
+  }
+
   if (path === '/api/sites') {
     if (request.method === 'GET') {
       const rows = await env.DB.prepare(
-        'SELECT site_id, name, allowed_domains, adguard_mode, adclient, created_at, status FROM sites WHERE owner_id = ? ORDER BY created_at DESC',
+        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, created_at, status FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
       ).bind(user).all();
       return json({ sites: rows.results });
     }

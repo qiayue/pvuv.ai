@@ -162,6 +162,14 @@ npm run deploy:console
 
 ## 10. 验证
 
+**最简单:用内置的自检工具。** 登录控制台点顶部 **Self-check**,或直接访问
+`https://<你的控制台域名>/health.html`。它会逐项走一遍:数据库、迁移、密钥、
+配置、KV、上报端点、一次真实的端到端测试事件(上报 → Queue → consumer → D1,
+含服务端补全 + 打分)、以及 `/v` 快速判定,任何一项失败都会告诉你具体怎么修。
+它用一个隐藏的 `__pvuv_selftest` 站点,不会污染你的真实统计数据。
+
+或者手动检查:
+
 ```bash
 # ingest 是否存活（空 body 返回 400 "bad json" = Worker 正常、可达）：
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://in.example.com/in

@@ -171,6 +171,16 @@ ingest host differs).
 
 ## 10. Verify
 
+**Easiest: the built-in self-check.** Sign in to the console and open
+**Self-check** (top bar), or go to `https://<your-console>/health.html`. It
+walks every part of the deployment — database, migrations, secrets, config,
+KV, the ingest endpoint, a real end-to-end test event (ingest → Queue →
+consumer → D1, with enrichment + scoring), and the `/v` verdict — and tells
+you exactly what to fix for anything that fails. It uses a hidden
+`__pvuv_selftest` site, so your real analytics stay untouched.
+
+Or check manually:
+
 ```bash
 # ingest is alive (400 "bad json" on an empty body = worker up and reachable):
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://in.example.com/in
