@@ -29,7 +29,7 @@
     "db:migrate:local": "wrangler d1 migrations apply pvuv-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply pvuv-db --remote",
 
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p sdk --noEmit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260101.0",

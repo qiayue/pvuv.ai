@@ -1,11 +1,413 @@
 /**
- * pvuv.ai collection SDK — builds to dist/f.js, deploys to js.pvuv.ai
- * (PROJECT_PLAN.md §4, §18.1) — filled in step 4.
+ * pvuv.ai collection SDK — builds to dist/f.js, served from js.pvuv.ai.
+ * PROJECT_PLAN.md §4, §18.1 (M1 scope).
  *
- * M1 scope: pageview + page_leave (duration/scroll) auto-collection; cheap
- * hard checks + Android sensor signals (§4.4, §4.6); adguard balanced-mode
- * progressive load (§7); cookie state machine _pv_id/_pv_sid/_pv_ft/_pv_v;
- * batched reporting via text/plain (§5).
+ *   <script defer src="https://js.pvuv.ai/f.js"
+ *           data-site="Ab3xK9pQ"
+ *           data-spa="true"              (optional: SPA route tracking)
+ *           data-api="https://..."       (optional: self-hosted ingest, §12)
+ *           data-exclude="/admin/*"      (optional: path exclusion globs)
+ *           data-sensors="off"           (optional: disable §4.6 signals)
+ *           data-adguard="balanced"      (ad protection — wired in M1 step 5)
+ *           data-adclient="ca-pub-…"></script>
+ *
+ * M1 collection: pageview + page_leave (visible dwell + scroll depth) +
+ * outbound_click; cheap hard checks + Android-only passive sensor signals
+ * (§4.4/§4.6, obfuscated x-fields per shared/flags.ts XF); honeypot link;
+ * cookie state machine _pv_id/_pv_sid/_pv_ft (§3); batched reporting
+ * (≤10 events or 3s, text/plain — no CORS preflight, §5).
+ * Expensive checks (WebGL/canvas, x6/x7) and adguard progressive load are
+ * later steps. No raw fingerprints, no sensor streams (§16).
  */
 
-export {};
+import { COOKIE, VISITOR_TTL_DAYS, SESSION_IDLE_MS } from '../../shared/ids';
+import type { IncomingEvent } from '../../shared/events';
+import type { XPayload } from '../../shared/flags';
+
+(() => {
+  const win = window;
+  const doc = document;
+  const nav = navigator;
+  const loc = location;
+
+  const script = doc.currentScript as HTMLScriptElement | null;
+  if (!script) return;
+  const siteId = script.getAttribute('data-site');
+  if (!siteId) return;
+
+  const api = (script.getAttribute('data-api') || 'https://in.pvuv.ai').replace(/\/+$/, '');
+  const spa = script.getAttribute('data-spa') === 'true';
+  const sensorsOff = script.getAttribute('data-sensors') === 'off';
+  const excludeGlobs = (script.getAttribute('data-exclude') || '')
+    .split(',')
+    .map((g) => g.trim())
+    .filter(Boolean)
+    .map(globToRegExp);
+
+  // -------------------------------------------------------------------------
+  // small utils
+  // -------------------------------------------------------------------------
+
+  function globToRegExp(glob: string): RegExp {
+    return new RegExp('^' + glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+  }
+
+  function uuid(): string {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+
+  function readCookie(name: string): string | null {
+    const m = doc.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  // Widest registrable domain that accepts a cookie (shares _pv_id across
+  // subdomains, §3). The browser rejects public suffixes, so walk outward
+  // until a test cookie sticks; IPs/localhost fall back to host-only.
+  const cookieDomain = (() => {
+    const host = loc.hostname;
+    if (/^[\d.]+$/.test(host) || host.indexOf('.') < 0) return '';
+    const parts = host.split('.');
+    for (let i = parts.length - 2; i >= 0; i--) {
+      const d = parts.slice(i).join('.');
+      doc.cookie = `_pv_t=1; Path=/; Domain=.${d}; Max-Age=60; SameSite=Lax`;
+      if (readCookie('_pv_t')) {
+        doc.cookie = `_pv_t=; Path=/; Domain=.${d}; Max-Age=0`;
+        return d;
+      }
+    }
+    return '';
+  })();
+
+  function setCookie(name: string, value: string, maxAgeS: number): void {
+    doc.cookie =
+      `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeS}; SameSite=Lax` +
+      (cookieDomain ? `; Domain=.${cookieDomain}` : '') +
+      (loc.protocol === 'https:' ? '; Secure' : '');
+  }
+
+  // -------------------------------------------------------------------------
+  // identity (§3): visitor / session / first-touch
+  // -------------------------------------------------------------------------
+
+  const VISITOR_TTL_S = VISITOR_TTL_DAYS * 86400;
+
+  const vid = (() => {
+    let v = readCookie(COOKIE.VISITOR);
+    if (!v) {
+      try { v = localStorage.getItem(COOKIE.VISITOR); } catch { /* blocked */ }
+    }
+    if (!v) v = uuid();
+    setCookie(COOKIE.VISITOR, v, VISITOR_TTL_S);
+    try { localStorage.setItem(COOKIE.VISITOR, v); } catch { /* blocked */ }
+    return v;
+  })();
+
+  function localDay(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  }
+
+  function utmKey(): string {
+    const q = new URLSearchParams(loc.search);
+    return ['utm_source', 'utm_medium', 'utm_campaign'].map((k) => q.get(k) || '').join('|');
+  }
+
+  // _pv_sid = sid.lastActive.day.utmKey — new session on 30min idle,
+  // UTM change, or calendar-day rollover (§3)
+  function session(): string {
+    const now = Date.now();
+    const day = localDay();
+    const utm = utmKey();
+    const raw = readCookie(COOKIE.SESSION);
+    let sid = '';
+    let sUtm = '';
+    if (raw) {
+      const p = raw.split('.');
+      const last = parseInt(p[1], 10) || 0;
+      sUtm = p.slice(3).join('.');
+      const fresh = now - last <= SESSION_IDLE_MS && p[2] === day && !(utm !== '||' && utm !== sUtm);
+      if (fresh) sid = p[0];
+    }
+    if (!sid) {
+      sid = uuid();
+      sUtm = utm;
+    } else if (utm !== '||') {
+      sUtm = utm;
+    }
+    setCookie(COOKIE.SESSION, `${sid}.${now}.${day}.${sUtm}`, 24 * 3600);
+    return sid;
+  }
+
+  // first-touch snapshot: written once, never overwritten (§3)
+  const ft = (() => {
+    const raw = readCookie(COOKIE.FIRST_TOUCH);
+    if (raw) {
+      try { return JSON.parse(raw) as IncomingEvent['ft']; } catch { /* rewrite below */ }
+    }
+    const q = new URLSearchParams(loc.search);
+    const snap = {
+      s: q.get('utm_source') || undefined,
+      m: q.get('utm_medium') || undefined,
+      c: q.get('utm_campaign') || undefined,
+      r: doc.referrer || undefined,
+    };
+    setCookie(COOKIE.FIRST_TOUCH, JSON.stringify(snap), VISITOR_TTL_S);
+    return snap;
+  })();
+
+  // -------------------------------------------------------------------------
+  // authenticity signals (§4.4 cheap tier + §4.6 sensors) → obfuscated x
+  // -------------------------------------------------------------------------
+
+  const ua = nav.userAgent;
+  const mobileUA = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+  const chromeUA = /Chrome\//.test(ua);
+
+  const x: XPayload = (() => {
+    const out: XPayload = {};
+    try {
+      if (nav.webdriver) out.x1 = 1;
+
+      const w = win as unknown as Record<string, unknown>;
+      let residue = !!(w._phantom || w.__nightmare || w.callPhantom || w.__selenium_unwrapped || w.__webdriver_evaluate);
+      if (!residue) {
+        for (const k in doc) {
+          if (k.indexOf('$cdc_') === 0) { residue = true; break; }
+        }
+      }
+      if (residue) out.x2 = 1;
+
+      let env = 0;
+      if (chromeUA && !('chrome' in win)) env = 1;
+      if (!nav.languages || nav.languages.length === 0) env = 1;
+      if (chromeUA && !mobileUA && nav.plugins && nav.plugins.length === 0) env = 1;
+      if (nav.language && nav.languages && nav.languages.length > 0 && nav.languages.indexOf(nav.language) < 0) env = 1;
+      if (env) out.x3 = 1;
+
+      let sd = 0;
+      if (!mobileUA && screen.width === win.innerWidth && screen.height === win.innerHeight) sd++;
+      if (screen.width === 800 && screen.height === 600) sd++;
+      if (screen.colorDepth === 0) sd++;
+      if (mobileUA && nav.maxTouchPoints === 0) sd++;
+      if (nav.hardwareConcurrency === 0) sd++;
+      const dm = (nav as unknown as { deviceMemory?: number }).deviceMemory;
+      if (dm !== undefined && dm <= 0.25) sd++;
+      if (sd > 0) out.x4 = sd;
+
+      out.x5 = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      // honeypot: arriving with the marker means a hidden link was followed
+      if (new URLSearchParams(loc.search).get('__pvhp') === '1') out.x8 = 1;
+    } catch { /* never break the host page */ }
+    return out;
+  })();
+
+  // Android-only passive sensor signals (§4.6): booleans only, no raw
+  // readings, no prompt (silent listen is Android-only behavior; iOS skipped)
+  if (!sensorsOff && mobileUA && /Android/i.test(ua)) {
+    try {
+      const samples: [number, number, number][] = [];
+      let got = false;
+      const onMotion = (e: DeviceMotionEvent): void => {
+        got = true;
+        const g = e.accelerationIncludingGravity;
+        if (g && samples.length < 10) samples.push([g.x || 0, g.y || 0, g.z || 0]);
+      };
+      win.addEventListener('devicemotion', onMotion, { passive: true });
+      setTimeout(() => {
+        win.removeEventListener('devicemotion', onMotion);
+        x.x9 = got ? 1 : 0;
+        if (samples.length >= 3) {
+          const [f] = samples;
+          x.x10 = samples.every((s) => s[0] === f[0] && s[1] === f[1] && s[2] === f[2]) ? 1 : 0;
+        }
+      }, 2000);
+    } catch { /* fail silently (§4.6) */ }
+  }
+
+  // inject the honeypot link (CSS-hidden; humans never see it, some crawlers
+  // follow it and land with ?__pvhp=1 → x8)
+  function plantHoneypot(): void {
+    try {
+      if (new URLSearchParams(loc.search).has('__pvhp') || !doc.body) return;
+      const a = doc.createElement('a');
+      a.href = loc.pathname + '?__pvhp=1';
+      a.rel = 'nofollow';
+      a.setAttribute('aria-hidden', 'true');
+      a.tabIndex = -1;
+      a.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden';
+      doc.body.appendChild(a);
+    } catch { /* ignore */ }
+  }
+
+  // -------------------------------------------------------------------------
+  // interaction & dwell tracking (behavioral signals, §4.4)
+  // -------------------------------------------------------------------------
+
+  let interacted = false;
+  (['mousemove', 'touchstart', 'scroll', 'keydown'] as const).forEach((t) => {
+    win.addEventListener(t, () => { interacted = true; }, { once: true, passive: true });
+  });
+
+  let visibleSince = doc.visibilityState === 'visible' ? Date.now() : 0;
+  let unreportedDwell = 0;
+  let maxScroll = 0;
+
+  function noteScroll(): void {
+    const h = doc.documentElement;
+    const total = Math.max(h.scrollHeight, 1);
+    const seen = Math.min(total, (win.scrollY || h.scrollTop || 0) + win.innerHeight);
+    maxScroll = Math.max(maxScroll, Math.round((seen / total) * 100));
+  }
+  win.addEventListener('scroll', noteScroll, { passive: true });
+
+  function accumulateDwell(): void {
+    if (visibleSince > 0) {
+      unreportedDwell += Date.now() - visibleSince;
+      visibleSince = 0;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // batched reporting (§5): ≤10 events or 3s; leave-path uses sendBeacon
+  // -------------------------------------------------------------------------
+
+  let queue: IncomingEvent[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  function flush(beacon: boolean): void {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (queue.length === 0) return;
+    const body = JSON.stringify(queue.length === 1 ? queue[0] : queue);
+    queue = [];
+    // string bodies are text/plain — a "simple request", no preflight (§5)
+    if (beacon && nav.sendBeacon) {
+      nav.sendBeacon(api + '/in', body);
+      return;
+    }
+    fetch(api + '/in', { method: 'POST', headers: { 'content-type': 'text/plain' }, body, keepalive: true })
+      .catch(() => { /* never surface errors to the host page */ });
+  }
+
+  function enqueue(ev: IncomingEvent): void {
+    queue.push(ev);
+    if (queue.length >= 10) flush(false);
+    else if (!timer) timer = setTimeout(() => flush(false), 3000);
+  }
+
+  // page_leave must report the URL the dwell belongs to — during an SPA
+  // transition location.href has already moved on, so events use the URL
+  // snapshotted at pageview time.
+  function baseEvent(name: string): IncomingEvent {
+    return {
+      s: siteId!,
+      e: name,
+      u: currentUrl,
+      r: pageReferrer || undefined,
+      vid,
+      sid: session(),
+      sw: screen.width,
+      sh: screen.height,
+      lang: nav.language,
+      hi: interacted ? 1 : 0,
+      x,
+      ft,
+      ts: Date.now(),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // pageview / page_leave lifecycle (§4.1)
+  // -------------------------------------------------------------------------
+
+  let pageReferrer = doc.referrer;
+  let currentUrl = loc.href;
+  let tracking = false;
+
+  function excluded(path: string): boolean {
+    return excludeGlobs.some((re) => re.test(path));
+  }
+
+  function pageview(): void {
+    currentUrl = loc.href;
+    tracking = !excluded(loc.pathname);
+    if (!tracking) return;
+    unreportedDwell = 0;
+    maxScroll = 0;
+    visibleSince = doc.visibilityState === 'visible' ? Date.now() : 0;
+    noteScroll();
+    enqueue(baseEvent('pageview'));
+  }
+
+  // Sent on every hide/leave with the dwell accumulated since the previous
+  // page_leave — increments sum to true visible dwell server-side (§4.1).
+  function pageLeave(beacon: boolean): void {
+    if (!tracking) return;
+    accumulateDwell();
+    if (unreportedDwell <= 0) return;
+    const ev = baseEvent('page_leave');
+    ev.d = unreportedDwell;
+    ev.sd = maxScroll;
+    unreportedDwell = 0;
+    queue.push(ev);
+    flush(beacon);
+  }
+
+  doc.addEventListener('visibilitychange', () => {
+    if (doc.visibilityState === 'hidden') pageLeave(true);
+    else if (visibleSince === 0) visibleSince = Date.now();
+  });
+  win.addEventListener('pagehide', () => pageLeave(true));
+
+  // outbound_click (§4.1)
+  doc.addEventListener('click', (e) => {
+    if (!tracking) return;
+    const a = (e.target as Element | null)?.closest?.('a[href]');
+    if (!a) return;
+    const href = (a as HTMLAnchorElement).href;
+    try {
+      const u = new URL(href, loc.href);
+      if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname !== loc.hostname) {
+        const ev = baseEvent('outbound_click');
+        ev.p = { href: u.href };
+        queue.push(ev);
+        flush(true); // the page may unload immediately
+      }
+    } catch { /* ignore */ }
+  }, { capture: true, passive: true });
+
+  // SPA route tracking (§4.1): close out the old route, open the new one
+  if (spa) {
+    const onRoute = (): void => {
+      if (loc.href === currentUrl) return;
+      pageLeave(false); // closes out the old route (baseEvent uses currentUrl)
+      pageReferrer = currentUrl;
+      pageview(); // snapshots the new URL into currentUrl
+    };
+    const wrap = (fn: typeof history.pushState): typeof history.pushState =>
+      function (this: History, ...args: Parameters<typeof history.pushState>) {
+        fn.apply(this, args);
+        onRoute();
+      };
+    history.pushState = wrap(history.pushState.bind(history));
+    history.replaceState = wrap(history.replaceState.bind(history));
+    win.addEventListener('popstate', onRoute);
+  }
+
+  // -------------------------------------------------------------------------
+  // go
+  // -------------------------------------------------------------------------
+
+  if (doc.readyState === 'loading') {
+    doc.addEventListener('DOMContentLoaded', () => { plantHoneypot(); pageview(); });
+  } else {
+    plantHoneypot();
+    pageview();
+  }
+})();

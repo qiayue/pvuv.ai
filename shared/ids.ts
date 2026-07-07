@@ -100,7 +100,7 @@ function b64url(bytes: Uint8Array): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function b64urlDecode(s: string): Uint8Array {
+function b64urlDecode(s: string) {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
   const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
   const out = new Uint8Array(bin.length);
@@ -124,7 +124,7 @@ export async function hmacSign(secret: string, payload: string): Promise<string>
 /** Timing-safe verify via crypto.subtle.verify. */
 export async function hmacVerify(secret: string, payload: string, signature: string): Promise<boolean> {
   const key = await importHmacKey(secret, ['verify']);
-  let sig: Uint8Array;
+  let sig: ReturnType<typeof b64urlDecode>;
   try {
     sig = b64urlDecode(signature);
   } catch {
