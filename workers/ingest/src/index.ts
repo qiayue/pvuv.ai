@@ -64,6 +64,13 @@ export default {
 // ---------------------------------------------------------------------------
 
 async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  // Refuse to run with a missing secret rather than silently hashing with a
+  // degenerate key (`wrangler secret put HMAC_KEY` is a deploy prerequisite).
+  if (!env.HMAC_KEY) {
+    console.error('HMAC_KEY secret is not set');
+    return respond(500);
+  }
+
   const len = parseInt(request.headers.get('content-length') ?? '0', 10);
   if (len > MAX_BODY_BYTES) return respond(413);
 
@@ -111,9 +118,11 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
 
   // --- KV blocklist check (§6.2 0x0200): once per request, by ip24 + fp ---
   const { ip24_hash } = await hashIP(env.HMAC_KEY, reqCtx.ip);
-  const firstCanvas = valid.find((e) => e.x?.x7)?.x;
-  const fpForBlocklist = firstCanvas
-    ? await fingerprintHash(env.HMAC_KEY, firstCanvas.x7, reqCtx.ua, valid[0].sw, valid[0].sh, valid[0].lang)
+  // fp material must match enrichEvent's exactly, so blocklist keys written
+  // against stored fp_hash values actually match here.
+  const fpEvent = valid.find((e) => e.x?.x7);
+  const fpForBlocklist = fpEvent
+    ? await fingerprintHash(env.HMAC_KEY, fpEvent.x!.x7, reqCtx.ua, fpEvent.sw, fpEvent.sh, fpEvent.lang)
     : null;
   const blocklisted = await isBlocklisted(env.BLOCKLIST, ip24_hash, fpForBlocklist);
 
