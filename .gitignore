@@ -148,3 +148,10 @@ vite.config.ts.timestamp-*
 *.swp
 .DS_Store
 Thumbs.db
+
+# ---- pvuv.ai (PROJECT_PLAN.md §21–§22: no secrets, no private tuning) ----
+.dev.vars
+.dev.vars.*
+config.local.*
+shared/config.gen.*
+.wrangler/

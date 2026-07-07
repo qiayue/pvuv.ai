@@ -1,0 +1,36 @@
+# pvuv.ai console worker — pvuv.ai apex  (PROJECT_PLAN.md §11, §18.6)
+#   Owner login, site registration (issue site_id + embed snippet),
+#   traffic dashboard, traffic-quality overview.
+#   Frontend: plain single-file HTML served from public/ (no framework).
+#
+# All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
+# Secrets:
+#   wrangler secret put HMAC_KEY -c workers/console/wrangler.toml  (session cookies)
+
+name = "pvuv-console"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+routes = [
+  { pattern = "pvuv.ai/*", zone_name = "pvuv.ai" }
+]
+
+# Static assets (single-file HTML console + sdk/dist/f.js is served separately
+# from js.pvuv.ai — see PROJECT_PLAN.md §2 "Static hosting")
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+# KV: write-through site-config cache on site create/update
+kv_namespaces = [
+  { binding = "SITE_CONFIG", id = "PLACEHOLDER_KV_SITE_CONFIG_ID" }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pvuv-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[observability]
+enabled = true

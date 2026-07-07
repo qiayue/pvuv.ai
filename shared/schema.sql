@@ -1,0 +1,3 @@
+-- pvuv.ai D1 schema (PROJECT_PLAN.md §9.2) — filled in step 2.
+-- All M1 tables + M2+ placeholder tables (cluster_flags, anomaly_reports,
+-- ai_reports). Applied via migrations/ (wrangler d1 migrations apply pvuv-db).

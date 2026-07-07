@@ -1,0 +1,36 @@
+# pvuv.ai ingest worker — in.pvuv.ai  (PROJECT_PLAN.md §5, §8)
+#   POST /in  — event ingest: whitelist validation + server-side enrichment
+#               + realtime first-pass scoring + enqueue
+#   POST /v   — fast ad-load verdict (edge-local, target <80ms)
+#
+# All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
+# Secrets:  wrangler secret put HMAC_KEY -c workers/ingest/wrangler.toml
+
+name = "pvuv-ingest"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+routes = [
+  { pattern = "in.pvuv.ai/*", zone_name = "pvuv.ai" }
+]
+
+# KV: blocklist lookups for /v, site-config cache for whitelist validation
+kv_namespaces = [
+  { binding = "BLOCKLIST",   id = "PLACEHOLDER_KV_BLOCKLIST_ID" },
+  { binding = "SITE_CONFIG", id = "PLACEHOLDER_KV_SITE_CONFIG_ID" }
+]
+
+# Queue producer: /in enqueues, consumer worker batch-writes to D1
+[[queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "pvuv-ingest"
+
+# D1: fallback read of site config when KV cache misses
+[[d1_databases]]
+binding = "DB"
+database_name = "pvuv-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[observability]
+enabled = true

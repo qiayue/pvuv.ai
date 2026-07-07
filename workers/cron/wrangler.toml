@@ -1,0 +1,30 @@
+# pvuv.ai cron worker — scheduled jobs  (PROJECT_PLAN.md §2, §6.3–§6.4, §18.4)
+#   Hourly:  rollup pre-aggregation (page/source/site daily, clean bucket)
+#            + session-layer re-verdict (M1: rollup only)
+#   Daily:   population batch analysis + blocklist refresh  (M2 — stub in M1)
+#
+# All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
+
+name = "pvuv-cron"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+[triggers]
+crons = [
+  "5 * * * *",   # hourly rollup (at :05, after the hour closes)
+  "30 3 * * *"   # daily population/batch analysis (M2 — no-op stub in M1)
+]
+
+# KV: daily job writes confirmed clusters to the blocklist (M2)
+kv_namespaces = [
+  { binding = "BLOCKLIST", id = "PLACEHOLDER_KV_BLOCKLIST_ID" }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pvuv-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[observability]
+enabled = true

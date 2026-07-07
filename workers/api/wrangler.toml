@@ -1,0 +1,25 @@
+# pvuv.ai api worker — api.pvuv.ai  (PROJECT_PLAN.md §10, §18.5)
+#   GET /v1/sites/:id/overview | timeseries | breakdown | quality | traffic
+#   GET /v1/sites/:id/visitors/:vid/profile   (M1 scope)
+#
+# All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
+# Secrets:
+#   wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml   (session auth)
+#   wrangler secret put API_TOKEN -c workers/api/wrangler.toml   (external systems)
+
+name = "pvuv-api"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+routes = [
+  { pattern = "api.pvuv.ai/*", zone_name = "pvuv.ai" }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pvuv-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[observability]
+enabled = true

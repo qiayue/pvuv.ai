@@ -1,0 +1,25 @@
+# pvuv.ai consumer worker — Queue consumer  (PROJECT_PLAN.md §2, §18.3)
+#   Batch-writes events from INGEST_QUEUE into D1 events_YYYYMM,
+#   incrementally updates sessions / identities / visitor_profiles.
+#
+# All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
+
+name = "pvuv-consumer"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+[[queues.consumers]]
+queue = "pvuv-ingest"
+max_batch_size = 100
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "pvuv-ingest-dlq"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pvuv-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[observability]
+enabled = true

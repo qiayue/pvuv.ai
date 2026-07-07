@@ -1,0 +1,46 @@
+# ============================================================================
+# pvuv.ai — root wrangler config
+# ============================================================================
+# This root config exists for two purposes:
+#   1. Running D1 migrations from the repo root:
+#        wrangler d1 migrations apply pvuv-db --local   (or --remote)
+#   2. Documenting the shared resource / binding names used by every worker.
+#
+# Each worker has its own wrangler.toml under workers/<name>/ and is deployed
+# with `wrangler deploy -c workers/<name>/wrangler.toml` (see package.json).
+#
+# SECURITY (PROJECT_PLAN.md §21–§22):
+#   - All ids below are PLACEHOLDERS. Real account_id / database_id / KV ids
+#     stay OUT of the repo — put them in a local copy or use `wrangler.toml`
+#     overrides in your private deployment fork.
+#   - NO secrets in any file, ever. Secrets go through Workers Secrets:
+#       wrangler secret put HMAC_KEY   -c workers/ingest/wrangler.toml
+#       wrangler secret put HMAC_KEY   -c workers/api/wrangler.toml   (etc.)
+# ============================================================================
+
+name = "pvuv"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+# --- D1: single primary database shared by all workers ----------------------
+# Create with:  wrangler d1 create pvuv-db
+[[d1_databases]]
+binding = "DB"
+database_name = "pvuv-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# ----------------------------------------------------------------------------
+# Shared resource names (reference — declared per-worker where needed):
+#
+#   KV namespaces (create with `wrangler kv namespace create <NAME>`):
+#     BLOCKLIST    — cluster/IP-segment blocklist, read by ingest /v
+#     SITE_CONFIG  — site config cache (allowed_domains, adguard mode) for edge reads
+#
+#   Queue (create with `wrangler queues create pvuv-ingest`):
+#     binding INGEST_QUEUE — producer: ingest worker; consumer: consumer worker
+#
+#   Secrets (per worker, via `wrangler secret put`):
+#     HMAC_KEY     — signs _pv_v verdict cookie + internal tokens
+#     API_TOKEN    — server-side token for external systems calling the query API
+# ----------------------------------------------------------------------------
