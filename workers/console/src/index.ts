@@ -216,8 +216,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 async function login(request: Request, env: Env): Promise<Response> {
-  if (!env.HMAC_KEY || !env.ADMIN_PASSWORD) {
-    console.error('HMAC_KEY / ADMIN_PASSWORD secrets not set');
+  if (!env.HMAC_KEY || !env.ADMIN_PASSWORD || !env.ADMIN_EMAIL) {
+    console.error('HMAC_KEY / ADMIN_PASSWORD secrets or ADMIN_EMAIL var not set');
     return json({ error: 'server not configured' }, 500);
   }
   let body: { email?: string; password?: string };

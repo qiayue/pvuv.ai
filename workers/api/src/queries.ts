@@ -120,24 +120,31 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
   }
 
   if (dim === 'country' || dim === 'device') {
-    // not carried by M1 rollups — aggregate raw pageviews across month tables
+    // not carried by M1 rollups — let SQL do the GROUP BY per month table (do
+    // NOT stream every raw row into the isolate), then merge across months.
+    // uv is summed per-table distinct counts: an approximation for visitors
+    // active across a month boundary, acceptable for a breakdown.
     const col = dim === 'country' ? 'country' : 'device_type';
-    const acc = new Map<string, { pv: number; uv: Set<string>; pv_clean: number }>();
+    const acc = new Map<string, { pv: number; uv: number; pv_clean: number }>();
     for (const table of await eventTables(db, period)) {
       const rows = await db.prepare(`
-        SELECT COALESCE(${col}, '(unknown)') AS key, visitor_id, verdict
+        SELECT COALESCE(${col}, '(unknown)') AS key,
+               COUNT(*) AS pv,
+               COUNT(DISTINCT visitor_id) AS uv,
+               SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END) AS pv_clean
         FROM ${table} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?
-      `).bind(siteId, period.startTs, period.endTs).all<{ key: string; visitor_id: string; verdict: string }>();
+        GROUP BY key
+      `).bind(siteId, period.startTs, period.endTs).all<{ key: string; pv: number; uv: number; pv_clean: number }>();
       for (const r of rows.results) {
-        const e = acc.get(r.key) ?? { pv: 0, uv: new Set<string>(), pv_clean: 0 };
-        e.pv++;
-        e.uv.add(r.visitor_id);
-        if (r.verdict !== 'bot' && r.verdict !== 'crawler') e.pv_clean++;
+        const e = acc.get(r.key) ?? { pv: 0, uv: 0, pv_clean: 0 };
+        e.pv += r.pv;
+        e.uv += r.uv;
+        e.pv_clean += r.pv_clean;
         acc.set(r.key, e);
       }
     }
     const rows = [...acc.entries()]
-      .map(([key, e]) => ({ key, pv: e.pv, uv: e.uv.size, pv_clean: e.pv_clean }))
+      .map(([key, e]) => ({ key, ...e }))
       .sort((a, b) => b.pv - a.pv)
       .slice(0, limit);
     return { dim, rows };
@@ -195,19 +202,22 @@ export async function traffic(
     binds.push(opts.minScore);
   }
 
-  const out: unknown[] = [];
-  for (const table of (await eventTables(db, period)).reverse()) {
-    if (out.length >= limit) break;
+  // Fetch the top `limit` from EACH month table, then merge-sort globally —
+  // taking newest-first-until-full would drop higher-scoring rows that live in
+  // an older partition, breaking the "sorted by bot_score" contract.
+  const merged: { ts: number; bot_score: number; [k: string]: unknown }[] = [];
+  for (const table of await eventTables(db, period)) {
     const rows = await db.prepare(`
       SELECT ts, event, hostname, path, visitor_id, session_id, country, browser, os,
              device_type, asn_type, duration_ms, had_interaction,
              bot_score, verdict, bot_flags, score_stage
       FROM ${table} WHERE ${conds.join(' AND ')}
       ORDER BY bot_score DESC, ts DESC LIMIT ?
-    `).bind(...binds, limit - out.length).all();
-    out.push(...rows.results);
+    `).bind(...binds, limit).all<{ ts: number; bot_score: number }>();
+    merged.push(...(rows.results as { ts: number; bot_score: number }[]));
   }
-  return { rows: out };
+  merged.sort((a, b) => b.bot_score - a.bot_score || b.ts - a.ts);
+  return { rows: merged.slice(0, limit) };
 }
 
 // ---------------------------------------------------------------------------

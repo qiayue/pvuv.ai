@@ -26,8 +26,11 @@ export interface Env {
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_VERDICT_BYTES = 8 * 1024;
 /** KV cache TTL for site config (console write-through keeps it fresh). */
 const SITE_CACHE_TTL_S = 300;
+/** Short negative-cache TTL so bogus site_ids don't re-hit D1 every request. */
+const SITE_MISS_TTL_S = 60;
 
 // CORS: text/plain POSTs are "simple requests" (no preflight, §5); headers
 // below cover diagnostics and any future preflighted call.
@@ -72,12 +75,17 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
     return respond(500);
   }
 
+  // fast reject on the advertised length, then enforce on the real body — a
+  // client can lie about or omit Content-Length (chunked), so the header check
+  // alone is not a real cap
   const len = parseInt(request.headers.get('content-length') ?? '0', 10);
   if (len > MAX_BODY_BYTES) return respond(413);
+  const text = await request.text();
+  if (text.length > MAX_BODY_BYTES) return respond(413);
 
   let events: IncomingEvent[];
   try {
-    const parsed: unknown = JSON.parse(await request.text());
+    const parsed: unknown = JSON.parse(text);
     events = Array.isArray(parsed) ? (parsed as IncomingEvent[]) : [parsed as IncomingEvent];
   } catch {
     return respond(400, 'bad json');
@@ -172,6 +180,10 @@ interface VerdictRequest {
   sid?: string;
   /** authenticity signals, same obfuscated shape as /in */
   x?: XPayload;
+  /** screen + language — part of the fingerprint material (must match /in) */
+  sw?: number;
+  sh?: number;
+  lang?: string;
   /** whether human interaction has occurred on this page (0/1) */
   i?: 0 | 1;
   /** current _pv_v cookie value (cookies don't cross origins, so it rides the body) */
@@ -184,9 +196,12 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
     return respond(500);
   }
 
+  const text = await request.text();
+  if (text.length > MAX_VERDICT_BYTES) return respond(413);
+
   let body: VerdictRequest;
   try {
-    body = JSON.parse(await request.text()) as VerdictRequest;
+    body = JSON.parse(text) as VerdictRequest;
   } catch {
     return respond(400, 'bad json');
   }
@@ -212,7 +227,7 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
   const ip = request.headers.get('cf-connecting-ip');
   const { ip24_hash } = await hashIP(env.HMAC_KEY, ip);
   const fp = body.x?.x7
-    ? await fingerprintHash(env.HMAC_KEY, body.x.x7, ua, undefined, undefined, undefined)
+    ? await fingerprintHash(env.HMAC_KEY, body.x.x7, ua, body.sw, body.sh, body.lang)
     : null;
   const blocklisted = await isBlocklisted(env.BLOCKLIST, ip24_hash, fp);
 
@@ -274,14 +289,19 @@ async function getSiteConfig(env: Env, siteId: string): Promise<SiteConfig | nul
   if (!/^[A-Za-z0-9]{4,16}$/.test(siteId)) return null;
   const key = `site:${siteId}`;
 
-  const cached = await env.SITE_CONFIG.get<SiteConfig>(key, 'json');
-  if (cached) return cached;
+  const cached = await env.SITE_CONFIG.get<SiteConfig & { __miss?: true }>(key, 'json');
+  if (cached) return cached.__miss ? null : cached;
 
   const row = await env.DB
     .prepare('SELECT site_id, allowed_domains, adguard_mode, adclient, status FROM sites WHERE site_id = ?')
     .bind(siteId)
     .first<{ site_id: string; allowed_domains: string; adguard_mode: string; adclient: string | null; status: string }>();
-  if (!row) return null;
+  if (!row) {
+    // negative-cache the miss briefly so an unauthenticated flood of distinct
+    // bogus site_ids can't re-query D1 on every request
+    await env.SITE_CONFIG.put(key, JSON.stringify({ __miss: true }), { expirationTtl: SITE_MISS_TTL_S });
+    return null;
+  }
 
   let allowed: string[];
   try {

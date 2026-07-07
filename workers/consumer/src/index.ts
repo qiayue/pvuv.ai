@@ -93,11 +93,11 @@ function sessionUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
   return db.prepare(`
     INSERT INTO sessions (
       session_id, site_id, visitor_id, user_id,
-      entry_page, exit_page, pageviews, events_count, duration_ms,
+      entry_page, exit_page, entry_host, pageviews, events_count, duration_ms,
       had_interaction, is_bounce,
       source, medium, campaign, referrer, country, device_type,
       bot_score, verdict, bot_flags, started_at, last_active_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?21, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)
     ON CONFLICT(session_id) DO UPDATE SET
       user_id         = COALESCE(excluded.user_id, sessions.user_id),
       exit_page       = CASE WHEN ?6 = 1 THEN excluded.exit_page ELSE sessions.exit_page END,
@@ -137,6 +137,7 @@ function sessionUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
     row.bot_flags,                                    // 18
     row.ts,                                           // 19 started_at / last_active_at
     isCustom,                                         // 20
+    row.hostname,                                     // 21 entry_host (kept from first event)
   );
 }
 

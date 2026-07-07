@@ -311,7 +311,10 @@ import type { XPayload } from '../../shared/flags';
       u: currentUrl,
       r: pageReferrer || undefined,
       vid,
-      sid: session(),
+      // reuse the session established at pageview time — deriving it here would
+      // mint a NEW session for a page_leave sent after 30min idle or a local
+      // midnight rollover, stranding the dwell on a phantom session
+      sid: currentSid || session(),
       sw: screen.width,
       sh: screen.height,
       lang: nav.language,
@@ -328,6 +331,7 @@ import type { XPayload } from '../../shared/flags';
 
   let pageReferrer = doc.referrer;
   let currentUrl = loc.href;
+  let currentSid = '';
   let tracking = false;
 
   function excluded(path: string): boolean {
@@ -336,6 +340,7 @@ import type { XPayload } from '../../shared/flags';
 
   function pageview(): void {
     currentUrl = loc.href;
+    currentSid = session(); // establish/renew the session once per page
     tracking = !excluded(loc.pathname);
     if (!tracking) return;
     unreportedDwell = 0;
@@ -350,12 +355,16 @@ import type { XPayload } from '../../shared/flags';
   function pageLeave(beacon: boolean): void {
     if (!tracking) return;
     accumulateDwell();
-    if (unreportedDwell <= 0) return;
-    const ev = baseEvent('page_leave');
-    ev.d = unreportedDwell;
-    ev.sd = maxScroll;
-    unreportedDwell = 0;
-    queue.push(ev);
+    if (unreportedDwell > 0) {
+      const ev = baseEvent('page_leave');
+      ev.d = unreportedDwell;
+      ev.sd = maxScroll;
+      unreportedDwell = 0;
+      queue.push(ev);
+    }
+    // always flush: a pageview may still be sitting behind the 3s batch timer
+    // (e.g. a tab opened in the background and closed before it fired), and the
+    // timer won't survive the unload
     flush(beacon);
   }
 
@@ -364,6 +373,11 @@ import type { XPayload } from '../../shared/flags';
     else if (visibleSince === 0) visibleSince = Date.now();
   });
   win.addEventListener('pagehide', () => pageLeave(true));
+  // bfcache restore may not emit a visible visibilitychange — re-arm the dwell
+  // clock so post-Back reading time is still counted
+  win.addEventListener('pageshow', () => {
+    if (doc.visibilityState === 'visible' && visibleSince === 0) visibleSince = Date.now();
+  });
 
   // outbound_click (§4.1)
   doc.addEventListener('click', (e) => {
@@ -441,7 +455,13 @@ import type { XPayload } from '../../shared/flags';
       fetch(api + '/v', {
         method: 'POST',
         headers: { 'content-type': 'text/plain' },
-        body: JSON.stringify({ s: siteId, vid, sid: session(), x, i: interacted ? 1 : 0, state: state || undefined }),
+        // sw/sh/lang are part of the fingerprint material, so /v must receive
+        // them to compute the same fp_hash the blocklist is keyed on
+        body: JSON.stringify({
+          s: siteId, vid, sid: currentSid || session(), x,
+          sw: screen.width, sh: screen.height, lang: nav.language,
+          i: interacted ? 1 : 0, state: state || undefined,
+        }),
       }).then((r) => r.json() as Promise<{ v: string; ok: number; state?: string }>);
 
     const saveState = (res: { state?: string }): void => {
@@ -459,9 +479,17 @@ import type { XPayload } from '../../shared/flags';
         return;
       }
       if (prior.v === 'clean') {
-        inject();
         // background re-check stacks evidence → blocks from page 2 (§7.3)
         callVerdict(vc).then(saveState).catch(() => { /* keep cookie */ });
+        if (agMode === 'strict' && !interacted) {
+          // strict: even a returning clean visitor must re-demonstrate
+          // interaction before ads load
+          (['mousemove', 'touchstart', 'scroll', 'keydown'] as const).forEach((t) => {
+            win.addEventListener(t, () => inject(), { once: true, passive: true });
+          });
+        } else {
+          inject();
+        }
         return;
       }
     }

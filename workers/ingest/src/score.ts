@@ -17,6 +17,10 @@ import {
 } from '../../../shared/flags';
 import type { AsnType } from '../../../shared/asn';
 
+/** Distinct screen/device contradictions the SDK checks (§4.4): screen==inner,
+ *  800x600, colorDepth 0, mobile-no-touch, cores 0, low deviceMemory. */
+const MAX_SCREEN_CONTRADICTIONS = 6;
+
 export interface ScoreInput {
   x: XPayload | undefined;
   asnType: AsnType;
@@ -60,7 +64,10 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
   if (x.x1 === 1) fire('WEBDRIVER');
   if (x.x2 === 1) fire('AUTOMATION_RESIDUE');
   if (x.x3 === 1) fire('UA_CH_MISMATCH');
-  if (typeof x.x4 === 'number' && x.x4 > 0) fire('SCREEN_DEVICE_MISMATCH', Math.min(x.x4, 5));
+  // x4 is a spoofable count from the client; clamp it to the number of
+  // distinct contradictions the SDK actually checks (input sanitation, not a
+  // tunable weight — the per-hit weight itself still comes from CONFIG, §21)
+  if (typeof x.x4 === 'number' && x.x4 > 0) fire('SCREEN_DEVICE_MISMATCH', Math.min(x.x4, MAX_SCREEN_CONTRADICTIONS));
   if (x.x6 === 1) fire('SOFTWARE_WEBGL');
   if (CONFIG.detection.honeypot_enabled && x.x8 === 1) fire('HONEYPOT');
 

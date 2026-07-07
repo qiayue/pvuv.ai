@@ -63,7 +63,15 @@ export function parseCookies(header: string | null): Record<string, string> {
     const eq = part.indexOf('=');
     if (eq < 0) continue;
     const k = part.slice(0, eq).trim();
-    if (k) out[k] = decodeURIComponent(part.slice(eq + 1).trim());
+    if (!k) continue;
+    const raw = part.slice(eq + 1).trim();
+    // a malformed value elsewhere in the jar (e.g. a bare `%`) must not throw
+    // and take down auth — fall back to the raw value
+    try {
+      out[k] = decodeURIComponent(raw);
+    } catch {
+      out[k] = raw;
+    }
   }
   return out;
 }

@@ -110,8 +110,10 @@ export function parseEventUrl(raw: string): UrlInfo | null {
 
   let extra_params: string | null = null;
   if (Object.keys(extras).length > 0) {
-    extra_params = JSON.stringify(extras);
-    if (extra_params.length > MAX_EXTRA_PARAMS_LEN) extra_params = extra_params.slice(0, MAX_EXTRA_PARAMS_LEN);
+    const s = JSON.stringify(extras);
+    // drop rather than slice — a truncated JSON string is invalid and would
+    // break any later parse (each value is already individually capped at 255)
+    extra_params = s.length <= MAX_EXTRA_PARAMS_LEN ? s : null;
   }
 
   return {
@@ -181,6 +183,14 @@ export async function fingerprintHash(
 // defaulted; score.ts fills them)
 // ---------------------------------------------------------------------------
 
+/** Coerce an optional client-supplied field to a bounded string, or null.
+ *  Guards against forged non-string values (e.g. `"r": 5`) whose `.slice`
+ *  would otherwise throw and 500 the whole batch. */
+function str(v: unknown, max: number): string | null {
+  if (v === undefined || v === null || v === '') return null;
+  return String(v).slice(0, max);
+}
+
 const MAX_PROPS_LEN = 4096;
 /** Client ts is trusted only within this window around server time (§5 anti-forgery). */
 const TS_TOLERANCE_MS = 10 * 60 * 1000;
@@ -215,12 +225,15 @@ export async function enrichEvent(
   // at the daily rate is M3 — M1 stores USD verbatim only.
   const revenue = typeof ev.p?.revenue === 'number' ? (ev.p.revenue as number) : null;
   const currency = typeof ev.p?.currency === 'string' ? (ev.p.currency as string).slice(0, 8) : null;
-  const revenue_usd = revenue !== null && (currency === null || currency === 'USD') ? revenue : null;
+  const revenue_usd = revenue !== null && (currency === null || currency.toUpperCase() === 'USD') ? revenue : null;
 
+  // store props only if the JSON fits — truncating a serialized object with
+  // slice() would persist syntactically invalid JSON that breaks any later parse
   let props: string | null = null;
   if (ev.p && Object.keys(ev.p).length > 0) {
     try {
-      props = JSON.stringify(ev.p).slice(0, MAX_PROPS_LEN);
+      const s = JSON.stringify(ev.p);
+      props = s.length <= MAX_PROPS_LEN ? s : null;
     } catch {
       props = null;
     }
@@ -232,11 +245,11 @@ export async function enrichEvent(
     visitor_id: String(ev.vid).slice(0, 64),
     session_id: String(ev.sid).slice(0, 64),
     user_id: ev.uid ? String(ev.uid).slice(0, 128) : null,
-    url: ev.u.slice(0, 2048),
+    url: String(ev.u).slice(0, 2048),
     hostname: urlInfo.hostname,
     path: urlInfo.path.slice(0, 1024),
-    referrer: ev.r ? ev.r.slice(0, 2048) : null,
-    ref_domain: refDomain(ev.r),
+    referrer: str(ev.r, 2048),
+    ref_domain: refDomain(typeof ev.r === 'string' ? ev.r : undefined),
     ...urlInfo.utm,
     click_id: urlInfo.click_id,
     click_id_type: urlInfo.click_id_type,
@@ -249,7 +262,7 @@ export async function enrichEvent(
     device_type: uaInfo.device_type,
     screen_w: typeof ev.sw === 'number' ? ev.sw : null,
     screen_h: typeof ev.sh === 'number' ? ev.sh : null,
-    lang: ev.lang ? ev.lang.slice(0, 35) : null,
+    lang: str(ev.lang, 35),
     ip_hash,
     ip24_hash,
     asn,
@@ -262,10 +275,10 @@ export async function enrichEvent(
     revenue_usd,
     currency,
     props,
-    ft_source: ev.ft?.s?.slice(0, 255) ?? null,
-    ft_medium: ev.ft?.m?.slice(0, 255) ?? null,
-    ft_campaign: ev.ft?.c?.slice(0, 255) ?? null,
-    ft_referrer: ev.ft?.r?.slice(0, 2048) ?? null,
+    ft_source: str(ev.ft?.s, 255),
+    ft_medium: str(ev.ft?.m, 255),
+    ft_campaign: str(ev.ft?.c, 255),
+    ft_referrer: str(ev.ft?.r, 2048),
     bot_score: 0,
     verdict: 'clean',
     bot_flags: 0,

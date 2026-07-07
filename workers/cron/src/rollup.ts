@@ -57,12 +57,15 @@ async function rollupDay(db: D1Database, day: string): Promise<void> {
     GROUP BY site_id, hostname, path
   `).bind(day, start, end));
 
-  // bounces are a session-level fact attributed to the entry page (§9.3)
+  // bounces are a session-level fact attributed to the entry page (§9.3);
+  // match on hostname too so a shared path on a multi-hostname site doesn't
+  // get the same bounce count written into every hostname's row
   stmts.push(db.prepare(`
     UPDATE rollup_page_daily SET bounces = (
       SELECT COUNT(*) FROM sessions s
       WHERE s.site_id = rollup_page_daily.site_id
         AND s.entry_page = rollup_page_daily.path
+        AND (s.entry_host = rollup_page_daily.hostname OR s.entry_host IS NULL)
         AND s.is_bounce = 1
         AND s.started_at >= ?2 AND s.started_at < ?3
     )

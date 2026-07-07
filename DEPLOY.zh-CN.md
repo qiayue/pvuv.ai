@@ -163,8 +163,10 @@ npm run deploy:console
 ## 10. 验证
 
 ```bash
-# ingest 是否存活（返回 403 = Worker 正常、Origin 校验在工作）：
+# ingest 是否存活（空 body 返回 400 "bad json" = Worker 正常、可达）：
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://in.example.com/in
+# 带 body 但 Origin 是外域会返回 204（事件被静默丢弃）；
+# 完全没有 Origin/Referer 头则返回 403
 
 # 访问站点的同时看实时日志：
 npx wrangler tail -c workers/ingest/wrangler.toml

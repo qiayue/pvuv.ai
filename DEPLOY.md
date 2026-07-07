@@ -172,8 +172,10 @@ ingest host differs).
 ## 10. Verify
 
 ```bash
-# ingest is alive (403 = worker up, origin check working):
+# ingest is alive (400 "bad json" on an empty body = worker up and reachable):
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://in.example.com/in
+# with a body but a foreign Origin you'll get 204 (event silently dropped);
+# a request with no Origin/Referer at all gets 403
 
 # watch live logs while you visit your site:
 npx wrangler tail -c workers/ingest/wrangler.toml

@@ -87,7 +87,7 @@ CREATE TABLE sessions (
   site_id      TEXT NOT NULL,
   visitor_id   TEXT NOT NULL,
   user_id      TEXT,
-  entry_page   TEXT, exit_page TEXT,
+  entry_page   TEXT, exit_page TEXT, entry_host TEXT,
   pageviews INTEGER DEFAULT 0, events_count INTEGER DEFAULT 0,
   duration_ms INTEGER DEFAULT 0, had_interaction INTEGER DEFAULT 0,
   is_bounce INTEGER,
