@@ -77,6 +77,51 @@ export function hasFlag(bitmap: number, flag: FlagName): boolean {
   return (bitmap & FLAG[flag]) !== 0;
 }
 
+// ---------------------------------------------------------------------------
+// SDK wire protocol for authenticity signals (§4.4: field names obfuscated
+// as x1/x2/…). The SDK sends these inside the event's `x` object; the ingest
+// scorer maps them back to flags. Absent key = check not run (≠ passed).
+// ---------------------------------------------------------------------------
+
+export const XF = {
+  /** 0/1 — navigator.webdriver === true */
+  WEBDRIVER: 'x1',
+  /** 0/1 — automation residue globals present */
+  AUTOMATION_RESIDUE: 'x2',
+  /** 0/1 — env contradiction: Chrome UA w/o window.chrome, empty languages,
+   *  desktop UA with 0 plugins, or permission-state contradiction */
+  ENV_MISMATCH: 'x3',
+  /** count — screen/device contradictions (screen==inner, 800x600,
+   *  colorDepth 0, mobile UA w/o touch, abnormal cores/memory) */
+  SCREEN_DEVICE_COUNT: 'x4',
+  /** string — IANA timezone from Intl (server compares to cf.timezone) */
+  TIMEZONE: 'x5',
+  /** 0/1 — WebGL renderer is software (SwiftShader/llvmpipe/Mesa OffScreen) */
+  WEBGL_SOFT: 'x6',
+  /** string — canvas render hash (expensive check; feeds fp_hash) */
+  CANVAS_HASH: 'x7',
+  /** 0/1 — hidden honeypot link followed */
+  HONEYPOT: 'x8',
+  /** 0/1 — Android only: whether any devicemotion event arrived (§4.6) */
+  HAS_MOTION: 'x9',
+  /** 0/1 — Android only: motion readings perfectly static (§4.6) */
+  MOTION_STATIC: 'x10',
+} as const;
+
+/** Shape of the event `x` payload as sent by f.js. */
+export interface XPayload {
+  x1?: 0 | 1;
+  x2?: 0 | 1;
+  x3?: 0 | 1;
+  x4?: number;
+  x5?: string;
+  x6?: 0 | 1;
+  x7?: string;
+  x8?: 0 | 1;
+  x9?: 0 | 1;
+  x10?: 0 | 1;
+}
+
 /** Persisted verdict values (§6.2). Verified crawlers classified separately. */
 export type Verdict = 'clean' | 'suspect' | 'bot' | 'crawler';
 
