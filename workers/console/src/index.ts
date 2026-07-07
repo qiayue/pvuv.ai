@@ -48,12 +48,78 @@ export default {
         return json({ error: 'internal error' }, 500);
       }
     }
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      return homepage(request, env);
+    }
     return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
 
+// ---------------------------------------------------------------------------
+// homepage: custom full page (public/home.html, gitignored) wins; otherwise
+// the shipped default page rendered with the instance settings. Deployers
+// customize via console settings (name/description) or home.html — never by
+// editing tracked files. Attribution links stay on the homepage (README).
+// ---------------------------------------------------------------------------
+
+const DEFAULT_HOME = {
+  site_name: 'Web analytics',
+  site_description: 'This site runs a self-hosted analytics instance.',
+};
+
+async function homepage(request: Request, env: Env): Promise<Response> {
+  const origin = new URL(request.url).origin;
+
+  // full override: workers/console/public/home.html (uploaded on deploy if
+  // present locally; gitignored so it never enters the public repo)
+  const custom = await env.ASSETS.fetch(new Request(`${origin}/home`));
+  if (custom.ok) {
+    return new Response(custom.body, {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    });
+  }
+
+  const s = await instanceSettings(env.DB);
+  const def = await env.ASSETS.fetch(new Request(`${origin}/`));
+  const html = (await def.text())
+    .replaceAll('{{name}}', escapeHtml(s.site_name))
+    .replaceAll('{{description}}', escapeHtml(s.site_description));
+  return new Response(html, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  });
+}
+
+async function instanceSettings(db: D1Database): Promise<typeof DEFAULT_HOME> {
+  const out = { ...DEFAULT_HOME };
+  try {
+    const rows = await db
+      .prepare("SELECT key, value FROM instance_settings WHERE key IN ('site_name','site_description')")
+      .all<{ key: string; value: string }>();
+    for (const r of rows.results) {
+      if (r.value && (r.key === 'site_name' || r.key === 'site_description')) out[r.key] = r.value;
+    }
+  } catch {
+    /* table missing (migration not applied yet) → defaults */
+  }
+  return out;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ));
+}
+
 async function api(request: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname;
+
+  // public: homepage text (also used by sites.html to prefill the form)
+  if (request.method === 'GET' && path === '/api/home') {
+    const s = await instanceSettings(env.DB);
+    return json({ name: s.site_name, description: s.site_description });
+  }
 
   if (request.method === 'POST' && path === '/api/login') return login(request, env);
 
@@ -66,6 +132,26 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (!user) throw new ApiError(401, 'auth required');
 
   if (request.method === 'GET' && path === '/api/me') return json({ user });
+
+  // instance settings: homepage name/description
+  if (request.method === 'POST' && path === '/api/settings') {
+    let body: { name?: string; description?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: 'bad json' }, 400);
+    }
+    const entries: [string, string][] = [
+      ['site_name', (body.name ?? '').trim().slice(0, 100)],
+      ['site_description', (body.description ?? '').trim().slice(0, 500)],
+    ];
+    const now = Date.now();
+    await env.DB.batch(entries.map(([k, v]) => env.DB.prepare(`
+      INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).bind(k, v, now)));
+    return json({ ok: true });
+  }
 
   if (path === '/api/sites') {
     if (request.method === 'GET') {

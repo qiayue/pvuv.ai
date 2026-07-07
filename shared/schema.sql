@@ -1,13 +1,22 @@
 -- ============================================================================
 -- pvuv.ai D1 schema — PROJECT_PLAN.md §9.2 (M1 DDL, incl. M2+ placeholders)
 -- ============================================================================
--- Canonical schema. Applied via migrations/0001_init.sql (keep in sync):
+-- Canonical schema (the full current shape). Applied incrementally via the
+-- files in migrations/ — 0001_init.sql plus later additions. Keep in sync:
 --   wrangler d1 migrations apply pvuv-db --local | --remote
 --
 -- Raw events are monthly-partitioned (events_YYYYMM). This file creates the
 -- initial month; the consumer worker creates subsequent months on demand from
 -- the same template (index prefix idx_evYYYYMM_*).
 -- ============================================================================
+
+-- deployment-level settings (homepage name/description, future prefs)
+-- (added by migrations/0002_instance_settings.sql)
+CREATE TABLE instance_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT,
+  updated_at INTEGER
+);
 
 -- users
 CREATE TABLE users (

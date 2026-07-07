@@ -3,15 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Web analytics</title>
+<title>{{name}}</title>
+<meta name="description" content="{{description}}">
 <!--
   Default homepage for a self-hosted pvuv.ai deployment.
 
+  {{name}} / {{description}} are filled in server-side from the instance
+  settings (console → Sites → Homepage settings). For a fully custom page,
+  create workers/console/public/home.html (gitignored) instead — it replaces
+  this page entirely on deploy. See DEPLOY.md "Customize the homepage".
+
   Deliberately minimal and generic: thousands of deployments shipping
-  identical rich landing copy would be duplicate content in search engines,
-  so this page says almost nothing — customize it freely for your own
-  deployment. The footer attribution links must stay on this homepage in
-  free deployments (see README "Attribution", AGPL-3.0 §7(b) additional term).
+  identical rich landing copy would be duplicate content in search engines.
+  The footer attribution links must stay on the homepage in free
+  deployments (see README "Attribution", AGPL-3.0 §7(b) additional term).
 -->
 <style>
   :root { color-scheme: light dark; }
@@ -33,8 +38,8 @@
 <body>
 <main>
   <div class="box">
-    <h1>Web analytics</h1>
-    <p>This site runs a self-hosted analytics instance.</p>
+    <h1>{{name}}</h1>
+    <p>{{description}}</p>
     <a class="btn" href="/login.html">Sign in</a>
   </div>
 </main>

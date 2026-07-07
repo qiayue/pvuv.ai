@@ -178,6 +178,23 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 - **一小时内**：指标卡/趋势图/各维度表填充——它们读预聚合表，cron 每小时
   `:05` 重算。
 
+## 自定义首页
+
+部署后的 `/` 是一个公开落地页。三个层级，都不需要 fork 代码：
+
+1. **改名称 + 介绍（零代码）。** 登录 console → *Homepage settings*：填你的
+   网站名称和介绍，默认首页会服务端渲染它们（包括 `<title>` 和
+   `<meta name="description">`）。
+2. **完全自定义页面。** 新建 `workers/console/public/home.html`，写任意 HTML，
+   重新部署 console——它会整页替换默认首页。该文件已 **gitignore**，你的落地页
+   文案永远不会进公开仓库，`git pull` 也不会冲突。官方 pvuv.ai 首页就按这个
+   方式做。
+3. **默认。** 什么都不做，就是自带的极简页面。
+
+无论用哪一层，免费部署都需在首页保留页脚的两个署名链接（pvuv.ai + GitHub），
+见 README「署名」。默认页刻意极简，是为了避免成千上万个部署发布一模一样的
+落地页文案（搜索引擎重复内容）。
+
 ## 常见问题排查
 
 | 现象 | 大概率原因 |

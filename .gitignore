@@ -155,3 +155,6 @@ Thumbs.db
 config.local.*
 shared/config.gen.*
 .wrangler/
+# custom deployment homepage — replaces the default landing page on deploy,
+# never committed (keep your landing copy out of the public repo)
+workers/console/public/home.html

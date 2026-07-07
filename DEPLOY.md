@@ -189,6 +189,25 @@ that `POST /in` returns **204**. Data timeline:
   the pre-aggregated rollups, which the cron worker recomputes at `:05` every
   hour.
 
+## Customize the homepage
+
+Your deployment's `/` is a public landing page. Three tiers, no forking needed:
+
+1. **Name + description (no code).** Console → sign in → *Homepage settings*:
+   set your site name and description; the default page renders them
+   (server-side, also in `<title>` and `<meta name="description">`).
+2. **Fully custom page.** Create `workers/console/public/home.html` with any
+   HTML you like and redeploy the console — it replaces the default homepage
+   entirely. The file is **gitignored**, so your landing copy never enters
+   the public repo and `git pull` never conflicts. This is also how the
+   official pvuv.ai homepage is expected to work.
+3. **Default.** Do nothing and you get the minimal shipped page.
+
+Whichever tier you use, free deployments must keep the footer attribution
+links (pvuv.ai + GitHub) on the homepage — see README "Attribution".
+The default page is intentionally sparse so that thousands of deployments
+don't publish identical landing copy (duplicate content in search engines).
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

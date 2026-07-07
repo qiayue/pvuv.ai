@@ -35,6 +35,14 @@
   <h2>Your sites</h2>
   <div id="sites">loading…</div>
 
+  <h2>Homepage settings</h2>
+  <form class="create" id="homeSettings">
+    <div><label>Site name (shown on your public homepage)<input id="hsName" maxlength="100" placeholder="Web analytics"></label></div>
+    <div><label>Description<input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
+    <p class="err" id="hsMsg"></p>
+    <button type="submit">Save homepage settings</button>
+  </form>
+
   <h2>Add a site</h2>
   <form class="create" id="create">
     <div><label>Site name<input id="name" required placeholder="My Blog"></label></div>
@@ -103,7 +111,31 @@ document.getElementById('logout').addEventListener('click', async () => {
   await fetch('/api/logout', { method: 'POST' });
   location.href = '/login.html';
 });
+
+async function loadHomeSettings() {
+  const r = await fetch('/api/home');
+  if (!r.ok) return;
+  const { name, description } = await r.json();
+  document.getElementById('hsName').value = name || '';
+  document.getElementById('hsDesc').value = description || '';
+}
+document.getElementById('homeSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await guard(await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: document.getElementById('hsName').value,
+      description: document.getElementById('hsDesc').value,
+    }),
+  }));
+  const el = document.getElementById('hsMsg');
+  el.style.color = r.ok ? '#6ee7a0' : '';
+  el.textContent = r.ok ? 'saved — view your homepage at /' : 'save failed';
+});
+
 loadSites();
+loadHomeSettings();
 </script>
 </body>
 </html>

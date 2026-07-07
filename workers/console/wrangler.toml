@@ -30,10 +30,13 @@ kv_namespaces = [
 ADMIN_EMAIL = "admin@example.com"
 
 # Static assets (single-file HTML console; sdk/dist/f.js is served separately
-# from js.pvuv.ai — see PROJECT_PLAN.md §2 "Static hosting")
+# from js.pvuv.ai — see PROJECT_PLAN.md §2 "Static hosting").
+# run_worker_first: the homepage must hit the worker (instance-settings
+# rendering / home.html override) instead of being served as a raw asset.
 [assets]
 directory = "public"
 binding = "ASSETS"
+run_worker_first = ["/", "/index.html"]
 
 [[d1_databases]]
 binding = "DB"
