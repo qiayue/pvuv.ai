@@ -17,21 +17,46 @@
   button { width: 100%; margin-top: 18px; padding: 10px; border: 0; border-radius: 6px; background: #3b82f6; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
   button:hover { background: #2f6fd6; }
   .err { color: #f87171; font-size: 13px; margin-top: 10px; min-height: 1em; }
+  .oauth a { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px;
+             padding: 10px; border: 1px solid #313847; border-radius: 6px; color: inherit; text-decoration: none; font-weight: 600; }
+  .oauth a:hover { background: #1d222c; }
+  .sep { display: flex; align-items: center; gap: 10px; color: #5b6472; font-size: 12px; margin: 18px 0 4px; }
+  .sep::before, .sep::after { content: ''; flex: 1; height: 1px; background: #262b36; }
+  #pwform[hidden] { display: none; }
 </style>
 </head>
 <body>
-<form class="card" id="f">
+<div class="card">
   <h1>pvuv.ai</h1>
   <p class="sub">self-hosted analytics · sign in</p>
-  <label for="email">Email</label>
-  <input id="email" type="email" autocomplete="username" required>
-  <label for="pw">Password</label>
-  <input id="pw" type="password" autocomplete="current-password" required>
-  <button type="submit">Sign in</button>
+
+  <div class="oauth" id="oauth"></div>
+  <div class="sep" id="sep" hidden>or</div>
+
+  <form id="pwform">
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+  </form>
   <div class="err" id="err"></div>
-</form>
+</div>
 <script>
-document.getElementById('f').addEventListener('submit', async (e) => {
+const ERR = { not_allowed: 'That account is not permitted to sign in.', bad_state: 'Login session expired — please try again.', no_email: 'No verified email from the provider.', token_exchange: 'OAuth exchange failed.', userinfo: 'Could not read your profile from the provider.' };
+const qerr = new URLSearchParams(location.search).get('error');
+if (qerr) document.getElementById('err').textContent = ERR[qerr] || 'Sign-in failed (' + qerr + ').';
+
+const LABEL = { google: 'Continue with Google', github: 'Continue with GitHub' };
+fetch('/api/auth/providers').then((r) => r.json()).then((cfg) => {
+  const box = document.getElementById('oauth');
+  box.innerHTML = (cfg.providers || []).map((p) => `<a href="/api/auth/${p}/start">${LABEL[p] || p}</a>`).join('');
+  const pw = document.getElementById('pwform');
+  if (!cfg.password) { pw.hidden = true; }
+  else if ((cfg.providers || []).length) document.getElementById('sep').hidden = false;
+}).catch(() => {});
+
+document.getElementById('pwform').addEventListener('submit', async (e) => {
   e.preventDefault();
   const r = await fetch('/api/login', {
     method: 'POST',

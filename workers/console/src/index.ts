@@ -22,6 +22,10 @@ import { parsePeriod, overview, timeseries, breakdown, quality, traffic, visitor
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
+import {
+  isProvider, configuredProviders, oauthStart, oauthCallback, isEmailAllowed,
+  clearStateCookie, OAuthError,
+} from './oauth';
 
 export interface Env {
   DB: D1Database;
@@ -30,8 +34,13 @@ export interface Env {
   /** Secrets via `wrangler secret put` — never in any file. */
   HMAC_KEY: string;
   ADMIN_PASSWORD: string;
-  /** Plain var (workers/console/wrangler.toml [vars]) */
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  /** Plain vars (workers/console/wrangler.toml [vars]) */
   ADMIN_EMAIL: string;
+  ALLOWED_EMAILS?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GITHUB_CLIENT_ID?: string;
 }
 
 const SESSION_TTL_MS = 7 * 86400e3;
@@ -144,6 +153,20 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (request.method === 'POST' && path === '/api/logout') {
     return json({ ok: true }, 200, serializeCookie(SESSION_COOKIE, '', { maxAgeSeconds: 0, httpOnly: true }));
+  }
+
+  // which login methods this deployment offers (login.html renders buttons)
+  if (request.method === 'GET' && path === '/api/auth/providers') {
+    return json({ password: !!env.ADMIN_PASSWORD, providers: configuredProviders(env) });
+  }
+
+  // OAuth: /api/auth/:provider/start → redirect; /callback → set session
+  const authMatch = path.match(/^\/api\/auth\/([a-z]+)\/(start|callback)$/);
+  if (authMatch && request.method === 'GET') {
+    const [, provider, action] = authMatch;
+    if (!isProvider(provider)) return json({ error: 'unknown provider' }, 404);
+    if (action === 'start') return oauthStart(env, provider, url.origin, Date.now());
+    return oauthCallbackHandler(request, env, url, provider);
   }
 
   // everything below requires a session
@@ -280,16 +303,56 @@ async function login(request: Request, env: Env): Promise<Response> {
   const emailOk = (body.email ?? '').toLowerCase() === env.ADMIN_EMAIL.toLowerCase();
   if (!emailOk || pwGot !== pwWant) return json({ error: 'invalid credentials' }, 401);
 
-  await env.DB.prepare(`
-    INSERT INTO users (user_id, email, name, created_at) VALUES (?, ?, 'Owner', ?)
-    ON CONFLICT(user_id) DO UPDATE SET email = excluded.email
-  `).bind(ADMIN_USER_ID, env.ADMIN_EMAIL, Date.now()).run();
+  const userId = await resolveUser(env, env.ADMIN_EMAIL, 'Owner');
+  return json({ ok: true, user: userId }, 200, await sessionCookie(env, userId));
+}
 
-  const payload = btoa(JSON.stringify({ u: ADMIN_USER_ID, exp: Date.now() + SESSION_TTL_MS }))
+// OAuth callback: verify + exchange, gate by allowlist, issue a session, then
+// redirect the browser back into the console (errors bounce to the login page)
+async function oauthCallbackHandler(request: Request, env: Env, url: URL, provider: 'google' | 'github'): Promise<Response> {
+  let identity;
+  try {
+    identity = await oauthCallback(env, provider, url, request, Date.now());
+  } catch (e) {
+    const code = e instanceof OAuthError ? e.code : 'oauth_failed';
+    return redirect('/login.html?error=' + encodeURIComponent(code), clearStateCookie());
+  }
+  if (!isEmailAllowed(env, identity.email)) {
+    return redirect('/login.html?error=not_allowed', clearStateCookie());
+  }
+  const userId = await resolveUser(env, identity.email, identity.name ?? identity.email);
+  const setSession = await sessionCookie(env, userId);
+  // two Set-Cookie headers: clear the oauth state, set the session
+  return new Response(null, {
+    status: 302,
+    headers: [['location', '/sites.html'], ['set-cookie', clearStateCookie()], ['set-cookie', setSession]],
+  });
+}
+
+/** Map a verified email to a stable user_id; the owner keeps 'admin' so
+ *  existing sites stay attached. Upserts the users row. */
+async function resolveUser(env: Env, email: string, name: string): Promise<string> {
+  const isOwner = env.ADMIN_EMAIL && email.toLowerCase() === env.ADMIN_EMAIL.toLowerCase();
+  const userId = isOwner ? ADMIN_USER_ID : `email:${email.toLowerCase()}`;
+  await env.DB.prepare(`
+    INSERT INTO users (user_id, email, name, created_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, name = excluded.name
+  `).bind(userId, email.toLowerCase(), name.slice(0, 100), Date.now()).run();
+  return userId;
+}
+
+/** Build the signed session Set-Cookie header (format verified by api/auth.ts). */
+async function sessionCookie(env: Env, userId: string): Promise<string> {
+  const payload = btoa(JSON.stringify({ u: userId, exp: Date.now() + SESSION_TTL_MS }))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const cookie = `${payload}.${await hmacSign(env.HMAC_KEY, payload)}`;
-  return json({ ok: true, user: ADMIN_USER_ID }, 200,
-    serializeCookie(SESSION_COOKIE, cookie, { maxAgeSeconds: SESSION_TTL_MS / 1000, httpOnly: true, sameSite: 'Lax' }));
+  return serializeCookie(SESSION_COOKIE, cookie, { maxAgeSeconds: SESSION_TTL_MS / 1000, httpOnly: true, sameSite: 'Lax' });
+}
+
+function redirect(location: string, setCookie?: string): Response {
+  const headers: Record<string, string> = { location };
+  if (setCookie) headers['set-cookie'] = setCookie;
+  return new Response(null, { status: 302, headers });
 }
 
 // ---------------------------------------------------------------------------

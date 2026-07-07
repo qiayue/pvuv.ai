@@ -188,6 +188,38 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 - **一小时内**：指标卡/趋势图/各维度表填充——它们读预聚合表，cron 每小时
   `:05` 重算。
 
+## 可选:Google / GitHub 登录
+
+控制台支持密码登录(仅站主),以及可选的 Google、GitHub 社交登录。某个渠道只有
+在其 client id 和 secret 都设置后,才会出现在登录页。
+
+**访问由邮箱白名单控制**——OAuth 是身份认证,不是开放注册。`ADMIN_EMAIL` 永远
+允许;其他人加进 `workers/console/wrangler.toml` 的 `ALLOWED_EMAILS`(逗号分隔)。
+身份以验证过的邮箱为准,所以同一邮箱用 Google 或 GitHub 登录是同一个账号;
+`ADMIN_EMAIL` 映射到站主及其已建站点。
+
+**Google:** 在 [Google Cloud Console](https://console.cloud.google.com/) →
+API 和服务 → 凭据,创建 OAuth 客户端(类型:Web 应用),授权重定向 URI 填
+`https://<你的控制台域名>/api/auth/google/callback`。然后:
+
+```bash
+# 在 workers/console/wrangler.toml 的 [vars] 里设置 GOOGLE_CLIENT_ID,然后:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+**GitHub:** 在 GitHub → Settings → Developer settings → OAuth Apps → New OAuth
+App,Authorization callback URL 填
+`https://<你的控制台域名>/api/auth/github/callback`。然后:
+
+```bash
+# 在 workers/console/wrangler.toml 的 [vars] 里设置 GITHUB_CLIENT_ID,然后:
+npx wrangler secret put GITHUB_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+改了 `[vars]` 后要重新部署 console;密钥即时生效。
+
 ## 自定义首页
 
 部署后的 `/` 是一个公开落地页。三个层级，都不需要 fork 代码：

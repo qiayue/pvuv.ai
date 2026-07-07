@@ -201,6 +201,42 @@ that `POST /in` returns **204**. Data timeline:
   the pre-aggregated rollups, which the cron worker recomputes at `:05` every
   hour.
 
+## Optional: Google / GitHub login
+
+The console supports password login (owner only) and, optionally, social login
+with Google and/or GitHub. A provider appears on the sign-in page only when
+both its client id and secret are set.
+
+**Access is gated by an allowlist** — OAuth is authentication, not open
+registration. `ADMIN_EMAIL` is always allowed; add any additional emails to
+`ALLOWED_EMAILS` (comma-separated) in `workers/console/wrangler.toml`. A
+verified email is the identity, so signing in with Google or GitHub under the
+same address is the same account; `ADMIN_EMAIL` maps to the owner and its
+existing sites.
+
+**Google:** in [Google Cloud Console](https://console.cloud.google.com/) →
+APIs & Services → Credentials, create an OAuth client (type: Web application)
+with authorized redirect URI `https://<your-console-domain>/api/auth/google/callback`.
+Then:
+
+```bash
+# set GOOGLE_CLIENT_ID in workers/console/wrangler.toml [vars], and:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+**GitHub:** in GitHub → Settings → Developer settings → OAuth Apps → New OAuth
+App, set Authorization callback URL
+`https://<your-console-domain>/api/auth/github/callback`. Then:
+
+```bash
+# set GITHUB_CLIENT_ID in workers/console/wrangler.toml [vars], and:
+npx wrangler secret put GITHUB_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+Redeploy the console after changing `[vars]`; secrets take effect immediately.
+
 ## Customize the homepage
 
 Your deployment's `/` is a public landing page. Three tiers, no forking needed:

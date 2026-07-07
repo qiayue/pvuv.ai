@@ -5,8 +5,10 @@
 #
 # All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
 # Secrets:
-#   wrangler secret put HMAC_KEY       -c workers/console/wrangler.toml  (session cookies)
-#   wrangler secret put ADMIN_PASSWORD -c workers/console/wrangler.toml  (owner login)
+#   wrangler secret put HMAC_KEY             -c workers/console/wrangler.toml  (session cookies)
+#   wrangler secret put ADMIN_PASSWORD       -c workers/console/wrangler.toml  (owner password login)
+#   wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml  (optional — Google login)
+#   wrangler secret put GITHUB_CLIENT_SECRET -c workers/console/wrangler.toml  (optional — GitHub login)
 #
 # NOTE: keep all top-level keys (routes, kv_namespaces, …) ABOVE the first
 # [table] header, or TOML nests them into that table and the binding is lost.
@@ -26,8 +28,22 @@ kv_namespaces = [
 ]
 
 [vars]
-# Owner login email (M1 single-owner console). Not a secret; the password is.
+# Owner login email. Not a secret; the password is. This email is always
+# allowed to sign in (via password or OAuth) and owns the existing sites.
 ADMIN_EMAIL = "admin@example.com"
+
+# Optional extra emails allowed to sign in via OAuth (comma-separated). The
+# owner above is always allowed; anyone else must be listed here — OAuth is
+# authentication, not open registration.
+ALLOWED_EMAILS = ""
+
+# Optional social login. Set the client id here (public) and the matching
+# secret via `wrangler secret put`. A provider is offered only when BOTH are
+# set. OAuth redirect/callback URL to register with each provider:
+#   https://<your-console-domain>/api/auth/google/callback
+#   https://<your-console-domain>/api/auth/github/callback
+GOOGLE_CLIENT_ID = ""
+GITHUB_CLIENT_ID = ""
 
 # Static assets (single-file HTML console; sdk/dist/f.js is served separately
 # from js.pvuv.ai — see PROJECT_PLAN.md §2 "Static hosting").
