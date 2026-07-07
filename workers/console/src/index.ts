@@ -356,7 +356,9 @@ function isAdminEmail(env: Env, email: string): boolean {
 async function sessionCookie(env: Env, userId: string): Promise<string> {
   const payload = btoa(JSON.stringify({ u: userId, exp: Date.now() + SESSION_TTL_MS }))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const cookie = `${payload}.${await hmacSign(env.HMAC_KEY, payload)}`;
+  // domain-separated signature (see api/auth.ts verifier) so a signature from
+  // another purpose (e.g. the _pv_v verdict cookie) can never verify as a session
+  const cookie = `${payload}.${await hmacSign(env.HMAC_KEY, `session|${payload}`)}`;
   return serializeCookie(SESSION_COOKIE, cookie, { maxAgeSeconds: SESSION_TTL_MS / 1000, httpOnly: true, sameSite: 'Lax' });
 }
 

@@ -125,12 +125,26 @@ const TS_METRICS = new Set([
   'bot_count', 'suspect_count', 'crawler_count', 'clean_count',
 ]);
 
+/** All calendar-day labels from start..end inclusive ('YYYY-MM-DD' strings). */
+function enumerateDays(start: string, end: string): string[] {
+  const out: string[] = [];
+  let t = Date.parse(`${start}T00:00:00Z`);
+  const endT = Date.parse(`${end}T00:00:00Z`);
+  for (let i = 0; t <= endT && i < 800; i++, t += 86400e3) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+}
+
 export async function timeseries(db: D1Database, siteId: string, metric: string, period: Period) {
   if (!TS_METRICS.has(metric)) throw new ApiError(400, `unknown metric: ${metric}`);
   const rows = await db.prepare(
-    `SELECT day, ${metric} AS value FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day`,
-  ).bind(siteId, period.start, period.end).all();
-  return { metric, interval: 'day', points: rows.results };
+    `SELECT day, ${metric} AS value FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?`,
+  ).bind(siteId, period.start, period.end).all<{ day: string; value: number }>();
+  // fill zero-traffic days so the series has a point per day (a rate metric
+  // stays null on a no-traffic day rather than a misleading 0)
+  const byDay = new Map(rows.results.map((r) => [r.day, r.value]));
+  const missing = metric === 'bounce_rate' || metric === 'avg_duration_ms' ? null : 0;
+  const points = enumerateDays(period.start, period.end).map((day) => ({ day, value: byDay.has(day) ? byDay.get(day)! : missing }));
+  return { metric, interval: 'day', points };
 }
 
 // ---------------------------------------------------------------------------
@@ -163,34 +177,26 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
   }
 
   if (dim === 'country' || dim === 'device') {
-    // not carried by M1 rollups — let SQL do the GROUP BY per month table (do
-    // NOT stream every raw row into the isolate), then merge across months.
-    // uv is summed per-table distinct counts: an approximation for visitors
-    // active across a month boundary, acceptable for a breakdown.
+    // not carried by M1 rollups — aggregate raw pageviews. A UNION-ALL over the
+    // period's month partitions lets SQL do COUNT(DISTINCT visitor_id) ONCE
+    // across all months (exact uv, no cross-month double-count) without
+    // streaming rows into the isolate.
     const col = dim === 'country' ? 'country' : 'device_type';
-    const acc = new Map<string, { pv: number; uv: number; pv_clean: number }>();
-    for (const table of await eventTables(db, period)) {
-      const rows = await db.prepare(`
-        SELECT COALESCE(${col}, '(unknown)') AS key,
-               COUNT(*) AS pv,
-               COUNT(DISTINCT visitor_id) AS uv,
-               SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END) AS pv_clean
-        FROM ${table} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?
-        GROUP BY key
-      `).bind(siteId, period.startTs, period.endTs).all<{ key: string; pv: number; uv: number; pv_clean: number }>();
-      for (const r of rows.results) {
-        const e = acc.get(r.key) ?? { pv: 0, uv: 0, pv_clean: 0 };
-        e.pv += r.pv;
-        e.uv += r.uv;
-        e.pv_clean += r.pv_clean;
-        acc.set(r.key, e);
-      }
-    }
-    const rows = [...acc.entries()]
-      .map(([key, e]) => ({ key, ...e }))
-      .sort((a, b) => b.pv - a.pv)
-      .slice(0, limit);
-    return { dim, rows };
+    const tables = await eventTables(db, period);
+    if (tables.length === 0) return { dim, rows: [] };
+    const union = tables
+      .map((t) => `SELECT ${col} AS k, visitor_id, verdict FROM ${t} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?`)
+      .join(' UNION ALL ');
+    const binds = tables.flatMap(() => [siteId, period.startTs, period.endTs]);
+    const rows = await db.prepare(`
+      SELECT COALESCE(k, '(unknown)') AS key,
+             COUNT(*) AS pv,
+             COUNT(DISTINCT visitor_id) AS uv,
+             SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END) AS pv_clean
+      FROM (${union})
+      GROUP BY key ORDER BY pv DESC LIMIT ?
+    `).bind(...binds, limit).all();
+    return { dim, rows: rows.results };
   }
 
   throw new ApiError(400, `unknown dim: ${dim}`);
@@ -212,12 +218,15 @@ export async function quality(db: D1Database, siteId: string, period: Period) {
     FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day
   `).bind(siteId, period.start, period.end).all();
 
-  // which signals fire most (evidence panel, §11.2) — bit-counted in SQL
+  // which signals fire most (evidence panel, §11.2) — bit-counted in SQL.
+  // Count pageview events only, so these are comparable to the pageview-based
+  // verdict totals above (every visit also emits page_leave etc. carrying the
+  // same flags; counting all events would ~double the numbers).
   const flagCols = ALL_FLAGS.map((n) => `SUM(CASE WHEN bot_flags & ${FLAG[n]} THEN 1 ELSE 0 END) AS ${n}`).join(', ');
   const flags: Record<string, number> = {};
   for (const table of await eventTables(db, period)) {
     const row = await db.prepare(
-      `SELECT ${flagCols} FROM ${table} WHERE site_id = ? AND ts >= ? AND ts < ?`,
+      `SELECT ${flagCols} FROM ${table} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?`,
     ).bind(siteId, period.startTs, period.endTs).first<Record<FlagName, number>>();
     for (const n of ALL_FLAGS) flags[n] = (flags[n] ?? 0) + (row?.[n] ?? 0);
   }

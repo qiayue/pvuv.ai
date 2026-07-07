@@ -3,12 +3,21 @@
  *
  * Batch-writes enriched+scored EventRows into monthly events_YYYYMM tables
  * (created on demand from the shared template) and incrementally updates
- * sessions / identities / visitor_profiles in the same D1 batch.
+ * sessions / identities / visitor_profiles.
  *
- * Failure model (M1): any error retries the whole message batch (Queue
- * redelivery). Inserts are not idempotent, so a partially-committed batch
- * can duplicate events on retry — acceptable for M1, revisit with
- * idempotency keys if it shows up in practice.
+ * Exactly-once posture: event rows carry a stable `eid` and are written with
+ * INSERT OR IGNORE against a UNIQUE index, so a Cloudflare Queues redelivery
+ * (at-least-once) never duplicates an event row. All statements for one queue
+ * batch go into a SINGLE atomic D1 batch() — no multi-chunk partial commits —
+ * so a failure rolls the whole batch back and retryAll() re-runs it cleanly.
+ * The dashboard's core metrics (pv/uv/verdict/page/country/device) are
+ * recomputed from the exactly-once events by the rollup, so they are correct
+ * under redelivery. The sessions/visitor_profiles counters are additive; in
+ * the rare case an ack is lost AFTER a successful commit they could over-count
+ * on redelivery — a bounded residual, full session-table exactly-once is M2.
+ *
+ * Keep the queue's max_batch_size modest (see wrangler.toml) so one batch's
+ * statements fit comfortably in a single D1 batch().
  */
 
 import {
@@ -27,9 +36,6 @@ const ENGAGED_DWELL_MS = 10_000;
 /** Months whose table+indexes this isolate has already ensured. */
 const ensuredMonths = new Set<string>();
 
-/** D1 batch() statement chunk size (defensive). */
-const BATCH_CHUNK = 80;
-
 export default {
   async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
     const rows = batch.messages.map((m) => m.body).filter(isPlausibleRow);
@@ -47,7 +53,8 @@ export default {
         ensuredMonths.add(suffix);
       }
 
-      // 2. one D1 batch: event inserts + session/identity/profile upserts
+      // 2. ONE atomic D1 batch: event inserts (OR IGNORE) + session/identity/
+      //    profile upserts. All-or-nothing, so a retry can't partial-commit.
       const stmts: D1PreparedStatement[] = [];
       for (const row of rows) {
         stmts.push(env.DB.prepare(eventInsertSQL(monthSuffix(row.ts))).bind(...bindable(eventRowValues(row))));
@@ -56,9 +63,7 @@ export default {
         if (identity) stmts.push(identity);
         stmts.push(profileUpsert(env.DB, row));
       }
-      for (let i = 0; i < stmts.length; i += BATCH_CHUNK) {
-        await env.DB.batch(stmts.slice(i, i + BATCH_CHUNK));
-      }
+      await env.DB.batch(stmts);
 
       batch.ackAll();
     } catch (err) {
@@ -113,7 +118,10 @@ function sessionUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
                         END,
       bot_score       = MAX(sessions.bot_score, excluded.bot_score),
       bot_flags       = sessions.bot_flags | excluded.bot_flags,
-      verdict         = CASE WHEN excluded.bot_score >= sessions.bot_score
+      -- keep the verdict of the highest-scoring event; ties keep the existing
+      -- verdict (strict >) so a later equal-score event can't flip e.g. a
+      -- 'crawler' label (set independent of score) to 'clean'
+      verdict         = CASE WHEN excluded.bot_score > sessions.bot_score
                              THEN excluded.verdict ELSE sessions.verdict END,
       last_active_at  = MAX(sessions.last_active_at, excluded.last_active_at)
   `).bind(
@@ -173,7 +181,7 @@ function profileUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
       ip24_hash    = COALESCE(excluded.ip24_hash, visitor_profiles.ip24_hash),
       asn          = COALESCE(excluded.asn, visitor_profiles.asn),
       bot_score    = MAX(visitor_profiles.bot_score, excluded.bot_score),
-      verdict      = CASE WHEN excluded.bot_score >= visitor_profiles.bot_score
+      verdict      = CASE WHEN excluded.bot_score > visitor_profiles.bot_score
                           THEN excluded.verdict ELSE visitor_profiles.verdict END,
       first_seen   = MIN(visitor_profiles.first_seen, excluded.first_seen),
       last_seen    = MAX(visitor_profiles.last_seen, excluded.last_seen)

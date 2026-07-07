@@ -71,13 +71,14 @@ export async function runDiagnostics(env: DiagEnv): Promise<Check[]> {
           fix: 'Run `npm run db:migrate:remote` (applies migrations/ to your D1).',
         });
       }
-      // latest migration marker: sessions.entry_host (0003)
+      // latest-migration marker: sites.timezone (0004) on the always-present
+      // sites table
       try {
-        await env.DB.prepare('SELECT entry_host FROM sessions LIMIT 1').first();
+        await env.DB.prepare('SELECT timezone FROM sites LIMIT 1').first();
       } catch {
         checks.push({
-          key: 'migration_latest', label: 'Latest migration (0003) applied', status: 'warn',
-          detail: 'sessions.entry_host missing',
+          key: 'migration_latest', label: 'Latest migrations applied', status: 'warn',
+          detail: 'sites.timezone missing',
           fix: 'Run `npm run db:migrate:remote` to apply the newest migrations.',
         });
       }

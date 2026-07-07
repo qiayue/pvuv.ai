@@ -11,7 +11,9 @@ account_id = "PLACEHOLDER_ACCOUNT_ID"
 
 [[queues.consumers]]
 queue = "pvuv-ingest"
-max_batch_size = 100
+# modest batch so all of one batch's statements (≈3–4 per event) fit in a
+# single atomic D1 batch() — see the consumer's exactly-once note
+max_batch_size = 50
 max_batch_timeout = 5
 max_retries = 3
 dead_letter_queue = "pvuv-ingest-dlq"

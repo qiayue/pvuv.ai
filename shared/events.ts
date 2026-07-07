@@ -56,6 +56,9 @@ export const MAX_REQUEST_EVENTS = 25;
 // ---------------------------------------------------------------------------
 
 export interface EventRow {
+  /** stable dedup key (server-derived from the event tuple) — a UNIQUE index
+   *  + INSERT OR IGNORE makes event writes exactly-once under queue redelivery */
+  eid: string;
   site_id: string;
   event: string;
   visitor_id: string;
@@ -108,6 +111,7 @@ export interface EventRow {
 }
 
 export const EVENT_COLUMNS = [
+  'eid',
   'site_id', 'event', 'visitor_id', 'session_id', 'user_id',
   'url', 'hostname', 'path', 'referrer', 'ref_domain',
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
@@ -147,6 +151,7 @@ export function eventsTableDDL(suffix: string): string[] {
   return [
     `CREATE TABLE IF NOT EXISTS ${t} (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      eid           TEXT,
       site_id       TEXT NOT NULL,
       event         TEXT NOT NULL,
       visitor_id    TEXT NOT NULL,
@@ -178,6 +183,7 @@ export function eventsTableDDL(suffix: string): string[] {
       ts INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_ev${suffix}_eid ON ${t}(eid)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_site_ts ON ${t}(site_id, ts)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_visitor ON ${t}(site_id, visitor_id)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_session ON ${t}(session_id)`,
@@ -189,7 +195,8 @@ export function eventsTableDDL(suffix: string): string[] {
 export function eventInsertSQL(suffix: string): string {
   const cols = EVENT_COLUMNS.join(', ');
   const marks = EVENT_COLUMNS.map(() => '?').join(', ');
-  return `INSERT INTO ${eventsTableName(suffix)} (${cols}) VALUES (${marks})`;
+  // OR IGNORE: a redelivered event (same eid) is a no-op, not a duplicate row
+  return `INSERT OR IGNORE INTO ${eventsTableName(suffix)} (${cols}) VALUES (${marks})`;
 }
 
 export function eventRowValues(row: EventRow): unknown[] {

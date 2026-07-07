@@ -46,6 +46,7 @@ CREATE TABLE sites (
 -- raw events (monthly-partitioned; initial month 202607)
 CREATE TABLE events_202607 (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  eid           TEXT,                            -- dedup key (added by 0005)
   site_id       TEXT NOT NULL,
   event         TEXT NOT NULL,
   visitor_id    TEXT NOT NULL,
@@ -77,6 +78,7 @@ CREATE TABLE events_202607 (
   ts INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE UNIQUE INDEX idx_ev202607_eid ON events_202607(eid);
 CREATE INDEX idx_ev202607_site_ts ON events_202607(site_id, ts);
 CREATE INDEX idx_ev202607_visitor ON events_202607(site_id, visitor_id);
 CREATE INDEX idx_ev202607_session ON events_202607(session_id);

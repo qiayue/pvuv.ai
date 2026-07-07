@@ -16,7 +16,8 @@ export async function verifySession(secret: string, cookieHeader: string | null)
   const dot = raw.indexOf('.');
   if (dot <= 0) return null;
   const payload = raw.slice(0, dot);
-  if (!(await hmacVerify(secret, payload, raw.slice(dot + 1)))) return null;
+  // domain-separated: must match the console signer's `session|` prefix
+  if (!(await hmacVerify(secret, `session|${payload}`, raw.slice(dot + 1)))) return null;
   try {
     const s = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { u: string; exp: number };
     if (typeof s.u !== 'string' || typeof s.exp !== 'number' || s.exp < Date.now()) return null;

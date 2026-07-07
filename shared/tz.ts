@@ -15,14 +15,15 @@ const DAY_MS = 86400e3;
 /** Offset (ms) of a timezone at a given instant: local wall-clock − UTC. */
 export function tzOffsetMs(instant: number, tz: string): number {
   const dtf = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hour12: false,
+    timeZone: tz, hourCycle: 'h23', // force 00–23 so midnight is never "24"
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
-  });
+    // `hourCycle` is valid at runtime but missing from the pinned TS lib
+  } as Intl.DateTimeFormatOptions);
   const p: Record<string, string> = {};
   for (const part of dtf.formatToParts(new Date(instant))) p[part.type] = part.value;
   let hour = parseInt(p.hour, 10);
-  if (hour === 24) hour = 0; // some engines render midnight as 24
+  if (hour === 24) hour = 0; // defensive: some ICU builds still emit 24 at midnight
   const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, hour, +p.minute, +p.second);
   return asUTC - instant;
 }

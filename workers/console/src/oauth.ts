@@ -74,10 +74,10 @@ function b64urlJson(obj: unknown): string {
 }
 
 async function signState(secret: string, p: Provider, now: number): Promise<string> {
-  // nonce derived from HMAC of (provider|exp) — no RNG needed and still
-  // unguessable without the key; exp bounds replay
+  // random nonce for entropy + a signed exp to bound replay; the double-submit
+  // cookie (verifyState) is what actually stops CSRF
   const exp = now + STATE_TTL_MS;
-  const payload = b64urlJson({ p, exp });
+  const payload = b64urlJson({ p, exp, n: crypto.randomUUID() });
   const sig = await hmacSign(secret, `state|${payload}`);
   return `${payload}.${sig}`;
 }
@@ -174,23 +174,22 @@ async function fetchIdentity(p: Provider, token: string, fetchFn: typeof fetch):
   const u = await r.json() as Record<string, unknown>;
 
   if (p === 'google') {
-    // Google only returns verified emails on the userinfo endpoint
-    if (u.email_verified === false) throw new OAuthError('no_email', 'email not verified');
+    // fail-closed: require an explicitly verified email (a missing field is
+    // NOT treated as verified). Identity gating is by email, so this matters.
+    if (u.email_verified !== true) throw new OAuthError('no_email', 'email not verified');
     return { email: String(u.email ?? '').toLowerCase(), name: (u.name as string) ?? null };
   }
 
-  // GitHub: /user may not include a (verified, primary) email → fetch /user/emails
-  let email = typeof u.email === 'string' ? u.email : '';
-  if (!email) {
-    const er = await fetchFn('https://api.github.com/user/emails', { headers });
-    if (er.ok) {
-      const emails = await er.json() as Array<{ email: string; primary: boolean; verified: boolean }>;
-      const pick = emails.find((x) => x.primary && x.verified) ?? emails.find((x) => x.verified);
-      email = pick?.email ?? '';
-    }
-  }
-  if (!email) throw new OAuthError('no_email', 'no verified GitHub email');
-  return { email: email.toLowerCase(), name: (u.name as string) ?? (u.login as string) ?? null };
+  // GitHub: /user.email is the (attacker-settable) public profile email and
+  // carries no verified flag — always resolve a PRIMARY+VERIFIED address from
+  // /user/emails instead, never trust /user.email for the identity decision.
+  const er = await fetchFn('https://api.github.com/user/emails', { headers });
+  if (!er.ok) throw new OAuthError('userinfo', `github emails failed (${er.status})`);
+  const emails = await er.json() as Array<{ email: string; primary: boolean; verified: boolean }>;
+  const pick = (Array.isArray(emails) ? emails : [])
+    .find((x) => x.primary && x.verified) ?? (Array.isArray(emails) ? emails : []).find((x) => x.verified);
+  if (!pick?.email) throw new OAuthError('no_email', 'no verified GitHub email');
+  return { email: pick.email.toLowerCase(), name: (u.name as string) ?? (u.login as string) ?? null };
 }
 
 export function clearStateCookie(): string {

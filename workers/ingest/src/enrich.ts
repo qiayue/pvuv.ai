@@ -221,6 +221,11 @@ export async function enrichEvent(
   let ts = typeof ev.ts === 'number' ? ev.ts : ctx.now;
   if (Math.abs(ts - ctx.now) > TS_TOLERANCE_MS) ts = ctx.now;
 
+  // stable dedup key: derived only from the event's own identity fields, so a
+  // redelivered copy hashes identically and INSERT OR IGNORE drops it. Two
+  // genuinely distinct events differ in at least one of these.
+  const eid = (await hmacSign(secret, `eid|${ev.s}|${ev.vid}|${ev.sid}|${ev.e}|${urlInfo.path}|${ts}`)).slice(0, 32);
+
   // revenue/currency are reserved props (§4.2); FX conversion to revenue_usd
   // at the daily rate is M3 — M1 stores USD verbatim only.
   const revenue = typeof ev.p?.revenue === 'number' ? (ev.p.revenue as number) : null;
@@ -240,6 +245,7 @@ export async function enrichEvent(
   }
 
   return {
+    eid,
     site_id: ev.s,
     event: String(ev.e).slice(0, 64),
     visitor_id: String(ev.vid).slice(0, 64),

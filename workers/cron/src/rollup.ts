@@ -87,13 +87,15 @@ async function rollupSiteDay(
   `).bind(day, ...pageEv.binds));
 
   // bounces: session-level, attributed to (hostname, entry_page); scoped to
-  // this site + local day
+  // this site + local day. Match hostname strictly — a NULL entry_host (only
+  // possible for legacy pre-0003 sessions) is NOT matched to every hostname
+  // row, which would double-count a shared path across hostnames.
   stmts.push(db.prepare(`
     UPDATE rollup_page_daily SET bounces = (
       SELECT COUNT(*) FROM sessions s
       WHERE s.site_id = rollup_page_daily.site_id
         AND s.entry_page = rollup_page_daily.path
-        AND (s.entry_host = rollup_page_daily.hostname OR s.entry_host IS NULL)
+        AND s.entry_host = rollup_page_daily.hostname
         AND s.is_bounce = 1
         AND s.started_at >= ? AND s.started_at < ?
     )
