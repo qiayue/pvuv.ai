@@ -122,6 +122,12 @@ Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (ingest 
 
 Scoring weights, verdict thresholds, and the blocklist are **tunable and deployment-private**. `config.example.toml` ships example defaults; copy it to `config.local.toml` (gitignored) and tune privately. The engine reads weights from config — nothing is hardcoded — so you can adjust detection without exposing it to fraudsters. See [`PROJECT_PLAN.md` §21](./PROJECT_PLAN.md).
 
+## Attribution
+
+The collection SDK renders a small attribution line — `Web analytics by pvuv.ai · open source` — in the footer of each measured site's **homepage only** (never on inner pages). Free / self-hosted deployments must keep these links intact; removing or hiding them requires a commercial license (contact the author).
+
+This is an additional term under [AGPL-3.0 §7(b)](https://www.gnu.org/licenses/agpl-3.0.html#section7), which permits requiring the preservation of specified author attributions in modified versions.
+
 ## Privacy & compliance
 
 pvuv.ai is designed to minimize what it stores:

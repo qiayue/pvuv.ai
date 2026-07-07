@@ -122,6 +122,12 @@ cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 
 评分权重、判定阈值、黑名单都是**可调且部署私有**的。`config.example.toml` 提供示例默认值；复制为 `config.local.toml`（已 gitignore）自行私有调优。引擎从 config 读取权重、代码不硬编码，因此可以在不暴露给刷手的前提下调整检测。详见 [`PROJECT_PLAN.zh-CN.md` §21](./PROJECT_PLAN.zh-CN.md)。
 
+## 署名（Attribution）
+
+采集 SDK 会在被统计网站的**首页**底部渲染一行小字署名——`Web analytics by pvuv.ai · open source`（仅首页，内页绝不出现）。免费/自托管部署必须保留这两个链接；移除或隐藏需要商业授权（联系作者）。
+
+依据是 [AGPL-3.0 §7(b)](https://www.gnu.org/licenses/agpl-3.0.html#section7)：该条款允许在许可证之上附加「要求保留指定作者署名」的附加条款。
+
 ## 隐私与合规
 
 pvuv.ai 以数据最小化为设计原则：

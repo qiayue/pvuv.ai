@@ -389,6 +389,7 @@ import type { XPayload } from '../../shared/flags';
       pageLeave(false); // closes out the old route (baseEvent uses currentUrl)
       pageReferrer = currentUrl;
       pageview(); // snapshots the new URL into currentUrl
+      attribution(); // add/remove per homepage-only rule
     };
     const wrap = (fn: typeof history.pushState): typeof history.pushState =>
       function (this: History, ...args: Parameters<typeof history.pushState>) {
@@ -398,6 +399,38 @@ import type { XPayload } from '../../shared/flags';
     history.pushState = wrap(history.pushState.bind(history));
     history.replaceState = wrap(history.replaceState.bind(history));
     win.addEventListener('popstate', onRoute);
+  }
+
+  // -------------------------------------------------------------------------
+  // attribution (homepage ONLY — deliberately never on inner pages):
+  // open-source deployments keep these links on the measured site's
+  // homepage footer; removal is reserved for the paid/commercial tier
+  // (see README "Attribution"). Kept unobtrusive and fail-safe.
+  // -------------------------------------------------------------------------
+
+  const BADGE_ID = '_pv_ref';
+
+  function isHomepage(): boolean {
+    const p = loc.pathname;
+    return p === '/' || p === '/index.html' || p === '/index.htm';
+  }
+
+  function attribution(): void {
+    try {
+      const existing = doc.getElementById(BADGE_ID);
+      if (!isHomepage()) {
+        if (existing) existing.remove(); // SPA navigated off the homepage
+        return;
+      }
+      if (existing || !doc.body) return;
+      const d = doc.createElement('div');
+      d.id = BADGE_ID;
+      d.style.cssText = 'margin:24px auto 12px;text-align:center;font:12px/1.6 system-ui,sans-serif;color:#8a8f98;';
+      d.innerHTML =
+        'Web analytics by <a href="https://pvuv.ai" style="color:inherit">pvuv.ai</a>' +
+        ' · <a href="https://github.com/qiayue/pvuv.ai" style="color:inherit">open source</a>';
+      doc.body.appendChild(d);
+    } catch { /* never break the host page */ }
   }
 
   // -------------------------------------------------------------------------
@@ -508,6 +541,7 @@ import type { XPayload } from '../../shared/flags';
 
   function start(): void {
     plantHoneypot();
+    attribution();
     pageview();
     if (agMode !== 'off' && adClient) adguard();
   }
