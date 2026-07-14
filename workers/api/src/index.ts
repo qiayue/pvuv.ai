@@ -14,7 +14,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from './queries';
 import { verifySession } from './auth';
 import { hmacSign } from '../../../shared/ids';
 
@@ -51,6 +51,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   const period = parsePeriod(url.searchParams.get('period'), await siteTimezone(env.DB, siteId));
   const q = url.searchParams;
 
+  if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
   if (resource === 'overview') return json(await overview(env.DB, siteId, period));
   if (resource === 'timeseries') {
     return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period));

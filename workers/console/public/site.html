@@ -33,6 +33,11 @@
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: #aeb6c2; margin-top: 8px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   .muted { color: #8b93a1; }
+  .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #aeb6c2; font-size: 13px; }
+  .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: #e6e8eb; }
+  .rt .pulse { width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
+  .rt svg { display: block; }
 </style>
 </head>
 <body>
@@ -56,6 +61,7 @@
   </select>
 </header>
 <main>
+  <div class="rt" id="realtime"></div>
   <div class="cards" id="cards"></div>
 
   <h2>Pageviews</h2>
@@ -156,7 +162,7 @@ async function load() {
   const o = await get('overview');
   const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
   document.getElementById('cards').innerHTML = [
-    ['Pageviews', fmt(o.pv)], ['Visitors (Σ daily)', fmt(o.uv)], ['Sessions', fmt(o.sessions)],
+    ['Pageviews', fmt(o.pv)], ['Visitors', fmt(o.uv)], ['Sessions', fmt(o.sessions)],
     ['Bounce rate', o.bounce_rate == null ? '–' : (o.bounce_rate * 100).toFixed(1) + '%'],
     ['Avg. session', dur(o.avg_duration_ms)], ['Human share', cleanShare + '%'],
   ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
@@ -202,8 +208,29 @@ async function load() {
     : '<p class="muted">nothing above the threshold — looking clean</p>';
 }
 
+// live "online now" — polls independently of the selected period (always the
+// last 30 minutes), so the header updates without reloading the whole page.
+function sparkline(minutes) {
+  const w = 90, h = 20, n = minutes.length, max = Math.max(...minutes, 1);
+  const pts = minutes.map((v, i) => `${(i * w / Math.max(n - 1, 1)).toFixed(1)},${(h - 2 - v * (h - 4) / max).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="#34d399" stroke-width="1.5"/></svg>`;
+}
+async function pollRealtime() {
+  try {
+    const r = await fetch(`/api/sites/${site}/realtime`);
+    if (r.status === 401) { location.href = '/login.html'; return; }
+    const d = await r.json();
+    document.getElementById('realtime').innerHTML =
+      `<span class="live"><span class="pulse"></span>${fmt(d.online)} online now</span>` +
+      `<span class="muted">${fmt(d.pageviews)} views in last ${d.window_minutes}m</span>` +
+      sparkline(d.minutes || []);
+  } catch { /* transient — keep the last value */ }
+}
+
 document.getElementById('period').addEventListener('change', load);
 load();
+pollRealtime();
+setInterval(pollRealtime, 15000);
 </script>
 </body>
 </html>

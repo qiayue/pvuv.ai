@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -283,6 +283,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     // period resolved in the site's own timezone (rollups are keyed on it)
     const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
     const q = url.searchParams;
+    if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
     if (resource === 'overview') return json(await overview(env.DB, siteId, period));
     if (resource === 'timeseries') return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period));
     if (resource === 'breakdown') {

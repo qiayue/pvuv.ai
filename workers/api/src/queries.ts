@@ -2,25 +2,32 @@
  * Query layer shared by the api worker (token/owner auth) and the console
  * worker (same-origin session auth) — PROJECT_PLAN.md §10, M1 subset (§18.5).
  *
- * Dashboards read the aggregate layer (rollup_*) wherever possible; raw
- * monthly events tables are touched only for dimensions/drill-downs the M1
- * rollups don't carry (country/device breakdowns, quality flags, traffic
- * list, visitor profile).
+ * Freshness model (M1): the dashboard is REAL-TIME. Totals, breakdowns, quality
+ * and the live-visitor count are computed directly from the raw monthly events
+ * tables + the (consumer-maintained, live) sessions table, so opening or
+ * refreshing the page always reflects the newest data — nothing waits for the
+ * hourly rollup. The only place the pre-aggregated rollup_* tables are read is
+ * the per-day TIMESERIES history (which needs each day bucketed in the site's
+ * timezone — exactly what the rollup precomputes): past days come from the
+ * rollup, and today is recomputed live and appended. So the rollup's job is to
+ * make historical chart reads cheap, never to gate current numbers.
  */
 
 import { FLAG, ALL_FLAGS, type FlagName } from '../../../shared/flags';
-import { localYMD, localMidnightUtc, addDays, weekdayMon0, dayStr } from '../../../shared/tz';
+import { localYMD, localMidnightUtc, localDaySpan, addDays, weekdayMon0, dayStr } from '../../../shared/tz';
 import { monthSuffix } from '../../../shared/events';
 
 // ---------------------------------------------------------------------------
-// periods: "7d" | "30d" | "90d" → inclusive UTC day range
+// periods: "7d" | "30d" | "90d" | calendar presets → inclusive day range
 // ---------------------------------------------------------------------------
 
 export interface Period {
-  start: string; // YYYY-MM-DD
+  start: string; // YYYY-MM-DD (site-local)
   end: string;
   startTs: number;
   endTs: number; // exclusive
+  tz: string;    // site timezone the range is expressed in
+  now: number;   // server instant the range was resolved at (for today-split)
 }
 
 type YMD = { y: number; m0: number; d: number };
@@ -73,6 +80,8 @@ export function parsePeriod(raw: string | null, tz = 'UTC', now: number = Date.n
     end: dayStr(end.y, end.m0, end.d),
     startTs: localMidnightUtc(tz, start.y, start.m0, start.d),
     endTs: localMidnightUtc(tz, endNext.y, endNext.m0, endNext.d),
+    tz,
+    now,
   };
 }
 
@@ -82,42 +91,137 @@ export async function siteTimezone(db: D1Database, siteId: string): Promise<stri
   return row?.timezone || 'UTC';
 }
 
-/** Existing events_YYYYMM tables overlapping the period's UTC ts span. */
-async function eventTables(db: D1Database, period: Period): Promise<string[]> {
+// ---------------------------------------------------------------------------
+// raw-events helpers
+// ---------------------------------------------------------------------------
+
+/** Existing events_YYYYMM tables overlapping a UTC [startTs, endTs) span. */
+async function eventTables(db: D1Database, startTs: number, endTs: number): Promise<string[]> {
   const rows = await db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'events_[0-9][0-9][0-9][0-9][0-9][0-9]'")
     .all<{ name: string }>();
-  const lo = monthSuffix(period.startTs);
-  const hi = monthSuffix(period.endTs - 1);
+  const lo = monthSuffix(startTs);
+  const hi = monthSuffix(endTs - 1);
   return rows.results
     .map((r) => r.name)
     .filter((n) => { const s = n.slice(7); return s >= lo && s <= hi; })
     .sort();
 }
 
-// ---------------------------------------------------------------------------
-// GET /sites/:id/overview
-// ---------------------------------------------------------------------------
+/** A UNION-ALL over month partitions scoped to one site + UTC span, so a
+ *  COUNT(DISTINCT …) runs ONCE across all months (exact, no cross-month
+ *  double-count) without streaming rows into the isolate. */
+function unionOver(tables: string[], cols: string, siteId: string, startTs: number, endTs: number):
+  { sql: string; binds: unknown[] } {
+  const parts = tables.map((t) => `SELECT ${cols} FROM ${t} WHERE site_id = ? AND ts >= ? AND ts < ?`);
+  return { sql: parts.join(' UNION ALL '), binds: tables.flatMap(() => [siteId, startTs, endTs]) };
+}
 
-export async function overview(db: D1Database, siteId: string, period: Period) {
+/** Site-level pageview aggregates over a UTC span, live from raw events.
+ *  Mirrors the rollup's definitions exactly (clean = verdict NOT bot/crawler). */
+interface SiteAgg {
+  pv: number; uv: number; sessions: number;
+  clean_count: number; suspect_count: number; bot_count: number; crawler_count: number;
+}
+async function eventsSiteAgg(db: D1Database, siteId: string, startTs: number, endTs: number): Promise<SiteAgg> {
+  const zero: SiteAgg = { pv: 0, uv: 0, sessions: 0, clean_count: 0, suspect_count: 0, bot_count: 0, crawler_count: 0 };
+  const tables = await eventTables(db, startTs, endTs);
+  if (tables.length === 0) return zero;
+  const u = unionOver(tables, 'event, visitor_id, session_id, verdict', siteId, startTs, endTs);
   const row = await db.prepare(`
     SELECT
-      COALESCE(SUM(pv), 0) AS pv,
-      COALESCE(SUM(uv), 0) AS uv,
-      COALESCE(SUM(sessions), 0) AS sessions,
-      ROUND(SUM(bounce_rate * sessions) / NULLIF(SUM(CASE WHEN bounce_rate IS NOT NULL THEN sessions END), 0), 4) AS bounce_rate,
-      CAST(SUM(avg_duration_ms * sessions) / NULLIF(SUM(CASE WHEN avg_duration_ms IS NOT NULL THEN sessions END), 0) AS INTEGER) AS avg_duration_ms,
-      COALESCE(SUM(clean_count), 0) AS clean_count,
-      COALESCE(SUM(suspect_count), 0) AS suspect_count,
-      COALESCE(SUM(bot_count), 0) AS bot_count,
-      COALESCE(SUM(crawler_count), 0) AS crawler_count
-    FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?
-  `).bind(siteId, period.start, period.end).first();
-  return { period: { start: period.start, end: period.end }, ...row };
+      COALESCE(SUM(event = 'pageview'), 0) AS pv,
+      COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END) AS uv,
+      COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END) AS sessions,
+      COALESCE(SUM(event = 'pageview' AND verdict = 'clean'), 0) AS clean_count,
+      COALESCE(SUM(event = 'pageview' AND verdict = 'suspect'), 0) AS suspect_count,
+      COALESCE(SUM(event = 'pageview' AND verdict = 'bot'), 0) AS bot_count,
+      COALESCE(SUM(event = 'pageview' AND verdict = 'crawler'), 0) AS crawler_count
+    FROM (${u.sql})
+  `).bind(...u.binds).first<SiteAgg>();
+  return row ?? zero;
+}
+
+/** Session-derived bounce rate + avg dwell over a UTC span (live sessions table). */
+async function sessionAgg(db: D1Database, siteId: string, startTs: number, endTs: number):
+  Promise<{ bounce_rate: number | null; avg_duration_ms: number | null }> {
+  const row = await db.prepare(`
+    SELECT
+      ROUND(AVG(CASE WHEN is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4) AS bounce_rate,
+      CAST(AVG(duration_ms) AS INTEGER) AS avg_duration_ms
+    FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?
+  `).bind(siteId, startTs, endTs).first<{ bounce_rate: number | null; avg_duration_ms: number | null }>();
+  return row ?? { bounce_rate: null, avg_duration_ms: null };
+}
+
+/** Split a period into [past days → rollup] and [today → live], in site tz.
+ *  Today is always computed live and never read from the rollup, so the two
+ *  sources never overlap (no double-count). */
+function hybridSplit(period: Period): { hasPast: boolean; pastStart: string; pastEnd: string; today: { day: string; startTs: number; endTs: number } | null } {
+  const t = localYMD(period.now, period.tz);
+  const todayStr = dayStr(t.y, t.m0, t.d);
+  const includesToday = period.start <= todayStr && todayStr <= period.end;
+  const y = addDays(t.y, t.m0, t.d, -1);
+  const ydayStr = dayStr(y.y, y.m0, y.d);
+  const pastEnd = period.end < todayStr ? period.end : ydayStr;
+  return {
+    hasPast: period.start <= pastEnd,
+    pastStart: period.start,
+    pastEnd,
+    today: includesToday ? localDaySpan(period.tz, t.y, t.m0, t.d) : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// GET /sites/:id/timeseries?metric=pv&interval=day
+// GET /sites/:id/overview  — real-time totals over the whole span
+// ---------------------------------------------------------------------------
+
+export async function overview(db: D1Database, siteId: string, period: Period) {
+  const ev = await eventsSiteAgg(db, siteId, period.startTs, period.endTs);
+  const s = await sessionAgg(db, siteId, period.startTs, period.endTs);
+  return {
+    period: { start: period.start, end: period.end },
+    pv: ev.pv, uv: ev.uv, sessions: ev.sessions,
+    bounce_rate: s.bounce_rate, avg_duration_ms: s.avg_duration_ms,
+    clean_count: ev.clean_count, suspect_count: ev.suspect_count,
+    bot_count: ev.bot_count, crawler_count: ev.crawler_count,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// GET /sites/:id/realtime — visitors active in the last N minutes (live)
+// ---------------------------------------------------------------------------
+
+/** Distinct human visitors + pageviews in the last `windowMin` minutes, with a
+ *  per-minute pageview sparkline. Always live (independent of the period). */
+export async function realtime(db: D1Database, siteId: string, now: number, windowMin = 30) {
+  const startTs = now - windowMin * 60_000;
+  const empty = { window_minutes: windowMin, online: 0, pageviews: 0, minutes: new Array(windowMin).fill(0) };
+  const tables = await eventTables(db, startTs, now + 1);
+  if (tables.length === 0) return empty;
+  const u = unionOver(tables, 'event, visitor_id, verdict, ts', siteId, startTs, now + 1);
+
+  const agg = await db.prepare(`
+    SELECT
+      COUNT(DISTINCT CASE WHEN verdict NOT IN ('bot','crawler') THEN visitor_id END) AS online,
+      COALESCE(SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')), 0) AS pageviews
+    FROM (${u.sql})
+  `).bind(...u.binds).first<{ online: number; pageviews: number }>();
+
+  const perMin = await db.prepare(`
+    SELECT CAST((ts - ?) / 60000 AS INTEGER) AS m, COUNT(*) AS pv
+    FROM (${u.sql})
+    WHERE event = 'pageview' AND verdict NOT IN ('bot','crawler')
+    GROUP BY m
+  `).bind(startTs, ...u.binds).all<{ m: number; pv: number }>();
+
+  const minutes = new Array(windowMin).fill(0);
+  for (const r of perMin.results) if (r.m >= 0 && r.m < windowMin) minutes[r.m] = r.pv;
+  return { window_minutes: windowMin, online: agg?.online ?? 0, pageviews: agg?.pageviews ?? 0, minutes };
+}
+
+// ---------------------------------------------------------------------------
+// GET /sites/:id/timeseries?metric=pv&interval=day  — rollup history + live today
 // ---------------------------------------------------------------------------
 
 const TS_METRICS = new Set([
@@ -136,66 +240,107 @@ function enumerateDays(start: string, end: string): string[] {
 
 export async function timeseries(db: D1Database, siteId: string, metric: string, period: Period) {
   if (!TS_METRICS.has(metric)) throw new ApiError(400, `unknown metric: ${metric}`);
-  const rows = await db.prepare(
-    `SELECT day, ${metric} AS value FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?`,
-  ).bind(siteId, period.start, period.end).all<{ day: string; value: number }>();
-  // fill zero-traffic days so the series has a point per day (a rate metric
-  // stays null on a no-traffic day rather than a misleading 0)
-  const byDay = new Map(rows.results.map((r) => [r.day, r.value]));
+  const split = hybridSplit(period);
+  const byDay = new Map<string, number | null>();
+
+  // past days: pre-aggregated rollup (already bucketed in the site's timezone)
+  if (split.hasPast) {
+    const rows = await db.prepare(
+      `SELECT day, ${metric} AS value FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?`,
+    ).bind(siteId, split.pastStart, split.pastEnd).all<{ day: string; value: number | null }>();
+    for (const r of rows.results) byDay.set(r.day, r.value);
+  }
+
+  // today: recomputed live so the last point is always current
+  if (split.today) {
+    byDay.set(split.today.day, await liveDayMetric(db, siteId, split.today, metric));
+  }
+
+  // fill zero-traffic days (a rate metric stays null rather than a misleading 0)
   const missing = metric === 'bounce_rate' || metric === 'avg_duration_ms' ? null : 0;
   const points = enumerateDays(period.start, period.end).map((day) => ({ day, value: byDay.has(day) ? byDay.get(day)! : missing }));
   return { metric, interval: 'day', points };
 }
 
+/** One timeseries metric for a single live day (today). */
+async function liveDayMetric(db: D1Database, siteId: string, span: { startTs: number; endTs: number }, metric: string): Promise<number | null> {
+  if (metric === 'bounce_rate' || metric === 'avg_duration_ms') {
+    const s = await sessionAgg(db, siteId, span.startTs, span.endTs);
+    return s[metric];
+  }
+  const ev = await eventsSiteAgg(db, siteId, span.startTs, span.endTs);
+  return (ev as unknown as Record<string, number>)[metric] ?? 0;
+}
+
 // ---------------------------------------------------------------------------
-// GET /sites/:id/breakdown?dim=page|source|utm_campaign|country|device
+// GET /sites/:id/breakdown?dim=page|source|utm_campaign|country|device  (live)
 // ---------------------------------------------------------------------------
 
 export async function breakdown(db: D1Database, siteId: string, dim: string, period: Period, limit: number) {
   limit = Math.min(Math.max(limit, 1), 100);
 
+  // page: pv/uv/clean from raw events; bounces from the live sessions table,
+  // attributed to (entry_host, entry_page) — matched strictly so a shared path
+  // on multiple hosts isn't double-counted.
   if (dim === 'page') {
-    const rows = await db.prepare(`
-      SELECT hostname, path, SUM(pv) AS pv, SUM(uv) AS uv, SUM(sessions) AS sessions,
-             SUM(bounces) AS bounces, SUM(total_duration_ms) AS total_duration_ms,
-             SUM(pv_clean) AS pv_clean, SUM(uv_clean) AS uv_clean
-      FROM rollup_page_daily WHERE site_id = ? AND day BETWEEN ? AND ?
-      GROUP BY hostname, path ORDER BY pv DESC LIMIT ?
-    `).bind(siteId, period.start, period.end, limit).all();
-    return { dim, rows: rows.results };
-  }
-
-  if (dim === 'source' || dim === 'utm_campaign') {
-    const col = dim === 'source' ? 'source' : 'campaign';
-    const rows = await db.prepare(`
-      SELECT ${col} AS key, SUM(pv) AS pv, SUM(uv) AS uv, SUM(sessions) AS sessions,
-             SUM(pv_clean) AS pv_clean, SUM(uv_clean) AS uv_clean
-      FROM rollup_source_daily WHERE site_id = ? AND day BETWEEN ? AND ? ${dim === 'utm_campaign' ? "AND campaign != ''" : ''}
-      GROUP BY ${col} ORDER BY pv DESC LIMIT ?
-    `).bind(siteId, period.start, period.end, limit).all();
-    return { dim, rows: rows.results };
-  }
-
-  if (dim === 'country' || dim === 'device') {
-    // not carried by M1 rollups — aggregate raw pageviews. A UNION-ALL over the
-    // period's month partitions lets SQL do COUNT(DISTINCT visitor_id) ONCE
-    // across all months (exact uv, no cross-month double-count) without
-    // streaming rows into the isolate.
-    const col = dim === 'country' ? 'country' : 'device_type';
-    const tables = await eventTables(db, period);
+    const tables = await eventTables(db, period.startTs, period.endTs);
     if (tables.length === 0) return { dim, rows: [] };
-    const union = tables
-      .map((t) => `SELECT ${col} AS k, visitor_id, verdict FROM ${t} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?`)
-      .join(' UNION ALL ');
-    const binds = tables.flatMap(() => [siteId, period.startTs, period.endTs]);
+    const u = unionOver(tables, 'event, visitor_id, session_id, verdict, hostname, path, duration_ms', siteId, period.startTs, period.endTs);
+    const res = await db.prepare(`
+      SELECT hostname, path,
+        COALESCE(SUM(event = 'pageview'), 0) AS pv,
+        COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END) AS uv,
+        COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END) AS sessions,
+        COALESCE(SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')), 0) AS pv_clean,
+        COUNT(DISTINCT CASE WHEN event = 'pageview' AND verdict NOT IN ('bot','crawler') THEN visitor_id END) AS uv_clean,
+        COALESCE(SUM(CASE WHEN event = 'page_leave' THEN COALESCE(duration_ms, 0) ELSE 0 END), 0) AS total_duration_ms
+      FROM (${u.sql})
+      GROUP BY hostname, path ORDER BY pv DESC LIMIT ?
+    `).bind(...u.binds, limit).all<Record<string, unknown> & { hostname: string; path: string }>();
+
+    const bounceRows = await db.prepare(`
+      SELECT entry_host AS hostname, entry_page AS path, COUNT(*) AS bounces
+      FROM sessions
+      WHERE site_id = ? AND is_bounce = 1 AND started_at >= ? AND started_at < ?
+      GROUP BY entry_host, entry_page
+    `).bind(siteId, period.startTs, period.endTs).all<{ hostname: string; path: string; bounces: number }>();
+    const bmap = new Map(bounceRows.results.map((r) => [`${r.hostname} ${r.path}`, r.bounces]));
+    const rows = res.results.map((r) => ({ ...r, bounces: bmap.get(`${r.hostname} ${r.path}`) ?? 0 }));
+    return { dim, rows };
+  }
+
+  // source / campaign: from the live sessions table (session-level attribution)
+  if (dim === 'source' || dim === 'utm_campaign') {
+    const keyExpr = dim === 'source' ? "COALESCE(source, '(direct)')" : "COALESCE(campaign, '')";
+    const rows = await db.prepare(`
+      SELECT ${keyExpr} AS key,
+        COALESCE(SUM(pageviews), 0) AS pv,
+        COUNT(DISTINCT visitor_id) AS uv,
+        COUNT(*) AS sessions,
+        COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN pageviews ELSE 0 END), 0) AS pv_clean,
+        COUNT(DISTINCT CASE WHEN verdict NOT IN ('bot','crawler') THEN visitor_id END) AS uv_clean
+      FROM sessions
+      WHERE site_id = ? AND started_at >= ? AND started_at < ?
+        ${dim === 'utm_campaign' ? "AND campaign IS NOT NULL AND campaign != ''" : ''}
+      GROUP BY key ORDER BY pv DESC LIMIT ?
+    `).bind(siteId, period.startTs, period.endTs, limit).all();
+    return { dim, rows: rows.results };
+  }
+
+  // country / device: raw pageviews, exact cross-month uv via COUNT(DISTINCT)
+  if (dim === 'country' || dim === 'device') {
+    const col = dim === 'country' ? 'country' : 'device_type';
+    const tables = await eventTables(db, period.startTs, period.endTs);
+    if (tables.length === 0) return { dim, rows: [] };
+    const u = unionOver(tables, `${col} AS k, visitor_id, verdict, event`, siteId, period.startTs, period.endTs);
     const rows = await db.prepare(`
       SELECT COALESCE(k, '(unknown)') AS key,
-             COUNT(*) AS pv,
-             COUNT(DISTINCT visitor_id) AS uv,
-             SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END) AS pv_clean
-      FROM (${union})
+             COALESCE(SUM(event = 'pageview'), 0) AS pv,
+             COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END) AS uv,
+             COALESCE(SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')), 0) AS pv_clean
+      FROM (${u.sql})
       GROUP BY key ORDER BY pv DESC LIMIT ?
-    `).bind(...binds, limit).all();
+    `).bind(...u.binds, limit).all();
     return { dim, rows: rows.results };
   }
 
@@ -203,35 +348,41 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
 }
 
 // ---------------------------------------------------------------------------
-// GET /sites/:id/quality — verdict split, daily bot share, fired-flag counts
+// GET /sites/:id/quality — verdict split (live), daily series, fired-flag counts
 // ---------------------------------------------------------------------------
 
 export async function quality(db: D1Database, siteId: string, period: Period) {
-  const totals = await db.prepare(`
-    SELECT COALESCE(SUM(clean_count),0) AS clean, COALESCE(SUM(suspect_count),0) AS suspect,
-           COALESCE(SUM(bot_count),0) AS bot, COALESCE(SUM(crawler_count),0) AS crawler
-    FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?
-  `).bind(siteId, period.start, period.end).first<{ clean: number; suspect: number; bot: number; crawler: number }>();
+  // verdict totals: live from raw events over the whole span
+  const ev = await eventsSiteAgg(db, siteId, period.startTs, period.endTs);
+  const totals = { clean: ev.clean_count, suspect: ev.suspect_count, bot: ev.bot_count, crawler: ev.crawler_count };
 
-  const daily = await db.prepare(`
-    SELECT day, pv, bot_count, suspect_count, crawler_count, clean_count
-    FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day
-  `).bind(siteId, period.start, period.end).all();
+  // daily verdict series: rollup history + live today (for external api consumers)
+  const split = hybridSplit(period);
+  const daily: Array<Record<string, unknown>> = [];
+  if (split.hasPast) {
+    const rows = await db.prepare(`
+      SELECT day, pv, bot_count, suspect_count, crawler_count, clean_count
+      FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day
+    `).bind(siteId, split.pastStart, split.pastEnd).all();
+    daily.push(...rows.results);
+  }
+  if (split.today) {
+    const t = await eventsSiteAgg(db, siteId, split.today.startTs, split.today.endTs);
+    daily.push({ day: split.today.day, pv: t.pv, bot_count: t.bot_count, suspect_count: t.suspect_count, crawler_count: t.crawler_count, clean_count: t.clean_count });
+  }
 
-  // which signals fire most (evidence panel, §11.2) — bit-counted in SQL.
-  // Count pageview events only, so these are comparable to the pageview-based
-  // verdict totals above (every visit also emits page_leave etc. carrying the
-  // same flags; counting all events would ~double the numbers).
+  // which signals fire most (evidence panel, §11.2) — bit-counted in SQL over
+  // pageview events only, so they're comparable to the pageview verdict totals.
   const flagCols = ALL_FLAGS.map((n) => `SUM(CASE WHEN bot_flags & ${FLAG[n]} THEN 1 ELSE 0 END) AS ${n}`).join(', ');
   const flags: Record<string, number> = {};
-  for (const table of await eventTables(db, period)) {
+  for (const table of await eventTables(db, period.startTs, period.endTs)) {
     const row = await db.prepare(
       `SELECT ${flagCols} FROM ${table} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?`,
     ).bind(siteId, period.startTs, period.endTs).first<Record<FlagName, number>>();
     for (const n of ALL_FLAGS) flags[n] = (flags[n] ?? 0) + (row?.[n] ?? 0);
   }
 
-  return { totals, daily: daily.results, flags };
+  return { totals, daily, flags };
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +409,7 @@ export async function traffic(
   // taking newest-first-until-full would drop higher-scoring rows that live in
   // an older partition, breaking the "sorted by bot_score" contract.
   const merged: { ts: number; bot_score: number; [k: string]: unknown }[] = [];
-  for (const table of await eventTables(db, period)) {
+  for (const table of await eventTables(db, period.startTs, period.endTs)) {
     const rows = await db.prepare(`
       SELECT ts, event, hostname, path, visitor_id, session_id, country, browser, os,
              device_type, asn_type, duration_ms, had_interaction,
@@ -288,7 +439,7 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
   `).bind(siteId, vid).all();
 
   const events: unknown[] = [];
-  for (const table of (await eventTables(db, period)).reverse()) {
+  for (const table of (await eventTables(db, period.startTs, period.endTs)).reverse()) {
     if (events.length >= 100) break;
     const rows = await db.prepare(`
       SELECT ts, event, path, referrer, duration_ms, scroll_depth, had_interaction,
