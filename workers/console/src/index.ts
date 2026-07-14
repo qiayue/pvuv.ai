@@ -316,6 +316,10 @@ async function oauthCallbackHandler(request: Request, env: Env, url: URL, provid
     identity = await oauthCallback(env, provider, url, request, Date.now());
   } catch (e) {
     const code = e instanceof OAuthError ? e.code : 'oauth_failed';
+    // Log the real cause server-side (never shown to the browser): the provider's
+    // HTTP status / error string is what distinguishes invalid_client vs
+    // redirect_uri_mismatch vs invalid_grant. Visible via `wrangler tail`.
+    console.error('oauth callback failed', provider, code, e instanceof Error ? e.message : e);
     return redirect('/login.html?error=' + encodeURIComponent(code), clearStateCookie());
   }
   // single-tenant: only configured admin emails may sign in (§ open-source
