@@ -146,19 +146,36 @@ function fmtMetric(metric, v) {
 
 function lineChart(points, metric) {
   const el = document.getElementById('chart');
-  const hasData = points.some((p) => p.value != null && p.value !== 0);
-  if (!points.length || !hasData) { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
+  // future buckets (time hasn't arrived) are never drawn — otherwise the line
+  // would dive to 0 and look like missing data. The in-progress bucket (status
+  // 'partial') is drawn with a dashed connector to show it's still filling.
+  const drawn = points.filter((p) => p.status !== 'future');
+  const hasData = drawn.some((p) => p.value != null && p.value !== 0);
+  if (!drawn.length || !hasData) { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
   const W = 980, H = 180, P = 34;
-  const max = Math.max(...points.map((p) => p.value ?? 0), metric === 'pv_per_visitor' ? 1 : 1);
+  const max = Math.max(...drawn.map((p) => p.value ?? 0), 1);
+  // x spans the full range (axis shows the whole period); future area stays empty
   const xs = (i) => P + (i * (W - 2 * P)) / Math.max(points.length - 1, 1);
   const ys = (v) => H - P - ((v ?? 0) * (H - 2 * P)) / max;
-  const line = points.map((p, i) => `${xs(i).toFixed(1)},${ys(p.value).toFixed(1)}`).join(' ');
+
+  const complete = points.map((p, i) => ({ p, i })).filter((x) => x.p.status === 'complete');
+  const solid = complete.map((x) => `${xs(x.i).toFixed(1)},${ys(x.p.value).toFixed(1)}`).join(' ');
+  const partialIdx = points.findIndex((p) => p.status === 'partial');
+  let dashed = '';
+  if (partialIdx >= 0) {
+    const prev = complete.length ? complete[complete.length - 1].i : partialIdx;
+    dashed = `${xs(prev).toFixed(1)},${ys(points[prev].value).toFixed(1)} ${xs(partialIdx).toFixed(1)},${ys(points[partialIdx].value).toFixed(1)}`;
+  }
+
+  const dot = (p, i) => p.status === 'future' ? '' :
+    `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.value).toFixed(1)}" r="2.5" fill="${p.status === 'partial' ? '#0f1115' : '#3b82f6'}" stroke="#3b82f6" stroke-width="${p.status === 'partial' ? 1.5 : 0}"><title>${esc(p.label)}: ${fmtMetric(metric, p.value)}${p.status === 'partial' ? ' (in progress)' : ''}</title></circle>`;
   const step = Math.ceil(points.length / 8);
   const labels = points.filter((_, i) => i % step === 0);
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
-    <polyline points="${line}" fill="none" stroke="#3b82f6" stroke-width="2"/>
-    ${points.map((p, i) => `<circle cx="${xs(i)}" cy="${ys(p.value)}" r="2.5" fill="#3b82f6"><title>${esc(p.label)}: ${fmtMetric(metric, p.value)}</title></circle>`).join('')}
-    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 8}" text-anchor="middle">${esc(p.label)}</text>`).join('')}
+    ${solid ? `<polyline points="${solid}" fill="none" stroke="#3b82f6" stroke-width="2"/>` : ''}
+    ${dashed ? `<polyline points="${dashed}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 3" opacity="0.75"/>` : ''}
+    ${points.map(dot).join('')}
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 8}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
     <text x="${P - 6}" y="${ys(max) + 4}" text-anchor="end">${fmtMetric(metric, max)}</text>
   </svg>`;
 }

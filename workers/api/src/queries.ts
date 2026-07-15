@@ -335,24 +335,35 @@ async function subDaySeries(db: D1Database, siteId: string, period: Period, inte
   }
 
   const multiDay = period.endTs - period.startTs > 86400e3;
-  return accs.map((a, i) => ({
-    label: subDayLabel(period.startTs + i * step, period.tz, interval, multiDay),
-    value: metricOf(a, metric),
-  }));
+  return accs.map((a, i) => {
+    const start = period.startTs + i * step;
+    // 'future' = bucket hasn't begun; 'partial' = in progress (contains now);
+    // 'complete' = fully elapsed. Lets the chart dash/omit non-final buckets.
+    const status = start >= period.now ? 'future' : (start + step > period.now ? 'partial' : 'complete');
+    return { label: subDayLabel(start, period.tz, interval, multiDay), value: metricOf(a, metric), status };
+  });
 }
 
 /** day/week/month buckets from rollup history + live today. */
 async function calendarSeries(db: D1Database, siteId: string, period: Period, interval: string, metric: string) {
+  const t = localYMD(period.now, period.tz);
+  const today = dayStr(t.y, t.m0, t.d);
   const daily = await dailyAccs(db, siteId, period);
-  const buckets = new Map<string, { label: string; acc: Acc }>();
+  const buckets = new Map<string, { label: string; acc: Acc; min: string; max: string }>();
   for (const day of enumerateDays(period.start, period.end)) {
     const [key, label] = bucketKey(day, interval);
     let bk = buckets.get(key);
-    if (!bk) { bk = { label, acc: emptyAcc() }; buckets.set(key, bk); }
+    if (!bk) { bk = { label, acc: emptyAcc(), min: day, max: day }; buckets.set(key, bk); }
+    bk.max = day; // enumerateDays is chronological
     addAcc(bk.acc, daily.get(day) ?? emptyAcc());
   }
-  // Map preserves insertion order, and enumerateDays is chronological
-  return [...buckets.values()].map((b) => ({ label: b.label, value: metricOf(b.acc, metric) }));
+  // Map preserves insertion order, and enumerateDays is chronological.
+  // A bucket that spans today is still filling; one entirely after today is future.
+  return [...buckets.values()].map((b) => ({
+    label: b.label,
+    value: metricOf(b.acc, metric),
+    status: b.max < today ? 'complete' : (b.min > today ? 'future' : 'partial'),
+  }));
 }
 
 /** Per-day accumulators over the period: rollup for past days, live today. */
