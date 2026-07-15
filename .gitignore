@@ -156,5 +156,7 @@ config.local.*
 shared/config.gen.*
 .wrangler/
 # custom deployment homepage — replaces the default landing page on deploy,
-# never committed (keep your landing copy out of the public repo)
+# never committed (keep your landing copy out of the public repo).
+# home.html = default (served at /); home.<lang>.html = localized (served at /<lang>)
 workers/console/public/home.html
+workers/console/public/home.*.html

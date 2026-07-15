@@ -69,7 +69,17 @@ export default {
       return resp;
     }
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      return homepage(request, env);
+      // no lang → always returns a page (custom home or the default template)
+      return (await homepage(request, env)) ?? env.ASSETS.fetch(request);
+    }
+    // localized landing pages: /<lang> → public/home.<lang>.html (with the same
+    // attribution footer). Only a locale-shaped single segment (e.g. /zh,
+    // /ja, /zh-cn) is treated as a candidate; if no such file exists we fall
+    // through to normal asset serving. Language files are gitignored like home.html.
+    const langMatch = url.pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\/?$/);
+    if (langMatch && request.method === 'GET') {
+      const localized = await homepage(request, env, langMatch[1]);
+      if (localized) return localized;
     }
     return env.ASSETS.fetch(request);
   },
@@ -96,14 +106,16 @@ const ATTRIBUTION_FOOTER =
   'Powered by <a href="https://pvuv.ai" style="color:inherit">pvuv.ai</a> · ' +
   '<a href="https://github.com/qiayue/pvuv.ai" style="color:inherit">open source</a></div>';
 
-async function homepage(request: Request, env: Env): Promise<Response> {
+async function homepage(request: Request, env: Env, lang?: string): Promise<Response | null> {
   const origin = new URL(request.url).origin;
 
-  // full override: workers/console/public/home.html (uploaded on deploy if
-  // present locally; gitignored so it never enters the public repo).
-  // The attribution footer is streamed in at document end — it appears on
-  // the homepage even when the custom page doesn't include it.
-  const custom = await env.ASSETS.fetch(new Request(`${origin}/home`));
+  // full override: workers/console/public/home.html (default) or, for a
+  // localized request, public/home.<lang>.html — both uploaded on deploy if
+  // present locally, and both gitignored so they never enter the public repo.
+  // The attribution footer is streamed in at document end, so it appears on
+  // every language variant even when the custom page doesn't include it.
+  const asset = lang ? `/home.${lang}` : '/home';
+  const custom = await env.ASSETS.fetch(new Request(`${origin}${asset}`));
   if (custom.ok) {
     const withFooter = new HTMLRewriter()
       .onDocument({
@@ -117,6 +129,9 @@ async function homepage(request: Request, env: Env): Promise<Response> {
       headers: { 'content-type': 'text/html; charset=utf-8' },
     });
   }
+  // a localized page was requested but no home.<lang>.html exists → let the
+  // caller fall through to normal asset serving (404), rather than the default page.
+  if (lang) return null;
 
   const s = await instanceSettings(env.DB);
   const def = await env.ASSETS.fetch(new Request(`${origin}/`));
