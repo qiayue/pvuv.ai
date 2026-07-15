@@ -34,6 +34,7 @@
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   .muted { color: #8b93a1; }
   .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #aeb6c2; font-size: 13px; }
+  .rt .rt-site { font-weight: 600; color: #e6e8eb; padding-right: 10px; margin-right: 4px; border-right: 1px solid #313847; }
   .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: #e6e8eb; }
   .rt .pulse { width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 1.8s infinite; }
   @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
@@ -49,9 +50,9 @@
   <a href="/sites.html">← sites</a><b id="title">…</b>
   <select id="period" aria-label="Date range">
     <optgroup label="Rolling">
-      <option value="today">Today</option>
+      <option value="today" selected>Today</option>
       <option value="7d">Last 7 days</option>
-      <option value="30d" selected>Last 30 days</option>
+      <option value="30d">Last 30 days</option>
       <option value="90d">Last 90 days</option>
     </optgroup>
     <optgroup label="Calendar">
@@ -98,6 +99,8 @@
 <script>
 const site = new URLSearchParams(location.search).get('id');
 if (!site) location.href = '/sites.html';
+let siteName = site; // replaced with the friendly name once /api/sites loads
+const PREF_KEY = 'pvuv.chartPrefs';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
@@ -227,8 +230,6 @@ function donut(t) {
 }
 
 async function load() {
-  document.getElementById('title').textContent = site;
-
   const o = await get('overview');
   const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
   const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
@@ -293,16 +294,51 @@ async function pollRealtime() {
     if (r.status === 401) { location.href = '/login.html'; return; }
     const d = await r.json();
     document.getElementById('realtime').innerHTML =
+      `<span class="rt-site">${esc(siteName)}</span>` +
       `<span class="live"><span class="pulse"></span>${fmt(d.online)} online now</span>` +
       `<span class="muted">${fmt(d.pageviews)} views in last ${d.window_minutes}m</span>` +
       sparkline(d.minutes || []);
   } catch { /* transient — keep the last value */ }
 }
 
-document.getElementById('period').addEventListener('change', () => { populateControls(); load(); });
-document.getElementById('metric').addEventListener('change', loadChart);
-document.getElementById('interval').addEventListener('change', loadChart);
-populateControls();
+// remember the last period / metric / interval across refreshes (localStorage)
+function savePrefs() {
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify({
+      period: document.getElementById('period').value,
+      metric: document.getElementById('metric').value,
+      interval: document.getElementById('interval').value,
+    }));
+  } catch { /* storage unavailable — non-fatal */ }
+}
+function restorePrefs() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { p = {}; }
+  const has = (sel, v) => v && [...sel.options].some((o) => o.value === v);
+  const periodSel = document.getElementById('period');
+  if (has(periodSel, p.period)) periodSel.value = p.period; // else HTML default (today)
+  populateControls();                                       // fills metric + interval opts
+  const mSel = document.getElementById('metric'), iSel = document.getElementById('interval');
+  if (has(mSel, p.metric)) mSel.value = p.metric;
+  if (has(iSel, p.interval)) iSel.value = p.interval;
+}
+
+// fetch the site's friendly name (used in the header + realtime row)
+async function loadSiteName() {
+  try {
+    const { sites } = await (await guard(await fetch('/api/sites'))).json();
+    const s = (sites || []).find((x) => x.site_id === site);
+    if (s && s.name) siteName = s.name;
+  } catch { /* fall back to the id */ }
+  document.getElementById('title').textContent = siteName;
+}
+
+document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });
+document.getElementById('metric').addEventListener('change', () => { savePrefs(); loadChart(); });
+document.getElementById('interval').addEventListener('change', () => { savePrefs(); loadChart(); });
+
+restorePrefs();
+loadSiteName();
 load();
 pollRealtime();
 setInterval(pollRealtime, 15000);
