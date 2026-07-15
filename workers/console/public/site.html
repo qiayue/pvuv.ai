@@ -33,6 +33,19 @@
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: #aeb6c2; margin-top: 8px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   .muted { color: #8b93a1; }
+  .switcher { position: relative; }
+  .title-btn { font: 700 16px system-ui, sans-serif; color: #e6e8eb; background: none; border: 0; cursor: pointer; padding: 4px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 7px; }
+  .title-btn:hover { background: #171a21; }
+  .title-btn .caret { color: #8b93a1; font-size: 11px; font-weight: 400; }
+  .switch-pop { position: absolute; top: 100%; left: 0; margin-top: 6px; width: 300px; max-width: 80vw; background: #171a21; border: 1px solid #313847; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 30; padding: 8px; }
+  .switch-pop input { width: 100%; box-sizing: border-box; background: #0f1115; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 7px 9px; font: inherit; margin-bottom: 6px; }
+  .switch-pop ul { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+  .switch-pop li { padding: 7px 9px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+  .switch-pop li:hover, .switch-pop li.active { background: #222834; }
+  .switch-pop li .nm { font-weight: 600; }
+  .switch-pop li.current .nm::after { content: ' ✓'; color: #7ab3ff; }
+  .switch-pop li .dm { color: #8b93a1; font-size: 12px; }
+  .switch-pop .none { color: #8b93a1; padding: 8px 9px; font-size: 13px; }
   .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #aeb6c2; font-size: 13px; }
   .rt .rt-site { font-weight: 600; color: #e6e8eb; padding-right: 10px; margin-right: 4px; border-right: 1px solid #313847; }
   .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: #e6e8eb; }
@@ -47,7 +60,16 @@
 </head>
 <body>
 <header>
-  <a href="/sites.html">← sites</a><b id="title">…</b>
+  <a href="/sites.html">← sites</a>
+  <div class="switcher" id="switcher">
+    <button class="title-btn" id="titleBtn" aria-haspopup="listbox" aria-expanded="false">
+      <span id="titleText">…</span><span class="caret">▾</span>
+    </button>
+    <div class="switch-pop" id="switchPop" hidden>
+      <input id="switchSearch" type="text" placeholder="Search sites…" autocomplete="off" aria-label="Search sites">
+      <ul id="switchList" role="listbox"></ul>
+    </div>
+  </div>
   <select id="period" aria-label="Date range">
     <optgroup label="Rolling">
       <option value="today" selected>Today</option>
@@ -323,15 +345,69 @@ function restorePrefs() {
   if (has(iSel, p.interval)) iSel.value = p.interval;
 }
 
-// fetch the site's friendly name (used in the header + realtime row)
+// fetch the owner's sites: names the header/realtime row + powers the switcher
+let allSites = [];
 async function loadSiteName() {
   try {
     const { sites } = await (await guard(await fetch('/api/sites'))).json();
-    const s = (sites || []).find((x) => x.site_id === site);
+    allSites = sites || [];
+    const s = allSites.find((x) => x.site_id === site);
     if (s && s.name) siteName = s.name;
   } catch { /* fall back to the id */ }
-  document.getElementById('title').textContent = siteName;
+  document.getElementById('titleText').textContent = siteName;
 }
+
+// ── site switcher: click the name → searchable dropdown to jump to another site
+function siteDomain(s) { try { return (JSON.parse(s.allowed_domains || '[]')[0]) || ''; } catch { return ''; } }
+function renderSwitchList(filter) {
+  const f = (filter || '').trim().toLowerCase();
+  const items = allSites.filter((s) => !f
+    || (s.name || '').toLowerCase().includes(f)
+    || s.site_id.toLowerCase().includes(f)
+    || siteDomain(s).toLowerCase().includes(f));
+  const ul = document.getElementById('switchList');
+  ul.innerHTML = items.length
+    ? items.map((s, i) => `<li role="option" data-id="${esc(s.site_id)}" class="${s.site_id === site ? 'current' : ''}${i === 0 ? ' active' : ''}">
+        <span class="nm">${esc(s.name || s.site_id)}</span>${siteDomain(s) ? `<span class="dm">${esc(siteDomain(s))}</span>` : ''}</li>`).join('')
+    : '<div class="none">No sites found</div>';
+  ul.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => gotoSite(li.dataset.id)));
+}
+function gotoSite(id) {
+  if (id && id !== site) location.href = '/site.html?id=' + encodeURIComponent(id);
+  else closeSwitch();
+}
+function openSwitch() {
+  const pop = document.getElementById('switchPop');
+  pop.hidden = false;
+  document.getElementById('titleBtn').setAttribute('aria-expanded', 'true');
+  const s = document.getElementById('switchSearch');
+  s.value = ''; renderSwitchList(''); s.focus();
+}
+function closeSwitch() {
+  document.getElementById('switchPop').hidden = true;
+  document.getElementById('titleBtn').setAttribute('aria-expanded', 'false');
+}
+function moveActive(delta) {
+  const lis = [...document.querySelectorAll('#switchList li')];
+  if (!lis.length) return;
+  let idx = lis.findIndex((li) => li.classList.contains('active'));
+  if (idx >= 0) lis[idx].classList.remove('active');
+  idx = ((idx < 0 ? 0 : idx) + delta + lis.length) % lis.length;
+  lis[idx].classList.add('active');
+  lis[idx].scrollIntoView({ block: 'nearest' });
+}
+document.getElementById('titleBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('switchPop').hidden ? openSwitch() : closeSwitch();
+});
+document.getElementById('switchSearch').addEventListener('input', (e) => renderSwitchList(e.target.value));
+document.getElementById('switchSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeSwitch(); document.getElementById('titleBtn').focus(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); moveActive(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); }
+  else if (e.key === 'Enter') { const a = document.querySelector('#switchList li.active'); if (a) gotoSite(a.dataset.id); }
+});
+document.addEventListener('click', (e) => { if (!document.getElementById('switcher').contains(e.target)) closeSwitch(); });
 
 document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });
 document.getElementById('metric').addEventListener('change', () => { savePrefs(); loadChart(); });
