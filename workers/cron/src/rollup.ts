@@ -139,11 +139,16 @@ async function rollupSiteDay(
     GROUP BY site_id
   `).bind(day, ...siteEv.binds));
 
-  // session-derived metrics (bounce rate §9.3, avg dwell)
+  // session-derived metrics (bounce rate §9.3, avg dwell). Two bounce rates:
+  // GA4 engagement-based (is_bounce) and single-page (UA/Plausible style).
   stmts.push(db.prepare(`
     UPDATE rollup_site_daily SET
       bounce_rate = (
         SELECT ROUND(AVG(CASE WHEN s.is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4)
+        FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
+      ),
+      bounce_rate_single = (
+        SELECT ROUND(AVG(CASE WHEN s.pageviews <= 1 THEN 1.0 ELSE 0.0 END), 4)
         FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       ),
       avg_duration_ms = (
@@ -151,7 +156,7 @@ async function rollupSiteDay(
         FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       )
     WHERE site_id = ? AND day = ?
-  `).bind(siteId, startTs, endTs, siteId, startTs, endTs, siteId, day));
+  `).bind(siteId, startTs, endTs, siteId, startTs, endTs, siteId, startTs, endTs, siteId, day));
 
   await db.batch(stmts);
 }

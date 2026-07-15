@@ -404,7 +404,7 @@ function redirect(location: string, setCookie?: string): Response {
 const ADGUARD_MODES = new Set(['off', 'loose', 'balanced', 'strict']);
 
 async function createSite(request: Request, env: Env, owner: string): Promise<Response> {
-  let body: { name?: string; domains?: string[]; adguard_mode?: string; adclient?: string; timezone?: string };
+  let body: { name?: string; domains?: string[]; adguard_mode?: string; adclient?: string; timezone?: string; engaged_seconds?: number };
   try {
     body = await request.json();
   } catch {
@@ -426,11 +426,16 @@ async function createSite(request: Request, env: Env, owner: string): Promise<Re
   if (!timezone) timezone = await userTimezone(env, owner);
   if (!isValidTimezone(timezone)) return json({ error: `invalid timezone: ${timezone}` }, 400);
 
+  // GA4 engagement dwell threshold (seconds), set at creation. Clamp to a sane
+  // 1–300s; default 15 when unset/invalid.
+  const engagedSeconds = Number.isFinite(body.engaged_seconds)
+    ? Math.min(Math.max(Math.round(body.engaged_seconds!), 1), 300) : 15;
+
   const siteId = generateSiteId();
   await env.DB.prepare(`
-    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, timezone, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, timezone, Date.now()).run();
+    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, timezone, engaged_seconds, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, timezone, engagedSeconds, Date.now()).run();
 
   // write-through KV so ingest sees the new site immediately (§5 whitelist);
   // shape must match the ingest worker's SiteConfig

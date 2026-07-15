@@ -18,6 +18,8 @@
   .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
   .card .v { font-size: 22px; font-weight: 700; }
   .card .k { color: #8b93a1; font-size: 12px; }
+  .card .bt { cursor: pointer; padding: 1px 6px; border-radius: 8px; margin-left: 4px; border: 1px solid #313847; color: #8b93a1; font-size: 11px; }
+  .card .bt.on { background: #1e2530; color: #cbd3e1; border-color: #3a4457; }
   .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
@@ -150,7 +152,9 @@ function table(el, headers, rows) {
 // metric + interval controls (Plausible-style). First interval per period = default.
 const METRICS = [
   ['pv', 'Pageviews'], ['uv', 'Visitors'], ['sessions', 'Sessions'],
-  ['pv_per_visitor', 'Pages / visitor'], ['bounce_rate', 'Bounce rate'], ['avg_duration_ms', 'Avg. session'],
+  ['pv_per_visitor', 'Pages / visitor'],
+  ['bounce_rate', 'Bounce rate (engaged)'], ['bounce_rate_single', 'Bounce rate (1-page)'],
+  ['avg_duration_ms', 'Avg. session'],
 ];
 const METRIC_LABEL = Object.fromEntries(METRICS);
 const INTERVALS = {
@@ -163,7 +167,7 @@ const INTERVAL_LABEL = { minute: 'Minutes', hour: 'Hours', day: 'Days', week: 'W
 
 function fmtMetric(metric, v) {
   if (v == null) return '–';
-  if (metric === 'bounce_rate') return (v * 100).toFixed(1) + '%';
+  if (metric === 'bounce_rate' || metric === 'bounce_rate_single') return (v * 100).toFixed(1) + '%';
   if (metric === 'avg_duration_ms') return dur(v);
   if (metric === 'pv_per_visitor') return Number(v).toFixed(2);
   return fmt(v);
@@ -216,6 +220,29 @@ function populateControls() {
   iSel.value = opts.includes(cur) ? cur : opts[0]; // keep choice if still valid, else default
 }
 
+// KPI cards. The bounce card carries a toggle between the two bounce
+// definitions (engaged = GA4; 1-page = UA/Plausible/Similarweb), remembered.
+let lastOverview = null;
+const bounceMode = () => localStorage.getItem('pvuv.bounceMode') === 'single' ? 'single' : 'engaged';
+function renderCards(o) {
+  lastOverview = o;
+  const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
+  const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
+  const bm = bounceMode();
+  const bVal = bm === 'single' ? o.bounce_rate_single : o.bounce_rate;
+  const card = (k, v) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+  const bounceCard = `<div class="card"><div class="v">${bVal == null ? '–' : (bVal * 100).toFixed(1) + '%'}</div>
+    <div class="k">Bounce rate <span class="bt ${bm === 'engaged' ? 'on' : ''}" data-bm="engaged">engaged</span><span class="bt ${bm === 'single' ? 'on' : ''}" data-bm="single">1-page</span></div></div>`;
+  document.getElementById('cards').innerHTML =
+    card('Pageviews', fmt(o.pv)) + card('Visitors', fmt(o.uv)) + card('Sessions', fmt(o.sessions)) +
+    card('Pages / visitor', perVisitor) + bounceCard +
+    card('Avg. session', dur(o.avg_duration_ms)) + card('Human share', cleanShare + '%');
+  document.querySelectorAll('#cards .bt').forEach((el) => el.addEventListener('click', () => {
+    localStorage.setItem('pvuv.bounceMode', el.dataset.bm);
+    if (lastOverview) renderCards(lastOverview);
+  }));
+}
+
 async function loadChart() {
   const metric = document.getElementById('metric').value;
   const interval = document.getElementById('interval').value;
@@ -252,16 +279,7 @@ function donut(t) {
 }
 
 async function load() {
-  const o = await get('overview');
-  const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
-  const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
-  document.getElementById('cards').innerHTML = [
-    ['Pageviews', fmt(o.pv)], ['Visitors', fmt(o.uv)], ['Sessions', fmt(o.sessions)],
-    ['Pages / visitor', perVisitor],
-    ['Bounce rate', o.bounce_rate == null ? '–' : (o.bounce_rate * 100).toFixed(1) + '%'],
-    ['Avg. session', dur(o.avg_duration_ms)], ['Human share', cleanShare + '%'],
-  ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
-
+  renderCards(await get('overview'));
   await loadChart();
 
   const pages = await get('breakdown', '&dim=page');

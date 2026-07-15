@@ -30,11 +30,31 @@ export interface Env {
 }
 
 /** Bounce definition (§9.3, GA4-style inverse): engaged = 2nd pageview OR
- *  dwell ≥ 10s OR any custom event; bounce = not engaged. */
-const ENGAGED_DWELL_MS = 10_000;
+ *  dwell ≥ site threshold OR any custom event; bounce = not engaged. The dwell
+ *  threshold is per-site (sites.engaged_seconds, default 15s). */
+const DEFAULT_ENGAGED_MS = 15_000;
 
 /** Months whose table+indexes this isolate has already ensured. */
 const ensuredMonths = new Set<string>();
+
+/** Per-site engagement dwell threshold in ms, cached per isolate (rarely changes). */
+const siteEngagedMs = new Map<string, number>();
+
+/** Load engagement thresholds for any site_ids not yet cached. */
+async function ensureThresholds(db: D1Database, siteIds: string[]): Promise<void> {
+  const missing = [...new Set(siteIds)].filter((id) => !siteEngagedMs.has(id));
+  if (missing.length === 0) return;
+  const rows = await db.prepare(
+    `SELECT site_id, engaged_seconds FROM sites WHERE site_id IN (${missing.map(() => '?').join(',')})`,
+  ).bind(...missing).all<{ site_id: string; engaged_seconds: number }>();
+  const seen = new Set<string>();
+  for (const r of rows.results) {
+    siteEngagedMs.set(r.site_id, (r.engaged_seconds > 0 ? r.engaged_seconds : 15) * 1000);
+    seen.add(r.site_id);
+  }
+  // sites with no row yet (e.g. KV-only) fall back to the default
+  for (const id of missing) if (!seen.has(id)) siteEngagedMs.set(id, DEFAULT_ENGAGED_MS);
+}
 
 export default {
   async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
@@ -53,12 +73,15 @@ export default {
         ensuredMonths.add(suffix);
       }
 
+      // per-site engagement dwell thresholds (for is_bounce)
+      await ensureThresholds(env.DB, rows.map((r) => r.site_id));
+
       // 2. ONE atomic D1 batch: event inserts (OR IGNORE) + session/identity/
       //    profile upserts. All-or-nothing, so a retry can't partial-commit.
       const stmts: D1PreparedStatement[] = [];
       for (const row of rows) {
         stmts.push(env.DB.prepare(eventInsertSQL(monthSuffix(row.ts))).bind(...bindable(eventRowValues(row))));
-        stmts.push(sessionUpsert(env.DB, row));
+        stmts.push(sessionUpsert(env.DB, row, siteEngagedMs.get(row.site_id) ?? DEFAULT_ENGAGED_MS));
         const identity = identityUpsert(env.DB, row);
         if (identity) stmts.push(identity);
         stmts.push(profileUpsert(env.DB, row));
@@ -90,7 +113,7 @@ function bindable(values: unknown[]): unknown[] {
 // on first insert only; counters accumulate; verdict tracks the worst score.
 // ---------------------------------------------------------------------------
 
-function sessionUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
+function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1PreparedStatement {
   const isPageview = row.event === 'pageview' ? 1 : 0;
   const isCustom = row.event !== 'pageview' && row.event !== 'page_leave' && row.event !== 'outbound_click' ? 1 : 0;
   const duration = row.duration_ms ?? 0;
@@ -112,7 +135,7 @@ function sessionUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
       had_interaction = MAX(sessions.had_interaction, excluded.had_interaction),
       is_bounce       = CASE
                           WHEN sessions.pageviews + ?6 >= 2 THEN 0
-                          WHEN sessions.duration_ms + ?7 >= ${ENGAGED_DWELL_MS} THEN 0
+                          WHEN sessions.duration_ms + ?7 >= ?22 THEN 0
                           WHEN ?20 = 1 THEN 0
                           ELSE sessions.is_bounce
                         END,
@@ -133,7 +156,7 @@ function sessionUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
     isPageview,                                       // 6
     duration,                                         // 7
     row.had_interaction,                              // 8
-    isCustom || duration >= ENGAGED_DWELL_MS ? 0 : 1, // 9 initial is_bounce
+    isCustom || duration >= engagedMs ? 0 : 1,        // 9 initial is_bounce
     row.utm_source ?? row.ref_domain,                 // 10 source (utm first, else referrer domain)
     row.utm_medium,                                   // 11
     row.utm_campaign,                                 // 12
@@ -146,6 +169,7 @@ function sessionUpsert(db: D1Database, row: EventRow): D1PreparedStatement {
     row.ts,                                           // 19 started_at / last_active_at
     isCustom,                                         // 20
     row.hostname,                                     // 21 entry_host (kept from first event)
+    engagedMs,                                        // 22 per-site engaged dwell threshold
   );
 }
 

@@ -91,6 +91,10 @@
       <div><label>AdSense client (optional)<input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
       <div><label>Timezone <span style="color:#e0a34a">(can't be changed later)</span>
         <select id="tz"></select></label></div>
+      <div><label>Engagement threshold (seconds)
+        <input id="engaged" type="number" min="1" max="300" value="15" placeholder="15">
+        <span style="color:#8b93a1;font-size:12px">a visit is "engaged" (not a bounce) after this dwell time. GA4 default 10s; we default 15s.</span>
+      </label></div>
       <p class="err" id="err"></p>
       <button type="submit">Create site</button>
     </form>
@@ -218,6 +222,7 @@ document.getElementById('create').addEventListener('submit', async (e) => {
     adguard_mode: document.getElementById('agmode').value,
     adclient: document.getElementById('adclient').value.trim() || undefined,
     timezone: document.getElementById('tz').value,
+    engaged_seconds: parseInt(document.getElementById('engaged').value, 10) || 15,
   };
   const r = await guard(await fetch('/api/sites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
   const data = await r.json();

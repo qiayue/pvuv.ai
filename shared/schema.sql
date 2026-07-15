@@ -40,7 +40,8 @@ CREATE TABLE sites (
   settings        TEXT,
   created_at      INTEGER NOT NULL,
   status          TEXT DEFAULT 'active',
-  timezone        TEXT DEFAULT 'UTC'         -- display/aggregation tz, IMMUTABLE (added by 0004)
+  timezone        TEXT DEFAULT 'UTC',        -- display/aggregation tz, IMMUTABLE (added by 0004)
+  engaged_seconds INTEGER NOT NULL DEFAULT 15 -- GA4 engagement dwell threshold, set at creation (added by 0006)
 );
 
 -- raw events (monthly-partitioned; initial month 202607)
@@ -142,7 +143,9 @@ CREATE TABLE rollup_source_daily (
 CREATE TABLE rollup_site_daily (
   site_id TEXT, day TEXT,
   pv INTEGER DEFAULT 0, uv INTEGER DEFAULT 0, sessions INTEGER DEFAULT 0,
-  bounce_rate REAL, avg_duration_ms INTEGER,
+  bounce_rate REAL,               -- GA4 engagement-based bounce (1 − engaged)
+  bounce_rate_single REAL,        -- single-page bounce (UA/Plausible style; added by 0006)
+  avg_duration_ms INTEGER,
   bot_count INTEGER DEFAULT 0, suspect_count INTEGER DEFAULT 0,
   crawler_count INTEGER DEFAULT 0, clean_count INTEGER DEFAULT 0,
   conversions INTEGER DEFAULT 0, revenue_usd REAL DEFAULT 0,
