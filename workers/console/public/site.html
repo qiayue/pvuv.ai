@@ -35,6 +35,17 @@
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: #aeb6c2; margin-top: 8px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   .muted { color: #8b93a1; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #1d2230; }
+  .drill { color: #8b93a1; font-size: 11px; opacity: 0.35; }
+  tr.clickable:hover .drill { opacity: 1; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  .modal-box { background: #171a21; border: 1px solid #313847; border-radius: 10px; width: 660px; max-width: 100%; max-height: 82vh; display: flex; flex-direction: column; }
+  .modal-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid #262b36; }
+  .modal-head b { font-size: 14px; }
+  .modal-x { margin-left: auto; background: none; border: 0; color: #8b93a1; font-size: 22px; line-height: 1; cursor: pointer; }
+  .modal-body { padding: 10px 16px 16px; overflow: auto; }
+  .modal-body a { color: #7ab3ff; text-decoration: none; word-break: break-all; }
   .switcher { position: relative; }
   .title-btn { font: 700 16px system-ui, sans-serif; color: #e6e8eb; background: none; border: 0; cursor: pointer; padding: 4px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 7px; }
   .title-btn:hover { background: #171a21; }
@@ -120,6 +131,13 @@
   <h2>High-score traffic (drill-down)</h2>
   <div class="panel" id="traffic"></div>
 </main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head"><b id="modalTitle"></b><button class="modal-x" id="modalClose" aria-label="Close">×</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
 <script>
 const site = new URLSearchParams(location.search).get('id');
 if (!site) location.href = '/sites.html';
@@ -141,6 +159,32 @@ const FLAG_LABELS = {
   0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
 };
 const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
+
+// Sources with click-through to the specific referring URLs behind each source.
+function renderSources(rows) {
+  const el = document.getElementById('sources');
+  el.innerHTML = rows.length
+    ? '<table><tr><th>Source</th><th class="num">Sessions</th><th class="num">PV</th><th class="num">PV clean</th><th class="num">Visitors</th></tr>' +
+      rows.map((r) => `<tr class="clickable" data-src="${esc(r.key)}"><td>${esc(r.key)} <span class="drill">↗ pages</span></td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.pv_clean)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
+    : '<p class="muted">no data yet</p>';
+  el.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => openSourceDetail(tr.dataset.src)));
+}
+
+async function openSourceDetail(source) {
+  document.getElementById('modalTitle').textContent = 'Referring pages · ' + source;
+  document.getElementById('modalBody').innerHTML = '<p class="muted">loading…</p>';
+  document.getElementById('modal').hidden = false;
+  const d = await get('breakdown', `&dim=referrer&key=${encodeURIComponent(source)}`);
+  const rows = d.rows || [];
+  document.getElementById('modalBody').innerHTML = rows.length
+    ? '<table><tr><th>Referring URL</th><th class="num">Sessions</th><th class="num">PV</th><th class="num">Visitors</th></tr>' +
+      rows.map((r) => `<tr><td>${r.key === '(none)' ? '<span class="muted">(no referrer — direct/unknown)</span>' : `<a href="${esc(r.key)}" target="_blank" rel="noreferrer noopener">${esc(r.key)}</a>`}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
+    : '<p class="muted">no referring pages recorded for this source in this period</p>';
+}
+function closeModal() { document.getElementById('modal').hidden = true; }
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
 function table(el, headers, rows) {
   document.getElementById(el).innerHTML = rows.length
@@ -286,9 +330,7 @@ async function load() {
   table('pages', ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],
     pages.rows.map((r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)]));
 
-  const sources = await get('breakdown', '&dim=source');
-  table('sources', ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'],
-    sources.rows.map((r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+  renderSources((await get('breakdown', '&dim=source')).rows);
 
   const countries = await get('breakdown', '&dim=country');
   table('countries', ['Country', 'PV', 'PV clean', 'Visitors'],

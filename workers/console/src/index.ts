@@ -311,7 +311,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (resource === 'overview') return json(await overview(env.DB, siteId, period));
     if (resource === 'timeseries') return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day'));
     if (resource === 'breakdown') {
-      return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10)));
+      return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key')));
     }
     if (resource === 'quality') return json(await quality(env.DB, siteId, period));
     if (resource === 'traffic') {

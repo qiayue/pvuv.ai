@@ -436,8 +436,26 @@ function subDayLabel(instant: number, tz: string, interval: string, withDate: bo
 // GET /sites/:id/breakdown?dim=page|source|utm_campaign|country|device  (live)
 // ---------------------------------------------------------------------------
 
-export async function breakdown(db: D1Database, siteId: string, dim: string, period: Period, limit: number) {
+export async function breakdown(db: D1Database, siteId: string, dim: string, period: Period, limit: number, key: string | null = null) {
   limit = Math.min(Math.max(limit, 1), 100);
+
+  // referrer drill-down: the specific referring URLs behind ONE source (the
+  // `key`), from the live sessions table. '(direct)' means no referrer.
+  if (dim === 'referrer') {
+    const direct = key === '(direct)' || key == null || key === '';
+    const rows = await db.prepare(`
+      SELECT COALESCE(NULLIF(referrer, ''), '(none)') AS key,
+        COALESCE(SUM(pageviews), 0) AS pv,
+        COUNT(DISTINCT visitor_id) AS uv,
+        COUNT(*) AS sessions,
+        COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN pageviews ELSE 0 END), 0) AS pv_clean
+      FROM sessions
+      WHERE site_id = ? AND started_at >= ? AND started_at < ?
+        AND ${direct ? 'source IS NULL' : 'source = ?'}
+      GROUP BY referrer ORDER BY sessions DESC LIMIT ?
+    `).bind(...(direct ? [siteId, period.startTs, period.endTs, limit] : [siteId, period.startTs, period.endTs, key, limit])).all();
+    return { dim, key, rows: rows.results };
+  }
 
   // page: pv/uv/clean from raw events; bounces from the live sessions table,
   // attributed to (entry_host, entry_page) — matched strictly so a shared path
