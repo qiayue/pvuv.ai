@@ -82,6 +82,7 @@
       <ul id="switchList" role="listbox"></ul>
     </div>
   </div>
+  <a id="visitorsLink" href="#">visitors →</a>
   <select id="period" aria-label="Date range">
     <optgroup label="Rolling">
       <option value="today" selected>Today</option>
@@ -140,6 +141,10 @@
 <script>
 const site = new URLSearchParams(location.search).get('id');
 if (!site) location.href = '/sites.html';
+document.getElementById('visitorsLink').href = `/visitor.html?site=${encodeURIComponent(site)}`;
+// deep link into the journey finder pre-filtered to one page path
+const visitorsByPath = (path) =>
+  `/visitor.html?site=${encodeURIComponent(site)}&path=${encodeURIComponent(path)}`;
 let siteName = site; // replaced with the friendly name once /api/sites loads
 const PREF_KEY = 'pvuv.chartPrefs';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -319,7 +324,10 @@ async function load() {
 
   const pages = await get('breakdown', '&dim=page');
   table('pages', ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],
-    pages.rows.map((r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)]));
+    pages.rows.map((r) => [
+      `<a href="${visitorsByPath(r.path)}" title="See visitors who opened this page">${esc(r.path)}</a>`,
+      fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces),
+    ]));
 
   renderSources((await get('breakdown', '&dim=source')).rows);
 
@@ -341,10 +349,11 @@ async function load() {
 
   const tr = await get('traffic', '&min_score=30&limit=50');
   document.getElementById('traffic').innerHTML = tr.rows.length
-    ? '<table><tr><th>Time</th><th>Event</th><th>Path</th><th>Where</th><th>Agent</th><th class="num">Score</th><th>Verdict</th><th>Evidence</th></tr>' +
+    ? '<table><tr><th>Time</th><th>Event</th><th>Path</th><th>Visitor</th><th>Where</th><th>Agent</th><th class="num">Score</th><th>Verdict</th><th>Evidence</th></tr>' +
       tr.rows.map((r) => `<tr>
         <td>${new Date(r.ts).toISOString().slice(5, 16).replace('T', ' ')}</td>
         <td>${esc(r.event)}</td><td>${esc(r.path)}</td>
+        <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="Journey timeline">${esc(String(r.visitor_id).slice(0, 8))}…</a></td>
         <td>${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''}</td>
         <td>${esc(r.browser)}/${esc(r.os)}</td>
         <td class="num">${r.bot_score}</td>

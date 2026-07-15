@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visitor journeys — pvuv.ai</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; }
+  header a { color: #7ab3ff; text-decoration: none; }
+  header b { font-size: 16px; }
+  header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
+  main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
+  a { color: #7ab3ff; text-decoration: none; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
+  .card .v { font-size: 18px; font-weight: 700; }
+  .card .k { color: #8b93a1; font-size: 12px; }
+  .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; }
+  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .b-clean { background: #14331f; color: #6ee7a0; } .b-suspect { background: #33290f; color: #fbbf24; }
+  .b-bot { background: #331414; color: #f87171; } .b-crawler { background: #1d2733; color: #93b4d6; }
+  .muted { color: #8b93a1; }
+  .filter { display: flex; gap: 8px; margin-bottom: 12px; }
+  .filter input { flex: 1; max-width: 420px; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 6px 10px; font: inherit; }
+  .filter button { background: #1d4ed8; color: #fff; border: 0; border-radius: 6px; padding: 6px 16px; font: inherit; cursor: pointer; }
+  .filter button:hover { background: #2563eb; }
+  .hint { font-size: 12px; color: #8b93a1; margin: -6px 0 14px; }
+  /* timeline */
+  .session { background: #171a21; border: 1px solid #262b36; border-radius: 8px; margin-bottom: 14px; }
+  .session-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #1d222c; font-size: 13px; }
+  .session-head b { font-size: 13.5px; }
+  .tl { list-style: none; margin: 0; padding: 8px 16px 12px; }
+  .tl li { position: relative; padding: 5px 0 5px 118px; }
+  .tl li::before { content: ''; position: absolute; left: 88px; top: 0; bottom: 0; width: 2px; background: #262b36; }
+  .tl li::after { content: ''; position: absolute; left: 84px; top: 12px; width: 10px; height: 10px; border-radius: 50%; background: #3b82f6; }
+  .tl li.ev-leave::after { background: #64748b; }
+  .tl li.ev-out::after { background: #a78bfa; }
+  .tl li.ev-custom::after { background: #34d399; }
+  .tl li.hit { background: #16233a; border-radius: 6px; }
+  .tl .t { position: absolute; left: 0; width: 76px; text-align: right; color: #8b93a1; font-variant-numeric: tabular-nums; font-size: 12.5px; padding-top: 1px; }
+  .tl .what { font-weight: 600; }
+  .tl .meta { color: #8b93a1; font-size: 12.5px; }
+  .ev-tag { display: inline-block; min-width: 44px; margin-right: 8px; padding: 0 7px; border-radius: 9px; font-size: 11.5px; text-align: center; background: #1d2733; color: #93b4d6; }
+</style>
+</head>
+<body>
+<header>
+  <a id="back" href="/sites.html">← dashboard</a><b id="title">Visitor journeys</b>
+  <select id="period" aria-label="Date range">
+    <option value="today">Today</option>
+    <option value="7d">Last 7 days</option>
+    <option value="30d" selected>Last 30 days</option>
+    <option value="90d">Last 90 days</option>
+  </select>
+</header>
+<main>
+  <!-- finder mode: recent visitors, optionally only those who opened a path -->
+  <section id="finder" hidden>
+    <h2>Find visitors</h2>
+    <div class="filter">
+      <input id="path" placeholder="Filter by page path, e.g. /pay — trailing * matches a prefix (/pay*)">
+      <button id="apply">Filter</button>
+    </div>
+    <p class="hint">Shows visitors with a pageview matching the path in the selected period; leave empty for all visitors. Click a visitor to see the full journey.</p>
+    <div class="panel" id="list"><p class="muted">loading…</p></div>
+  </section>
+
+  <!-- journey mode: one visitor's trail, grouped by session, chronological -->
+  <section id="journey" hidden>
+    <h2 id="vidTitle">Journey</h2>
+    <div class="cards" id="summary"></div>
+    <h2>Sessions <span class="muted" id="trailNote"></span></h2>
+    <div id="sessions"></div>
+  </section>
+</main>
+<script>
+const qs = new URLSearchParams(location.search);
+const site = qs.get('site');
+const vid = qs.get('vid');
+if (!site) location.href = '/sites.html';
+document.getElementById('back').href = `/site.html?id=${encodeURIComponent(site)}`;
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
+const dt = (ts) => ts == null ? '–' : new Date(ts).toISOString().slice(0, 16).replace('T', ' ');
+const hms = (ts) => new Date(ts).toISOString().slice(11, 19);
+const badge = (v) => `<span class="badge b-${esc(v)}">${esc(v)}</span>`;
+const shortId = (id) => `${String(id).slice(0, 8)}…`;
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+const get = async (p, extra = '') =>
+  (await guard(await fetch(`/api/sites/${site}/${p}?period=${document.getElementById('period').value}${extra}`))).json();
+
+// referrer is internal (not a source) when its host is the page's own host —
+// the journey only annotates external arrivals
+const refHost = (r) => { try { return new URL(r).hostname; } catch { return null; } };
+
+// -------------------------------- finder ---------------------------------
+
+async function loadList() {
+  const el = document.getElementById('list');
+  el.innerHTML = '<p class="muted">loading…</p>';
+  const path = document.getElementById('path').value.trim();
+  const d = await get('visitors', `&limit=100${path ? `&path=${encodeURIComponent(path)}` : ''}`);
+  const note = path ? ` <span class="muted">(matching ${esc(path)})</span>` : '';
+  el.innerHTML = d.rows.length
+    ? `<table><tr><th>Visitor</th><th>Last seen</th><th>First seen</th><th class="num">Pageviews${note}</th><th class="num">Sessions</th><th>Where</th><th>Device</th><th>Verdict</th></tr>` +
+      d.rows.map((r) => `<tr>
+        <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}${path ? `&path=${encodeURIComponent(path)}` : ''}">${esc(shortId(r.visitor_id))}</a></td>
+        <td>${dt(r.last_ts)}</td><td>${dt(r.first_ts)}</td>
+        <td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.sessions)}</td>
+        <td>${esc(r.country ?? '–')}</td><td>${esc(r.device_type ?? '–')}</td>
+        <td>${badge(r.verdict)}</td>
+      </tr>`).join('') + '</table>'
+    : '<p class="muted">no visitors matched in this period</p>';
+}
+
+// -------------------------------- journey --------------------------------
+
+// events whose path matches the ?path= filter get highlighted in the timeline
+const hitPath = qs.get('path');
+const pathHit = (p) => {
+  if (!hitPath || !p) return false;
+  return hitPath.endsWith('*') ? p.startsWith(hitPath.slice(0, -1)) : p === hitPath;
+};
+
+function eventLine(ev, isSessionFirst) {
+  const cls = ev.event === 'page_leave' ? 'ev-leave' : ev.event === 'outbound_click' ? 'ev-out'
+    : ev.event !== 'pageview' ? 'ev-custom' : '';
+  const tag = ev.event === 'pageview' ? 'page' : ev.event === 'page_leave' ? 'leave'
+    : ev.event === 'outbound_click' ? 'out' : esc(ev.event);
+  let props = null;
+  try { props = ev.props ? JSON.parse(ev.props) : null; } catch { /* display raw-less */ }
+
+  const meta = [];
+  if (ev.event === 'page_leave') {
+    if (ev.duration_ms != null) meta.push(`stayed ${dur(ev.duration_ms)}`);
+    if (ev.scroll_depth != null) meta.push(`scrolled ${ev.scroll_depth}%`);
+  }
+  if (ev.event === 'outbound_click' && props?.href) meta.push(`→ ${esc(String(props.href))}`);
+  if (ev.event !== 'pageview' && ev.event !== 'page_leave' && ev.event !== 'outbound_click' && props) {
+    meta.push(esc(Object.entries(props).slice(0, 4).map(([k, v]) => `${k}=${v}`).join(' ')));
+  }
+  // annotate where the session came from, on its first pageview only
+  if (isSessionFirst && ev.referrer) {
+    const h = refHost(ev.referrer);
+    if (h && h !== ev.hostname) meta.push(`from ${esc(h)}`);
+  }
+  if (ev.verdict && ev.verdict !== 'clean') meta.push(badge(ev.verdict));
+
+  const what = ev.event === 'outbound_click' && props?.href ? '' : esc(ev.path ?? '');
+  return `<li class="${cls}${pathHit(ev.path) ? ' hit' : ''}">
+    <span class="t">${hms(ev.ts)}</span>
+    <span class="ev-tag">${tag}</span><span class="what">${what}</span>
+    ${meta.length ? ` <span class="meta">${meta.join(' · ')}</span>` : ''}
+  </li>`;
+}
+
+function sessionBlock(sid, events, info) {
+  const first = events[0];
+  const day = new Date(first.ts).toISOString().slice(0, 10);
+  const head = [`<b>${day}</b>`, `<span class="muted">${hms(first.ts)}–${hms(events[events.length - 1].ts)}</span>`];
+  if (info) {
+    head.push(`source: <b>${esc(info.source ?? '(direct)')}</b>${info.medium ? ` / ${esc(info.medium)}` : ''}`);
+    head.push(`${fmt(info.pageviews)} pages`);
+    if (info.duration_ms != null) head.push(dur(info.duration_ms));
+    if (info.is_bounce) head.push('<span class="muted">bounced</span>');
+    head.push(badge(info.verdict ?? 'clean'));
+  }
+  return `<div class="session">
+    <div class="session-head">${head.join('<span class="muted"> · </span>')}</div>
+    <ul class="tl">${events.map((ev, i) => eventLine(ev, i === 0)).join('')}</ul>
+  </div>`;
+}
+
+async function loadJourney() {
+  document.getElementById('vidTitle').textContent = `Journey — visitor ${vid}`;
+  const d = await get(`visitors/${encodeURIComponent(vid)}/profile`);
+  const p = d.profile || {};
+  const events = (d.events || []).slice();
+  const sessionInfo = new Map((d.sessions || []).map((s) => [s.session_id, s]));
+
+  document.getElementById('summary').innerHTML = [
+    ['First seen', dt(p.first_seen)],
+    ['Last seen', dt(p.last_seen)],
+    ['Events (lifetime)', fmt(p.events_count)],
+    ['Sessions shown', fmt((d.sessions || []).length)],
+    ['Worst verdict', p.verdict ? badge(p.verdict) : '–'],
+    ['Bot score', p.bot_score ?? '–'],
+  ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+  // group the trail by session; blocks newest-first, events chronological inside
+  const groups = new Map();
+  for (const ev of events) {
+    if (!groups.has(ev.session_id)) groups.set(ev.session_id, []);
+    groups.get(ev.session_id).push(ev);
+  }
+  const ordered = [...groups.entries()]
+    .map(([sid, list]) => [sid, list.sort((a, b) => a.ts - b.ts)])
+    .sort((a, b) => b[1][b[1].length - 1].ts - a[1][a[1].length - 1].ts);
+
+  document.getElementById('trailNote').textContent =
+    events.length ? `— ${events.length} events in the selected period${events.length >= 300 ? ' (capped at 300, narrow the period for more)' : ''}` : '';
+  document.getElementById('sessions').innerHTML = ordered.length
+    ? ordered.map(([sid, list]) => sessionBlock(sid, list, sessionInfo.get(sid))).join('')
+    : '<p class="muted">no events in the selected period — try a longer range</p>';
+}
+
+// -------------------------------- boot ------------------------------------
+
+const mode = vid ? 'journey' : 'finder';
+document.getElementById(mode).hidden = false;
+if (mode === 'finder' && qs.get('path')) document.getElementById('path').value = qs.get('path');
+
+const reload = () => (mode === 'journey' ? loadJourney() : loadList());
+document.getElementById('period').addEventListener('change', reload);
+if (mode === 'finder') {
+  document.getElementById('apply').addEventListener('click', loadList);
+  document.getElementById('path').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadList(); });
+}
+reload();
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@
  *   GET /v1/sites/:id/breakdown?dim=page|source|utm_campaign|country|device
  *   GET /v1/sites/:id/quality?period=30d
  *   GET /v1/sites/:id/traffic?verdict=bot&min_score=70&limit=50
+ *   GET /v1/sites/:id/visitors?path=/pay&limit=50
  *   GET /v1/sites/:id/visitors/:vid/profile
  *
  * Auth (§10): external systems send `Authorization: Bearer <API_TOKEN>`
@@ -14,7 +15,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorsList, visitorProfile, ApiError } from './queries';
 import { verifySession } from './auth';
 import { hmacSign } from '../../../shared/ids';
 
@@ -64,6 +65,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json(await traffic(env.DB, siteId, period, {
       verdict: q.get('verdict'),
       minScore: q.has('min_score') ? parseInt(q.get('min_score')!, 10) : undefined,
+      limit: parseInt(q.get('limit') ?? '50', 10),
+    }));
+  }
+  if (resource === 'visitors' && !subId) {
+    return json(await visitorsList(env.DB, siteId, period, {
+      path: q.get('path'),
       limit: parseInt(q.get('limit') ?? '50', 10),
     }));
   }
