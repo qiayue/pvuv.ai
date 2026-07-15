@@ -54,7 +54,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
   if (resource === 'overview') return json(await overview(env.DB, siteId, period));
   if (resource === 'timeseries') {
-    return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period));
+    return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day'));
   }
   if (resource === 'breakdown') {
     return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10)));

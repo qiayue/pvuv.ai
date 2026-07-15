@@ -225,9 +225,11 @@ export async function realtime(db: D1Database, siteId: string, now: number, wind
 // ---------------------------------------------------------------------------
 
 const TS_METRICS = new Set([
-  'pv', 'uv', 'sessions', 'bounce_rate', 'avg_duration_ms',
+  'pv', 'uv', 'sessions', 'bounce_rate', 'avg_duration_ms', 'pv_per_visitor',
   'bot_count', 'suspect_count', 'crawler_count', 'clean_count',
 ]);
+const TS_INTERVALS = new Set(['minute', 'hour', 'day', 'week', 'month']);
+const RATE_METRICS = new Set(['bounce_rate', 'avg_duration_ms', 'pv_per_visitor']);
 
 /** All calendar-day labels from start..end inclusive ('YYYY-MM-DD' strings). */
 function enumerateDays(start: string, end: string): string[] {
@@ -238,38 +240,174 @@ function enumerateDays(start: string, end: string): string[] {
   return out;
 }
 
-export async function timeseries(db: D1Database, siteId: string, metric: string, period: Period) {
-  if (!TS_METRICS.has(metric)) throw new ApiError(400, `unknown metric: ${metric}`);
-  const split = hybridSplit(period);
-  const byDay = new Map<string, number | null>();
-
-  // past days: pre-aggregated rollup (already bucketed in the site's timezone)
-  if (split.hasPast) {
-    const rows = await db.prepare(
-      `SELECT day, ${metric} AS value FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?`,
-    ).bind(siteId, split.pastStart, split.pastEnd).all<{ day: string; value: number | null }>();
-    for (const r of rows.results) byDay.set(r.day, r.value);
+// A per-bucket accumulator carrying enough to derive ANY metric (counts sum;
+// rate metrics keep weighted numerator/denominator so buckets can be merged).
+interface Acc {
+  pv: number; uv: number; sessions: number;
+  bounce_num: number; bounce_den: number; dur_num: number; dur_den: number;
+  clean: number; suspect: number; bot: number; crawler: number;
+}
+const emptyAcc = (): Acc => ({ pv: 0, uv: 0, sessions: 0, bounce_num: 0, bounce_den: 0, dur_num: 0, dur_den: 0, clean: 0, suspect: 0, bot: 0, crawler: 0 });
+function addAcc(dst: Acc, s: Acc): void {
+  dst.pv += s.pv; dst.uv += s.uv; dst.sessions += s.sessions;
+  dst.bounce_num += s.bounce_num; dst.bounce_den += s.bounce_den;
+  dst.dur_num += s.dur_num; dst.dur_den += s.dur_den;
+  dst.clean += s.clean; dst.suspect += s.suspect; dst.bot += s.bot; dst.crawler += s.crawler;
+}
+function metricOf(a: Acc, metric: string): number | null {
+  switch (metric) {
+    case 'pv': return a.pv;
+    case 'uv': return a.uv;
+    case 'sessions': return a.sessions;
+    case 'clean_count': return a.clean;
+    case 'suspect_count': return a.suspect;
+    case 'bot_count': return a.bot;
+    case 'crawler_count': return a.crawler;
+    case 'bounce_rate': return a.bounce_den ? Math.round((a.bounce_num / a.bounce_den) * 1e4) / 1e4 : null;
+    case 'avg_duration_ms': return a.dur_den ? Math.round(a.dur_num / a.dur_den) : null;
+    case 'pv_per_visitor': return a.uv ? Math.round((a.pv / a.uv) * 100) / 100 : null;
+    default: return 0;
   }
-
-  // today: recomputed live so the last point is always current
-  if (split.today) {
-    byDay.set(split.today.day, await liveDayMetric(db, siteId, split.today, metric));
-  }
-
-  // fill zero-traffic days (a rate metric stays null rather than a misleading 0)
-  const missing = metric === 'bounce_rate' || metric === 'avg_duration_ms' ? null : 0;
-  const points = enumerateDays(period.start, period.end).map((day) => ({ day, value: byDay.has(day) ? byDay.get(day)! : missing }));
-  return { metric, interval: 'day', points };
 }
 
-/** One timeseries metric for a single live day (today). */
-async function liveDayMetric(db: D1Database, siteId: string, span: { startTs: number; endTs: number }, metric: string): Promise<number | null> {
-  if (metric === 'bounce_rate' || metric === 'avg_duration_ms') {
-    const s = await sessionAgg(db, siteId, span.startTs, span.endTs);
-    return s[metric];
+/** Raw session counts over a span (exact bounce/dwell numerators). */
+async function sessionRaw(db: D1Database, siteId: string, startTs: number, endTs: number):
+  Promise<{ sessions: number; bounces: number; duration_sum: number }> {
+  const r = await db.prepare(`
+    SELECT COUNT(*) AS sessions, COALESCE(SUM(is_bounce), 0) AS bounces, COALESCE(SUM(duration_ms), 0) AS duration_sum
+    FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?
+  `).bind(siteId, startTs, endTs).first<{ sessions: number; bounces: number; duration_sum: number }>();
+  return r ?? { sessions: 0, bounces: 0, duration_sum: 0 };
+}
+
+/**
+ * Metric-over-time series. `interval` controls the bucket size and defaults to
+ * 'day'. minute/hour buckets are computed live from raw events + sessions;
+ * day/week/month are built from the daily rollup (past) + live today, then
+ * regrouped. Every metric (incl. derived pv_per_visitor) is supported.
+ */
+export async function timeseries(db: D1Database, siteId: string, metric: string, period: Period, interval = 'day') {
+  if (!TS_METRICS.has(metric)) throw new ApiError(400, `unknown metric: ${metric}`);
+  if (!TS_INTERVALS.has(interval)) throw new ApiError(400, `unknown interval: ${interval}`);
+  const points = interval === 'minute' || interval === 'hour'
+    ? await subDaySeries(db, siteId, period, interval, metric)
+    : await calendarSeries(db, siteId, period, interval, metric);
+  return { metric, interval, points };
+}
+
+/** minute/hour buckets, live from raw events (+ sessions for rate metrics). */
+async function subDaySeries(db: D1Database, siteId: string, period: Period, interval: string, metric: string) {
+  const step = interval === 'minute' ? 60_000 : 3_600_000;
+  const n = Math.round((period.endTs - period.startTs) / step);
+  if (n > 2000) throw new ApiError(400, 'range too large for this interval');
+  const accs = Array.from({ length: n }, emptyAcc);
+
+  const tables = await eventTables(db, period.startTs, period.endTs);
+  if (tables.length) {
+    const u = unionOver(tables, 'event, visitor_id, session_id, verdict, ts', siteId, period.startTs, period.endTs);
+    const rows = await db.prepare(`
+      SELECT CAST((ts - ?) / ? AS INTEGER) AS b,
+        COALESCE(SUM(event = 'pageview'), 0) AS pv,
+        COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END) AS uv,
+        COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END) AS sessions,
+        COALESCE(SUM(event = 'pageview' AND verdict = 'clean'), 0) AS clean,
+        COALESCE(SUM(event = 'pageview' AND verdict = 'suspect'), 0) AS suspect,
+        COALESCE(SUM(event = 'pageview' AND verdict = 'bot'), 0) AS bot,
+        COALESCE(SUM(event = 'pageview' AND verdict = 'crawler'), 0) AS crawler
+      FROM (${u.sql}) GROUP BY b
+    `).bind(period.startTs, step, ...u.binds).all<Acc & { b: number }>();
+    for (const r of rows.results) {
+      const a = accs[r.b];
+      if (a) { a.pv = r.pv; a.uv = r.uv; a.sessions = r.sessions; a.clean = r.clean; a.suspect = r.suspect; a.bot = r.bot; a.crawler = r.crawler; }
+    }
   }
-  const ev = await eventsSiteAgg(db, siteId, span.startTs, span.endTs);
-  return (ev as unknown as Record<string, number>)[metric] ?? 0;
+
+  if (metric === 'bounce_rate' || metric === 'avg_duration_ms') {
+    const rows = await db.prepare(`
+      SELECT CAST((started_at - ?) / ? AS INTEGER) AS b,
+        COUNT(*) AS sc, COALESCE(SUM(is_bounce), 0) AS bc, COALESCE(SUM(duration_ms), 0) AS ds
+      FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ? GROUP BY b
+    `).bind(period.startTs, step, siteId, period.startTs, period.endTs).all<{ b: number; sc: number; bc: number; ds: number }>();
+    for (const r of rows.results) {
+      const a = accs[r.b];
+      if (a) { a.bounce_num = r.bc; a.bounce_den = r.sc; a.dur_num = r.ds; a.dur_den = r.sc; }
+    }
+  }
+
+  const multiDay = period.endTs - period.startTs > 86400e3;
+  return accs.map((a, i) => ({
+    label: subDayLabel(period.startTs + i * step, period.tz, interval, multiDay),
+    value: metricOf(a, metric),
+  }));
+}
+
+/** day/week/month buckets from rollup history + live today. */
+async function calendarSeries(db: D1Database, siteId: string, period: Period, interval: string, metric: string) {
+  const daily = await dailyAccs(db, siteId, period);
+  const buckets = new Map<string, { label: string; acc: Acc }>();
+  for (const day of enumerateDays(period.start, period.end)) {
+    const [key, label] = bucketKey(day, interval);
+    let bk = buckets.get(key);
+    if (!bk) { bk = { label, acc: emptyAcc() }; buckets.set(key, bk); }
+    addAcc(bk.acc, daily.get(day) ?? emptyAcc());
+  }
+  // Map preserves insertion order, and enumerateDays is chronological
+  return [...buckets.values()].map((b) => ({ label: b.label, value: metricOf(b.acc, metric) }));
+}
+
+/** Per-day accumulators over the period: rollup for past days, live today. */
+async function dailyAccs(db: D1Database, siteId: string, period: Period): Promise<Map<string, Acc>> {
+  const split = hybridSplit(period);
+  const map = new Map<string, Acc>();
+  if (split.hasPast) {
+    const rows = await db.prepare(`
+      SELECT day, pv, uv, sessions, bounce_rate, avg_duration_ms, clean_count, suspect_count, bot_count, crawler_count
+      FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?
+    `).bind(siteId, split.pastStart, split.pastEnd).all<{
+      day: string; pv: number; uv: number; sessions: number; bounce_rate: number | null; avg_duration_ms: number | null;
+      clean_count: number; suspect_count: number; bot_count: number; crawler_count: number;
+    }>();
+    for (const r of rows.results) {
+      const a = emptyAcc();
+      a.pv = r.pv; a.uv = r.uv; a.sessions = r.sessions;
+      a.clean = r.clean_count; a.suspect = r.suspect_count; a.bot = r.bot_count; a.crawler = r.crawler_count;
+      if (r.bounce_rate != null) { a.bounce_num = r.bounce_rate * r.sessions; a.bounce_den = r.sessions; }
+      if (r.avg_duration_ms != null) { a.dur_num = r.avg_duration_ms * r.sessions; a.dur_den = r.sessions; }
+      map.set(r.day, a);
+    }
+  }
+  if (split.today) {
+    const ev = await eventsSiteAgg(db, siteId, split.today.startTs, split.today.endTs);
+    const sr = await sessionRaw(db, siteId, split.today.startTs, split.today.endTs);
+    const a = emptyAcc();
+    a.pv = ev.pv; a.uv = ev.uv; a.sessions = ev.sessions;
+    a.clean = ev.clean_count; a.suspect = ev.suspect_count; a.bot = ev.bot_count; a.crawler = ev.crawler_count;
+    a.bounce_num = sr.bounces; a.bounce_den = sr.sessions; a.dur_num = sr.duration_sum; a.dur_den = sr.sessions;
+    map.set(split.today.day, a);
+  }
+  return map;
+}
+
+/** Bucket key + label for a day string under a day/week/month interval. */
+function bucketKey(day: string, interval: string): [string, string] {
+  if (interval === 'month') return [day.slice(0, 7), day.slice(0, 7)];
+  if (interval === 'week') {
+    const [y, m, d] = day.split('-').map(Number);
+    const mon = addDays(y, m - 1, d, -weekdayMon0(y, m - 1, d));
+    const key = dayStr(mon.y, mon.m0, mon.d);
+    return [key, key.slice(5)];
+  }
+  return [day, day.slice(5)]; // day → MM-DD
+}
+
+/** Local-time label for a minute/hour bucket start instant. */
+function subDayLabel(instant: number, tz: string, interval: string, withDate: boolean): string {
+  const p: Record<string, string> = {};
+  for (const part of new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  } as Intl.DateTimeFormatOptions).formatToParts(new Date(instant))) p[part.type] = part.value;
+  const hm = interval === 'minute' ? `${p.hour}:${p.minute}` : `${p.hour}:00`;
+  return withDate ? `${p.month}-${p.day} ${hm}` : hm;
 }
 
 // ---------------------------------------------------------------------------

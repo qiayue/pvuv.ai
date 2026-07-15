@@ -38,6 +38,10 @@
   .rt .pulse { width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 1.8s infinite; }
   @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
   .rt svg { display: block; }
+  .chart-head { display: flex; align-items: center; gap: 12px; margin: 26px 0 10px; }
+  .chart-head h2 { margin: 0; }
+  .chart-ctrls { margin-left: auto; display: flex; gap: 8px; }
+  .chart-ctrls select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; font: inherit; }
 </style>
 </head>
 <body>
@@ -64,7 +68,13 @@
   <div class="rt" id="realtime"></div>
   <div class="cards" id="cards"></div>
 
-  <h2>Pageviews</h2>
+  <div class="chart-head">
+    <h2 id="chartTitle">Pageviews</h2>
+    <div class="chart-ctrls">
+      <select id="metric" aria-label="Metric"></select>
+      <select id="interval" aria-label="Interval"></select>
+    </div>
+  </div>
   <div class="panel" id="chart"></div>
 
   <div class="grid2">
@@ -112,21 +122,64 @@ function table(el, headers, rows) {
     : '<p class="muted">no data yet</p>';
 }
 
-function lineChart(points) {
+// metric + interval controls (Plausible-style). First interval per period = default.
+const METRICS = [
+  ['pv', 'Pageviews'], ['uv', 'Visitors'], ['sessions', 'Sessions'],
+  ['pv_per_visitor', 'Pages / visitor'], ['bounce_rate', 'Bounce rate'], ['avg_duration_ms', 'Avg. session'],
+];
+const METRIC_LABEL = Object.fromEntries(METRICS);
+const INTERVALS = {
+  today: ['hour', 'minute'], yesterday: ['hour', 'minute'],
+  '7d': ['day', 'hour'], this_week: ['day', 'hour'], last_week: ['day', 'hour'],
+  '30d': ['day', 'week'], this_month: ['day', 'week'], last_month: ['day', 'week'], '90d': ['day', 'week'],
+  this_year: ['month', 'week', 'day'],
+};
+const INTERVAL_LABEL = { minute: 'Minutes', hour: 'Hours', day: 'Days', week: 'Weeks', month: 'Months' };
+
+function fmtMetric(metric, v) {
+  if (v == null) return '–';
+  if (metric === 'bounce_rate') return (v * 100).toFixed(1) + '%';
+  if (metric === 'avg_duration_ms') return dur(v);
+  if (metric === 'pv_per_visitor') return Number(v).toFixed(2);
+  return fmt(v);
+}
+
+function lineChart(points, metric) {
   const el = document.getElementById('chart');
-  if (!points.length) { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
-  const W = 980, H = 180, P = 28;
-  const max = Math.max(...points.map((p) => p.value ?? 0), 1);
+  const hasData = points.some((p) => p.value != null && p.value !== 0);
+  if (!points.length || !hasData) { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
+  const W = 980, H = 180, P = 34;
+  const max = Math.max(...points.map((p) => p.value ?? 0), metric === 'pv_per_visitor' ? 1 : 1);
   const xs = (i) => P + (i * (W - 2 * P)) / Math.max(points.length - 1, 1);
   const ys = (v) => H - P - ((v ?? 0) * (H - 2 * P)) / max;
   const line = points.map((p, i) => `${xs(i).toFixed(1)},${ys(p.value).toFixed(1)}`).join(' ');
-  const labels = points.filter((_, i) => i % Math.ceil(points.length / 8) === 0);
+  const step = Math.ceil(points.length / 8);
+  const labels = points.filter((_, i) => i % step === 0);
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
     <polyline points="${line}" fill="none" stroke="#3b82f6" stroke-width="2"/>
-    ${points.map((p, i) => `<circle cx="${xs(i)}" cy="${ys(p.value)}" r="2.5" fill="#3b82f6"><title>${p.day}: ${fmt(p.value)}</title></circle>`).join('')}
-    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 8}" text-anchor="middle">${p.day.slice(5)}</text>`).join('')}
-    <text x="${P - 4}" y="${ys(max) + 4}" text-anchor="end">${fmt(max)}</text>
+    ${points.map((p, i) => `<circle cx="${xs(i)}" cy="${ys(p.value)}" r="2.5" fill="#3b82f6"><title>${esc(p.label)}: ${fmtMetric(metric, p.value)}</title></circle>`).join('')}
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 8}" text-anchor="middle">${esc(p.label)}</text>`).join('')}
+    <text x="${P - 6}" y="${ys(max) + 4}" text-anchor="end">${fmtMetric(metric, max)}</text>
   </svg>`;
+}
+
+function populateControls() {
+  const mSel = document.getElementById('metric');
+  if (!mSel.options.length) mSel.innerHTML = METRICS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  const period = document.getElementById('period').value;
+  const opts = INTERVALS[period] || ['day'];
+  const iSel = document.getElementById('interval');
+  const cur = iSel.value;
+  iSel.innerHTML = opts.map((v) => `<option value="${v}">${INTERVAL_LABEL[v]}</option>`).join('');
+  iSel.value = opts.includes(cur) ? cur : opts[0]; // keep choice if still valid, else default
+}
+
+async function loadChart() {
+  const metric = document.getElementById('metric').value;
+  const interval = document.getElementById('interval').value;
+  document.getElementById('chartTitle').textContent = METRIC_LABEL[metric];
+  const ts = await get('timeseries', `&metric=${metric}&interval=${interval}`);
+  lineChart(ts.points, metric);
 }
 
 function donut(t) {
@@ -161,13 +214,15 @@ async function load() {
 
   const o = await get('overview');
   const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
+  const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
   document.getElementById('cards').innerHTML = [
     ['Pageviews', fmt(o.pv)], ['Visitors', fmt(o.uv)], ['Sessions', fmt(o.sessions)],
+    ['Pages / visitor', perVisitor],
     ['Bounce rate', o.bounce_rate == null ? '–' : (o.bounce_rate * 100).toFixed(1) + '%'],
     ['Avg. session', dur(o.avg_duration_ms)], ['Human share', cleanShare + '%'],
   ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
 
-  lineChart((await get('timeseries', '&metric=pv')).points);
+  await loadChart();
 
   const pages = await get('breakdown', '&dim=page');
   table('pages', ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],
@@ -227,7 +282,10 @@ async function pollRealtime() {
   } catch { /* transient — keep the last value */ }
 }
 
-document.getElementById('period').addEventListener('change', load);
+document.getElementById('period').addEventListener('change', () => { populateControls(); load(); });
+document.getElementById('metric').addEventListener('change', loadChart);
+document.getElementById('interval').addEventListener('change', loadChart);
+populateControls();
 load();
 pollRealtime();
 setInterval(pollRealtime, 15000);
