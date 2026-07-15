@@ -41,6 +41,8 @@ export interface Env {
   ADMIN_EMAILS: string;
   GOOGLE_CLIENT_ID?: string;
   GITHUB_CLIENT_ID?: string;
+  /** locale served at `/`; requests to /<DEFAULT_LANG> 301 there (default 'en') */
+  DEFAULT_LANG?: string;
 }
 
 const SESSION_TTL_MS = 7 * 86400e3;
@@ -78,7 +80,14 @@ export default {
     // through to normal asset serving. Language files are gitignored like home.html.
     const langMatch = url.pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\/?$/);
     if (langMatch && request.method === 'GET') {
-      const localized = await homepage(request, env, langMatch[1]);
+      const lang = langMatch[1];
+      // the default language lives at `/`, so /<default>[/ ] is canonicalized to
+      // `/` with a 301 (avoids `/` and `/en` serving identical duplicate content).
+      // DEFAULT_LANG (default 'en') lets a non-English-default deployer pick theirs.
+      if (lang === (env.DEFAULT_LANG ?? 'en')) {
+        return Response.redirect(new URL('/' + url.search, url).toString(), 301);
+      }
+      const localized = await homepage(request, env, lang);
       if (localized) return localized;
     }
     return env.ASSETS.fetch(request);
