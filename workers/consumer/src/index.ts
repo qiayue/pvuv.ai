@@ -124,11 +124,14 @@ function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1Prep
       entry_page, exit_page, entry_host, pageviews, events_count, duration_ms,
       had_interaction, is_bounce,
       source, medium, campaign, referrer, country, device_type,
-      bot_score, verdict, bot_flags, started_at, last_active_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?21, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)
+      bot_score, verdict, bot_flags, started_at, last_active_at, last_pageview_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?21, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?23)
     ON CONFLICT(site_id, session_id) DO UPDATE SET
       user_id         = COALESCE(excluded.user_id, sessions.user_id),
       exit_page       = CASE WHEN ?6 = 1 THEN excluded.exit_page ELSE sessions.exit_page END,
+      -- Plausible/UA visit duration = last_pageview_at − started_at; only
+      -- pageview events (?6 = 1) advance the last-pageview clock
+      last_pageview_at = CASE WHEN ?6 = 1 THEN MAX(COALESCE(sessions.last_pageview_at, 0), ?19) ELSE sessions.last_pageview_at END,
       pageviews       = sessions.pageviews + ?6,
       events_count    = sessions.events_count + 1,
       duration_ms     = sessions.duration_ms + ?7,
@@ -170,6 +173,7 @@ function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1Prep
     isCustom,                                         // 20
     row.hostname,                                     // 21 entry_host (kept from first event)
     engagedMs,                                        // 22 per-site engaged dwell threshold
+    isPageview ? row.ts : null,                       // 23 last_pageview_at (pageview events only)
   );
 }
 

@@ -123,13 +123,13 @@ export async function rollupSiteDay(
   const siteEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict', siteId, startTs, endTs);
   stmts.push(db.prepare(`
     INSERT OR REPLACE INTO rollup_site_daily
-      (site_id, day, pv, uv, sessions, bounce_rate, avg_duration_ms,
+      (site_id, day, pv, uv, sessions, bounce_rate, avg_duration_ms, visit_duration_ms,
        bot_count, suspect_count, crawler_count, clean_count, conversions, revenue_usd)
     SELECT site_id, ?,
       SUM(event = 'pageview'),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END),
-      NULL, NULL,
+      NULL, NULL, NULL,
       SUM(event = 'pageview' AND verdict = 'bot'),
       SUM(event = 'pageview' AND verdict = 'suspect'),
       SUM(event = 'pageview' AND verdict = 'crawler'),
@@ -154,9 +154,16 @@ export async function rollupSiteDay(
       avg_duration_ms = (
         SELECT CAST(AVG(s.duration_ms) AS INTEGER)
         FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
+      ),
+      -- Plausible/UA visit duration: last−first pageview per session, exit page
+      -- and single-page visits count as 0 (last_pageview_at = started_at → 0)
+      visit_duration_ms = (
+        SELECT CAST(AVG(CASE WHEN s.last_pageview_at IS NOT NULL
+                             THEN s.last_pageview_at - s.started_at ELSE 0 END) AS INTEGER)
+        FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       )
     WHERE site_id = ? AND day = ?
-  `).bind(siteId, startTs, endTs, siteId, startTs, endTs, siteId, startTs, endTs, siteId, day));
+  `).bind(siteId, startTs, endTs, siteId, startTs, endTs, siteId, startTs, endTs, siteId, startTs, endTs, siteId, day));
 
   await db.batch(stmts);
 }

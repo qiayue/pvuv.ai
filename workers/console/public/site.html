@@ -251,7 +251,7 @@ const METRICS = [
   ['pv', 'Pageviews'], ['uv', 'Visitors'], ['sessions', 'Sessions'],
   ['pv_per_visitor', 'Pages / visitor'],
   ['bounce_rate', 'Bounce rate (engaged)'], ['bounce_rate_single', 'Bounce rate (1-page)'],
-  ['avg_duration_ms', 'Avg. session'],
+  ['avg_duration_ms', 'Engaged time'], ['visit_duration_ms', 'Visit duration'],
 ];
 const METRIC_LABEL = Object.fromEntries(METRICS);
 const INTERVALS = {
@@ -266,7 +266,7 @@ const INTERVAL_LABEL = { minute: 'Minutes', hour: 'Hours', day: 'Days', week: 'W
 function fmtMetric(metric, v) {
   if (v == null) return '–';
   if (metric === 'bounce_rate' || metric === 'bounce_rate_single') return (v * 100).toFixed(1) + '%';
-  if (metric === 'avg_duration_ms') return dur(v);
+  if (metric === 'avg_duration_ms' || metric === 'visit_duration_ms') return dur(v);
   if (metric === 'pv_per_visitor') return Number(v).toFixed(2);
   return fmt(v);
 }
@@ -330,7 +330,9 @@ function renderCards(o) {
     card('Pages / visitor', perVisitor) +
     card('Bounce rate (engaged)', pct(o.bounce_rate), 'GA4 engagement metric') +
     card('Bounce rate (1-page)', pct(o.bounce_rate_single), 'UA / Plausible style') +
-    card('Avg. session', dur(o.avg_duration_ms)) + card('Human share', cleanShare + '%');
+    card('Engaged time', dur(o.avg_duration_ms), 'Visible dwell, incl. exit page') +
+    card('Visit duration', dur(o.visit_duration_ms), 'UA / Plausible style') +
+    card('Human share', cleanShare + '%');
 }
 
 async function loadChart() {

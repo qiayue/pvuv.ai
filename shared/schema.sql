@@ -101,6 +101,7 @@ CREATE TABLE sessions (
   country TEXT, device_type TEXT,
   bot_score INTEGER DEFAULT 0, verdict TEXT DEFAULT 'clean', bot_flags INTEGER DEFAULT 0,
   started_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
+  last_pageview_at INTEGER,        -- ts of the session's latest pageview; Plausible-style visit duration = this − started_at (added by 0010)
   -- keyed per site: _pv_sid is shared across sibling subdomains, so two sites on
   -- the same registrable domain must not merge sessions (added by 0009)
   PRIMARY KEY (site_id, session_id)
@@ -150,7 +151,8 @@ CREATE TABLE rollup_site_daily (
   pv INTEGER DEFAULT 0, uv INTEGER DEFAULT 0, sessions INTEGER DEFAULT 0,
   bounce_rate REAL,               -- GA4 engagement-based bounce (1 − engaged)
   bounce_rate_single REAL,        -- single-page bounce (UA/Plausible style; added by 0006)
-  avg_duration_ms INTEGER,
+  avg_duration_ms INTEGER,        -- GA4-style engaged dwell (sum of visible time, incl. exit page)
+  visit_duration_ms INTEGER,      -- Plausible/UA-style visit duration (last−first pageview; added by 0010)
   bot_count INTEGER DEFAULT 0, suspect_count INTEGER DEFAULT 0,
   crawler_count INTEGER DEFAULT 0, clean_count INTEGER DEFAULT 0,
   conversions INTEGER DEFAULT 0, revenue_usd REAL DEFAULT 0,

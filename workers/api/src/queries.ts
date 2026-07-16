@@ -164,15 +164,16 @@ async function eventsSiteAgg(db: D1Database, siteId: string, startTs: number, en
 /** Session-derived metrics over a UTC span (live sessions table): both bounce
  *  definitions (GA4 engagement-based + single-page) and avg dwell. */
 async function sessionAgg(db: D1Database, siteId: string, startTs: number, endTs: number):
-  Promise<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null }> {
+  Promise<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null; visit_duration_ms: number | null }> {
   const row = await db.prepare(`
     SELECT
       ROUND(AVG(CASE WHEN is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4) AS bounce_rate,
       ROUND(AVG(CASE WHEN pageviews <= 1 THEN 1.0 ELSE 0.0 END), 4) AS bounce_rate_single,
-      CAST(AVG(duration_ms) AS INTEGER) AS avg_duration_ms
+      CAST(AVG(duration_ms) AS INTEGER) AS avg_duration_ms,
+      CAST(AVG(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END) AS INTEGER) AS visit_duration_ms
     FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?
-  `).bind(siteId, startTs, endTs).first<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null }>();
-  return row ?? { bounce_rate: null, bounce_rate_single: null, avg_duration_ms: null };
+  `).bind(siteId, startTs, endTs).first<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null; visit_duration_ms: number | null }>();
+  return row ?? { bounce_rate: null, bounce_rate_single: null, avg_duration_ms: null, visit_duration_ms: null };
 }
 
 /** Split a period into [past days → rollup] and [today → live], in site tz.
@@ -203,7 +204,8 @@ export async function overview(db: D1Database, siteId: string, period: Period) {
   return {
     period: { start: period.start, end: period.end },
     pv: ev.pv, uv: ev.uv, sessions: ev.sessions,
-    bounce_rate: s.bounce_rate, bounce_rate_single: s.bounce_rate_single, avg_duration_ms: s.avg_duration_ms,
+    bounce_rate: s.bounce_rate, bounce_rate_single: s.bounce_rate_single,
+    avg_duration_ms: s.avg_duration_ms, visit_duration_ms: s.visit_duration_ms,
     clean_count: ev.clean_count, suspect_count: ev.suspect_count,
     bot_count: ev.bot_count, crawler_count: ev.crawler_count,
   };
@@ -246,11 +248,12 @@ export async function realtime(db: D1Database, siteId: string, now: number, wind
 // ---------------------------------------------------------------------------
 
 const TS_METRICS = new Set([
-  'pv', 'uv', 'sessions', 'bounce_rate', 'bounce_rate_single', 'avg_duration_ms', 'pv_per_visitor',
+  'pv', 'uv', 'sessions', 'bounce_rate', 'bounce_rate_single',
+  'avg_duration_ms', 'visit_duration_ms', 'pv_per_visitor',
   'bot_count', 'suspect_count', 'crawler_count', 'clean_count',
 ]);
 const TS_INTERVALS = new Set(['minute', 'hour', 'day', 'week', 'month']);
-const RATE_METRICS = new Set(['bounce_rate', 'bounce_rate_single', 'avg_duration_ms', 'pv_per_visitor']);
+const RATE_METRICS = new Set(['bounce_rate', 'bounce_rate_single', 'avg_duration_ms', 'visit_duration_ms', 'pv_per_visitor']);
 
 /** All calendar-day labels from start..end inclusive ('YYYY-MM-DD' strings). */
 function enumerateDays(start: string, end: string): string[] {
@@ -265,15 +268,17 @@ function enumerateDays(start: string, end: string): string[] {
 // rate metrics keep weighted numerator/denominator so buckets can be merged).
 interface Acc {
   pv: number; uv: number; sessions: number;
-  bounce_num: number; bounce_den: number; bs_num: number; bs_den: number; dur_num: number; dur_den: number;
+  bounce_num: number; bounce_den: number; bs_num: number; bs_den: number;
+  dur_num: number; dur_den: number; vdur_num: number; vdur_den: number;
   clean: number; suspect: number; bot: number; crawler: number;
 }
-const emptyAcc = (): Acc => ({ pv: 0, uv: 0, sessions: 0, bounce_num: 0, bounce_den: 0, bs_num: 0, bs_den: 0, dur_num: 0, dur_den: 0, clean: 0, suspect: 0, bot: 0, crawler: 0 });
+const emptyAcc = (): Acc => ({ pv: 0, uv: 0, sessions: 0, bounce_num: 0, bounce_den: 0, bs_num: 0, bs_den: 0, dur_num: 0, dur_den: 0, vdur_num: 0, vdur_den: 0, clean: 0, suspect: 0, bot: 0, crawler: 0 });
 function addAcc(dst: Acc, s: Acc): void {
   dst.pv += s.pv; dst.uv += s.uv; dst.sessions += s.sessions;
   dst.bounce_num += s.bounce_num; dst.bounce_den += s.bounce_den;
   dst.bs_num += s.bs_num; dst.bs_den += s.bs_den;
   dst.dur_num += s.dur_num; dst.dur_den += s.dur_den;
+  dst.vdur_num += s.vdur_num; dst.vdur_den += s.vdur_den;
   dst.clean += s.clean; dst.suspect += s.suspect; dst.bot += s.bot; dst.crawler += s.crawler;
 }
 function metricOf(a: Acc, metric: string): number | null {
@@ -288,6 +293,7 @@ function metricOf(a: Acc, metric: string): number | null {
     case 'bounce_rate': return a.bounce_den ? Math.round((a.bounce_num / a.bounce_den) * 1e4) / 1e4 : null;
     case 'bounce_rate_single': return a.bs_den ? Math.round((a.bs_num / a.bs_den) * 1e4) / 1e4 : null;
     case 'avg_duration_ms': return a.dur_den ? Math.round(a.dur_num / a.dur_den) : null;
+    case 'visit_duration_ms': return a.vdur_den ? Math.round(a.vdur_num / a.vdur_den) : null;
     case 'pv_per_visitor': return a.uv ? Math.round((a.pv / a.uv) * 100) / 100 : null;
     default: return 0;
   }
@@ -295,15 +301,16 @@ function metricOf(a: Acc, metric: string): number | null {
 
 /** Raw session counts over a span (exact bounce/dwell numerators). */
 async function sessionRaw(db: D1Database, siteId: string, startTs: number, endTs: number):
-  Promise<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number }> {
+  Promise<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number; visit_duration_sum: number }> {
   const r = await db.prepare(`
     SELECT COUNT(*) AS sessions,
            COALESCE(SUM(is_bounce), 0) AS bounces,
            COALESCE(SUM(CASE WHEN pageviews <= 1 THEN 1 ELSE 0 END), 0) AS bounces_single,
-           COALESCE(SUM(duration_ms), 0) AS duration_sum
+           COALESCE(SUM(duration_ms), 0) AS duration_sum,
+           COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END), 0) AS visit_duration_sum
     FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?
-  `).bind(siteId, startTs, endTs).first<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number }>();
-  return r ?? { sessions: 0, bounces: 0, bounces_single: 0, duration_sum: 0 };
+  `).bind(siteId, startTs, endTs).first<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number; visit_duration_sum: number }>();
+  return r ?? { sessions: 0, bounces: 0, bounces_single: 0, duration_sum: 0, visit_duration_sum: 0 };
 }
 
 /**
@@ -351,17 +358,22 @@ async function subDaySeries(db: D1Database, siteId: string, period: Period, inte
     }
   }
 
-  if (metric === 'bounce_rate' || metric === 'bounce_rate_single' || metric === 'avg_duration_ms') {
+  if (metric === 'bounce_rate' || metric === 'bounce_rate_single'
+      || metric === 'avg_duration_ms' || metric === 'visit_duration_ms') {
     const rows = await db.prepare(`
       SELECT CAST((started_at - ?) / ? AS INTEGER) AS b,
         COUNT(*) AS sc, COALESCE(SUM(is_bounce), 0) AS bc,
         COALESCE(SUM(CASE WHEN pageviews <= 1 THEN 1 ELSE 0 END), 0) AS bsc,
-        COALESCE(SUM(duration_ms), 0) AS ds
+        COALESCE(SUM(duration_ms), 0) AS ds,
+        COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END), 0) AS vds
       FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ? GROUP BY b
-    `).bind(period.startTs, step, siteId, period.startTs, period.endTs).all<{ b: number; sc: number; bc: number; bsc: number; ds: number }>();
+    `).bind(period.startTs, step, siteId, period.startTs, period.endTs).all<{ b: number; sc: number; bc: number; bsc: number; ds: number; vds: number }>();
     for (const r of rows.results) {
       const a = accs[r.b];
-      if (a) { a.bounce_num = r.bc; a.bounce_den = r.sc; a.bs_num = r.bsc; a.bs_den = r.sc; a.dur_num = r.ds; a.dur_den = r.sc; }
+      if (a) {
+        a.bounce_num = r.bc; a.bounce_den = r.sc; a.bs_num = r.bsc; a.bs_den = r.sc;
+        a.dur_num = r.ds; a.dur_den = r.sc; a.vdur_num = r.vds; a.vdur_den = r.sc;
+      }
     }
   }
 
@@ -400,7 +412,8 @@ async function calendarSeries(db: D1Database, siteId: string, period: Period, in
   }
 
   // week/month: exact from raw events (+ sessions for rate metrics) over the span
-  const needSess = metric === 'bounce_rate' || metric === 'bounce_rate_single' || metric === 'avg_duration_ms';
+  const needSess = metric === 'bounce_rate' || metric === 'bounce_rate_single'
+    || metric === 'avg_duration_ms' || metric === 'visit_duration_ms';
   const out: Array<{ label: string; value: number | null; status: string }> = [];
   for (const b of order) {
     const [y1, m1, d1] = b.min.split('-').map(Number);
@@ -417,6 +430,7 @@ async function calendarSeries(db: D1Database, siteId: string, period: Period, in
       a.bounce_num = sr.bounces; a.bounce_den = sr.sessions;
       a.bs_num = sr.bounces_single; a.bs_den = sr.sessions;
       a.dur_num = sr.duration_sum; a.dur_den = sr.sessions;
+      a.vdur_num = sr.visit_duration_sum; a.vdur_den = sr.sessions;
     }
     out.push({ label: b.label, value: metricOf(a, metric), status: statusOf(b) });
   }
@@ -429,10 +443,11 @@ async function dailyAccs(db: D1Database, siteId: string, period: Period): Promis
   const map = new Map<string, Acc>();
   if (split.hasPast) {
     const rows = await db.prepare(`
-      SELECT day, pv, uv, sessions, bounce_rate, bounce_rate_single, avg_duration_ms, clean_count, suspect_count, bot_count, crawler_count
+      SELECT day, pv, uv, sessions, bounce_rate, bounce_rate_single, avg_duration_ms, visit_duration_ms, clean_count, suspect_count, bot_count, crawler_count
       FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?
     `).bind(siteId, split.pastStart, split.pastEnd).all<{
-      day: string; pv: number; uv: number; sessions: number; bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null;
+      day: string; pv: number; uv: number; sessions: number; bounce_rate: number | null; bounce_rate_single: number | null;
+      avg_duration_ms: number | null; visit_duration_ms: number | null;
       clean_count: number; suspect_count: number; bot_count: number; crawler_count: number;
     }>();
     for (const r of rows.results) {
@@ -442,6 +457,7 @@ async function dailyAccs(db: D1Database, siteId: string, period: Period): Promis
       if (r.bounce_rate != null) { a.bounce_num = r.bounce_rate * r.sessions; a.bounce_den = r.sessions; }
       if (r.bounce_rate_single != null) { a.bs_num = r.bounce_rate_single * r.sessions; a.bs_den = r.sessions; }
       if (r.avg_duration_ms != null) { a.dur_num = r.avg_duration_ms * r.sessions; a.dur_den = r.sessions; }
+      if (r.visit_duration_ms != null) { a.vdur_num = r.visit_duration_ms * r.sessions; a.vdur_den = r.sessions; }
       map.set(r.day, a);
     }
   }
@@ -453,6 +469,7 @@ async function dailyAccs(db: D1Database, siteId: string, period: Period): Promis
     a.clean = ev.clean_count; a.suspect = ev.suspect_count; a.bot = ev.bot_count; a.crawler = ev.crawler_count;
     a.bounce_num = sr.bounces; a.bounce_den = sr.sessions; a.bs_num = sr.bounces_single; a.bs_den = sr.sessions;
     a.dur_num = sr.duration_sum; a.dur_den = sr.sessions;
+    a.vdur_num = sr.visit_duration_sum; a.vdur_den = sr.sessions;
     map.set(split.today.day, a);
   }
   return map;
