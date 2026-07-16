@@ -176,9 +176,10 @@ async function openSourceDetail(source) {
   document.getElementById('modal').hidden = false;
   const d = await get('breakdown', `&dim=referrer&key=${encodeURIComponent(source)}`);
   const rows = d.rows || [];
+  const note = '<p class="muted" style="font-size:12px;margin:10px 2px 0">Most external sites expose only their domain — browsers strip the path from cross-site referrers (Referrer-Policy). Full paths appear for same-site referrers or links tagged with UTM parameters.</p>';
   document.getElementById('modalBody').innerHTML = rows.length
     ? '<table><tr><th>Referring URL</th><th class="num">Sessions</th><th class="num">PV</th><th class="num">Visitors</th></tr>' +
-      rows.map((r) => `<tr><td>${r.key === '(none)' ? '<span class="muted">(no referrer — direct/unknown)</span>' : `<a href="${esc(r.key)}" target="_blank" rel="noreferrer noopener">${esc(r.key)}</a>`}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
+      rows.map((r) => `<tr><td>${r.key === '(none)' ? '<span class="muted">(no referrer — direct/unknown)</span>' : `<a href="${esc(r.key)}" target="_blank" rel="noreferrer noopener">${esc(r.key)}</a>`}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>' + note
     : '<p class="muted">no referring pages recorded for this source in this period</p>';
 }
 function closeModal() { document.getElementById('modal').hidden = true; }
