@@ -18,6 +18,7 @@
   .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
   .card .v { font-size: 22px; font-weight: 700; }
   .card .k { color: #8b93a1; font-size: 12px; }
+  .card .h { color: #6b7280; font-size: 11px; margin-top: 2px; }
   .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
@@ -62,6 +63,7 @@
   .switch-pop .none { color: #8b93a1; padding: 8px 9px; font-size: 13px; }
   .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #aeb6c2; font-size: 13px; }
   .shadow-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 14px; border: 1px solid #4a3f1e; background: #241f10; color: #e8d9a0; border-radius: 8px; font-size: 13px; }
+  .shadow-banner[hidden] { display: none; }
   .shadow-banner .enforce { margin-left: auto; background: #b45309; border: 0; color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
   .shadow-banner .enforce:hover { background: #92400e; }
   .rt .rt-site { font-weight: 600; color: #e6e8eb; padding-right: 10px; margin-right: 4px; border-right: 1px solid #313847; }
@@ -322,12 +324,12 @@ function renderCards(o) {
   const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
   const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
   const pct = (v) => v == null ? '–' : (v * 100).toFixed(1) + '%';
-  const card = (k, v) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+  const card = (k, v, h) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div>${h ? `<div class="h">${h}</div>` : ''}</div>`;
   document.getElementById('cards').innerHTML =
     card('Pageviews', fmt(o.pv)) + card('Visitors', fmt(o.uv)) + card('Sessions', fmt(o.sessions)) +
     card('Pages / visitor', perVisitor) +
-    card('Bounce rate (engaged)', pct(o.bounce_rate)) +
-    card('Bounce rate (1-page)', pct(o.bounce_rate_single)) +
+    card('Bounce rate (engaged)', pct(o.bounce_rate), 'GA4 engagement metric') +
+    card('Bounce rate (1-page)', pct(o.bounce_rate_single), 'UA / Plausible style') +
     card('Avg. session', dur(o.avg_duration_ms)) + card('Human share', cleanShare + '%');
 }
 
