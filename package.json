@@ -12,24 +12,22 @@
     "postinstall": "node scripts/gen-config.mjs",
     "build:sdk": "npm run config:gen && node sdk/build.mjs",
     "config:gen": "node scripts/gen-config.mjs",
-
     "dev:ingest": "wrangler dev -c workers/ingest/wrangler.toml",
     "dev:consumer": "wrangler dev -c workers/consumer/wrangler.toml",
     "dev:api": "wrangler dev -c workers/api/wrangler.toml",
     "dev:console": "wrangler dev -c workers/console/wrangler.toml",
     "dev:cron": "wrangler dev -c workers/cron/wrangler.toml",
-
     "deploy:ingest": "wrangler deploy -c workers/ingest/wrangler.toml",
     "deploy:consumer": "wrangler deploy -c workers/consumer/wrangler.toml",
     "deploy:api": "wrangler deploy -c workers/api/wrangler.toml",
     "deploy:console": "wrangler deploy -c workers/console/wrangler.toml",
     "deploy:cron": "wrangler deploy -c workers/cron/wrangler.toml",
     "deploy:all": "npm run deploy:ingest && npm run deploy:consumer && npm run deploy:api && npm run deploy:console && npm run deploy:cron",
-
     "db:migrate:local": "wrangler d1 migrations apply pvuv-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply pvuv-db --remote",
-
-    "typecheck": "tsc --noEmit && tsc -p sdk --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p sdk --noEmit",
+    "dev:proxy": "wrangler dev -c workers/proxy/wrangler.toml",
+    "deploy:proxy": "wrangler deploy -c workers/proxy/wrangler.toml"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260101.0",

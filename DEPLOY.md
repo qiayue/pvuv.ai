@@ -276,6 +276,37 @@ Whichever tier you use, the homepage carries the footer attribution links
 The default page is intentionally sparse so that thousands of deployments
 don't publish identical landing copy (duplicate content in search engines).
 
+## First-party reverse proxy (optional, blocker-resistant)
+
+By default the SDK loads from your console and reports to `in.<domain>` — a
+third-party host that ad/tracker blockers eventually list. For maximum accuracy
+you can serve `f.js` and the reporting endpoints as **first-party** requests on
+the measured site's own domain via `workers/proxy` (§12). It is NOT part of
+`npm run deploy:all` — deploy it separately.
+
+1. Edit `workers/proxy/wrangler.toml`: set the `route` to a path prefix on your
+   measured domain (e.g. `example.com/_pv/*`), and the `[vars]` `UPSTREAM_INGEST`
+   / `UPSTREAM_ASSETS` to your ingest host and console.
+2. Share a secret between the proxy and ingest so ingest trusts the forwarded
+   client context (real IP/ASN/geo) — without it a proxied request would look
+   like it came from Cloudflare and mis-score:
+   ```bash
+   openssl rand -base64 32   # one value, set on BOTH workers
+   npx wrangler secret put PROXY_TOKEN -c workers/proxy/wrangler.toml
+   npx wrangler secret put PROXY_TOKEN -c workers/ingest/wrangler.toml
+   ```
+3. Deploy: `npm run deploy:proxy` (and redeploy ingest so it picks up the secret).
+4. Point the embed at the proxy — first-party src + data-api:
+   ```html
+   <script defer src="https://example.com/_pv/f.js"
+           data-site="Ab3xK9pQ" data-api="https://example.com/_pv"></script>
+   ```
+
+The proxy forwards the real client IP/ASN/timezone/geo as signed `x-pv-*`
+headers; ingest trusts them ONLY when `x-pv-proxy` matches `PROXY_TOKEN`, so a
+direct client can't spoof its IP. If `PROXY_TOKEN` is unset on ingest, forwarded
+headers are ignored (direct embed keeps working unchanged).
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

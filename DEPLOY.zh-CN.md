@@ -253,6 +253,34 @@ npm run deploy:console
 保留它们，见 README「署名」。默认页刻意极简，是为了避免成千上万个部署发布一模一样的
 落地页文案（搜索引擎重复内容）。
 
+## 第一方反代（可选，免疫拦截器）
+
+默认 SDK 从 console 加载、上报到 `in.<域名>`——这是第三方主机，广告/追踪拦截器
+迟早会把它列入黑名单。想要最高准确率，可以用 `workers/proxy`（§12）把 `f.js` 和
+上报端点变成**被统计域名自己的第一方请求**。它**不在** `npm run deploy:all` 里，需
+单独部署。
+
+1. 改 `workers/proxy/wrangler.toml`：`route` 设成你被统计域名下的路径前缀（如
+   `example.com/_pv/*`），`[vars]` 的 `UPSTREAM_INGEST` / `UPSTREAM_ASSETS` 填你的
+   ingest 主机和 console。
+2. 在代理和 ingest 之间共享一个密钥，让 ingest 信任代理转发的真实客户端上下文
+   （真实 IP/ASN/地理/时区）——否则经代理后请求看起来都来自 Cloudflare，打分会失真：
+   ```bash
+   openssl rand -base64 32   # 同一个值，两个 worker 都设
+   npx wrangler secret put PROXY_TOKEN -c workers/proxy/wrangler.toml
+   npx wrangler secret put PROXY_TOKEN -c workers/ingest/wrangler.toml
+   ```
+3. 部署：`npm run deploy:proxy`（并重新部署 ingest 让它读到密钥）。
+4. 嵌入代码指向代理——第一方 src + data-api：
+   ```html
+   <script defer src="https://example.com/_pv/f.js"
+           data-site="Ab3xK9pQ" data-api="https://example.com/_pv"></script>
+   ```
+
+代理把真实 IP/ASN/时区/地理作为 `x-pv-*` 头转发；ingest **仅当** `x-pv-proxy` 与
+`PROXY_TOKEN` 匹配时才信任它们,所以普通客户端无法伪造自己的 IP。若 ingest 没设
+`PROXY_TOKEN`,转发头一律忽略（直连嵌入照常工作,不受影响）。
+
 ## 常见问题排查
 
 | 现象 | 大概率原因 |

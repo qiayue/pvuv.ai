@@ -1,0 +1,29 @@
+# pvuv.ai first-party reverse proxy — OPTIONAL (PROJECT_PLAN.md §12).
+#
+# Deploy this on YOUR measured site's domain so f.js + reporting are first-party
+# and resist ad/tracker blockers. It is NOT part of `npm run deploy:all`; deploy
+# it explicitly with `npm run deploy:proxy` once configured.
+#
+# All ids/domains are PLACEHOLDERS — edit for your setup, keep real ids out of
+# the public repo (see root wrangler.toml).
+# Secret:  wrangler secret put PROXY_TOKEN -c workers/proxy/wrangler.toml
+#          (set the SAME value on the ingest worker so it trusts this proxy)
+
+name = "pvuv-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+# Mount under a path prefix on the domain you measure. The embed then uses
+# src="https://example.com/_pv/f.js" data-api="https://example.com/_pv".
+routes = [
+  { pattern = "example.com/_pv/*", zone_name = "example.com" }
+]
+
+[vars]
+PROXY_PREFIX    = "/_pv"                  # must match the route prefix above
+UPSTREAM_INGEST = "https://in.pvuv.ai"    # your ingest worker's host
+UPSTREAM_ASSETS = "https://www.pvuv.ai"   # origin that serves /f.js (the console)
+
+[observability]
+enabled = true

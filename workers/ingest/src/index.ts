@@ -23,6 +23,36 @@ export interface Env {
   INGEST_QUEUE: Queue<EventRow>;
   /** Secret via `wrangler secret put HMAC_KEY` — never in any file. */
   HMAC_KEY: string;
+  /** Optional (§12): shared secret with a first-party reverse proxy. When a
+   *  request carries x-pv-proxy matching this, its forwarded client-context
+   *  headers (real IP/ASN/geo/tz) are trusted instead of the proxy-hop's own. */
+  PROXY_TOKEN?: string;
+}
+
+interface ClientCtx { cf: IncomingRequestCfProperties | undefined; ip: string | null; }
+
+/** Real client context, or — for requests from an authenticated first-party
+ *  reverse proxy (§12) — the context the proxy forwards, so scoring
+ *  (IP/ASN/geo/timezone) stays accurate across the proxy hop. Forwarded values
+ *  are trusted ONLY when x-pv-proxy matches the PROXY_TOKEN secret; otherwise a
+ *  direct client could spoof its IP. */
+function resolveClient(request: Request, env: Env): ClientCtx {
+  const realCf = (request as Request & { cf?: IncomingRequestCfProperties }).cf;
+  const realIp = request.headers.get('cf-connecting-ip');
+  if (env.PROXY_TOKEN && request.headers.get('x-pv-proxy') === env.PROXY_TOKEN) {
+    const h = (k: string) => request.headers.get(k) || undefined;
+    const asn = h('x-pv-asn');
+    const cf = {
+      asn: asn ? parseInt(asn, 10) : undefined,
+      asOrganization: h('x-pv-asorg'),
+      timezone: h('x-pv-tz'),
+      country: h('x-pv-country'),
+      region: h('x-pv-region'),
+      city: h('x-pv-city'),
+    } as unknown as IncomingRequestCfProperties;
+    return { cf, ip: h('x-pv-ip') ?? realIp };
+  }
+  return { cf: realCf, ip: realIp };
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -113,12 +143,12 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
   }
   if (valid.length === 0) return respond(204);
 
-  // --- shared request context ---
-  const cf = (request as Request & { cf?: IncomingRequestCfProperties }).cf;
+  // --- shared request context (direct, or forwarded by a first-party proxy §12) ---
+  const { cf, ip: clientIp } = resolveClient(request, env);
   const reqCtx: RequestContext = {
     cf,
     ua: request.headers.get('user-agent'),
-    ip: request.headers.get('cf-connecting-ip'),
+    ip: clientIp,
     now: Date.now(),
   };
   const uaInfo = parseUA(reqCtx.ua);
@@ -219,12 +249,11 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
     ? await verifyVerdictState(env.HMAC_KEY, body.state)
     : null;
 
-  const cf = (request as Request & { cf?: IncomingRequestCfProperties }).cf;
+  const { cf, ip } = resolveClient(request, env);
   const ua = request.headers.get('user-agent');
   const uaInfo = parseUA(ua);
   const asnType = classifyAsn(typeof cf?.asn === 'number' ? cf.asn : undefined, cf?.asOrganization);
 
-  const ip = request.headers.get('cf-connecting-ip');
   const { ip24_hash } = await hashIP(env.HMAC_KEY, ip);
   const fp = body.x?.x7
     ? await fingerprintHash(env.HMAC_KEY, body.x.x7, ua, body.sw, body.sh, body.lang)
