@@ -14,7 +14,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorProfile, ApiError, FILTERABLE, type Filter } from './queries';
 import { verifySession } from './auth';
 import { hmacSign } from '../../../shared/ids';
 
@@ -50,22 +50,23 @@ async function route(request: Request, env: Env): Promise<Response> {
   // period is resolved in the site's own timezone (rollups are keyed on it)
   const period = parsePeriod(url.searchParams.get('period'), await siteTimezone(env.DB, siteId));
   const q = url.searchParams;
+  const filters = parseFilters(q.get('filters'));
 
   if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
-  if (resource === 'overview') return json(await overview(env.DB, siteId, period));
+  if (resource === 'overview') return json(await overview(env.DB, siteId, period, filters));
   if (resource === 'timeseries') {
-    return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day'));
+    return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day', filters));
   }
   if (resource === 'breakdown') {
-    return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key')));
+    return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
   }
-  if (resource === 'quality') return json(await quality(env.DB, siteId, period));
+  if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
   if (resource === 'traffic') {
     return json(await traffic(env.DB, siteId, period, {
       verdict: q.get('verdict'),
       minScore: q.has('min_score') ? parseInt(q.get('min_score')!, 10) : undefined,
       limit: parseInt(q.get('limit') ?? '50', 10),
-    }));
+    }, filters));
   }
   if (resource === 'visitors' && subId && subResource === 'profile') {
     return json(await visitorProfile(env.DB, siteId, subId, period));
@@ -94,6 +95,20 @@ async function authorize(request: Request, env: Env, siteId: string): Promise<vo
   if (!user) throw new ApiError(401, 'auth required');
   const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
   if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+}
+
+/** Parse the `filters` query param: a JSON array of {dim,value}, capped and
+ *  validated against the filterable-dim allowlist. Malformed → no filters. */
+function parseFilters(raw: string | null): Filter[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((f) => f && typeof f.dim === 'string' && typeof f.value === 'string' && FILTERABLE.has(f.dim))
+      .slice(0, 8)
+      .map((f) => ({ dim: f.dim, value: f.value }));
+  } catch { return []; }
 }
 
 function json(data: unknown, status = 200): Response {

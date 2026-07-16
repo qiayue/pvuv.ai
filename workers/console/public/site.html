@@ -75,6 +75,17 @@
   .chart-head h2 { margin: 0; }
   .chart-ctrls { margin-left: auto; display: flex; gap: 8px; }
   .chart-ctrls select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; font: inherit; }
+  .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 26px 0 10px; }
+  .sec-head h2 { margin: 0; }
+  .all-btn { margin-left: auto; background: none; border: 0; color: #7ab3ff; font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 4px; }
+  .all-btn:hover { text-decoration: underline; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 2px; }
+  .filters:empty { display: none; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; background: #1c2431; border: 1px solid #2f3a4d; color: #cdd6e2; border-radius: 14px; padding: 3px 6px 3px 11px; font-size: 12.5px; }
+  .chip b { font-weight: 600; color: #e6e8eb; }
+  .chip .x { background: #313d50; border: 0; color: #cdd6e2; width: 17px; height: 17px; border-radius: 50%; cursor: pointer; line-height: 1; font-size: 13px; padding: 0; }
+  .chip .x:hover { background: #47566e; color: #fff; }
+  .filters .clear { background: none; border: 0; color: #8b93a1; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -110,6 +121,7 @@
 <main>
   <div class="rt" id="realtime"></div>
   <div class="shadow-banner" id="shadowBanner" hidden></div>
+  <div class="filters" id="filters"></div>
   <div class="cards" id="cards"></div>
 
   <div class="chart-head">
@@ -122,12 +134,12 @@
   <div class="panel" id="chart"></div>
 
   <div class="grid2">
-    <div><h2>Top pages</h2><div class="panel" id="pages"></div></div>
-    <div><h2>Sources</h2><div class="panel" id="sources"></div></div>
+    <div><div class="sec-head"><h2>Top sources</h2><button class="all-btn" data-all="source">All sources →</button></div><div class="panel" id="sources"></div></div>
+    <div><div class="sec-head"><h2>Top pages</h2><button class="all-btn" data-all="page">All pages →</button></div><div class="panel" id="pages"></div></div>
   </div>
   <div class="grid2">
-    <div><h2>Countries</h2><div class="panel" id="countries"></div></div>
-    <div><h2>Devices</h2><div class="panel" id="devices"></div></div>
+    <div><div class="sec-head"><h2>Countries</h2><button class="all-btn" data-all="country">All countries →</button></div><div class="panel" id="countries"></div></div>
+    <div><div class="sec-head"><h2>Devices</h2><button class="all-btn" data-all="device">All devices →</button></div><div class="panel" id="devices"></div></div>
   </div>
 
   <div class="chart-head">
@@ -168,6 +180,39 @@ if (!site) location.href = '/sites.html';
 let siteName = site; // replaced with the friendly name once /api/sites loads
 let brandName = 'pvuv.ai'; // instance brand (configurable), for the tab title suffix
 const PREF_KEY = 'pvuv.chartPrefs';
+const FILTER_KEY = 'pvuv.filters.' + site;
+
+// ── faceted filtering (Plausible-style): click any dimension value to narrow
+// the whole dashboard; filters stack (AND), one per dimension. Persisted per
+// site so a reload keeps the view. Only cleanly-supported dims are clickable.
+let filters = [];
+const FILTER_UI = new Set(['source', 'page', 'country', 'device', 'utm_campaign', 'utm_medium']);
+const FILTER_LABEL = { source: 'Source', page: 'Page', country: 'Country', device: 'Device', utm_campaign: 'Campaign', utm_medium: 'Medium' };
+function loadFilters() {
+  try { filters = JSON.parse(localStorage.getItem(FILTER_KEY)) || []; } catch { filters = []; }
+  if (!Array.isArray(filters)) filters = [];
+}
+function saveFilters() { try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch { /* non-fatal */ } }
+function filterQS() { return filters.length ? `&filters=${encodeURIComponent(JSON.stringify(filters))}` : ''; }
+function addFilter(dim, value) {
+  if (!FILTER_UI.has(dim) || value == null) return;
+  value = String(value);
+  if (filters.some((f) => f.dim === dim && f.value === value)) return;
+  filters = filters.filter((f) => f.dim !== dim); // one filter per dimension
+  filters.push({ dim, value });
+  saveFilters(); renderFilters(); load();
+}
+function removeFilter(i) { filters.splice(i, 1); saveFilters(); renderFilters(); load(); }
+function clearFilters() { filters = []; saveFilters(); renderFilters(); load(); }
+function renderFilters() {
+  const el = document.getElementById('filters');
+  el.innerHTML = filters.map((f, i) =>
+    `<span class="chip"><span>${esc(FILTER_LABEL[f.dim] || f.dim)}: <b>${esc(f.value)}</b></span><button class="x" data-i="${i}" aria-label="Remove filter" title="Remove">×</button></span>`).join('')
+    + (filters.length > 1 ? '<button class="clear">Clear all</button>' : '');
+  el.querySelectorAll('.chip .x').forEach((b) => b.addEventListener('click', () => removeFilter(Number(b.dataset.i))));
+  const c = el.querySelector('.clear');
+  if (c) c.addEventListener('click', clearFilters);
+}
 
 // browser-tab title: "{metric} - {site} - {brand}" so tabs are distinguishable.
 function setTitle() {
@@ -184,7 +229,7 @@ const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 const get = async (p, qs = '') =>
-  (await guard(await fetch(`/api/sites/${site}/${p}?period=${document.getElementById('period').value}${qs}`))).json();
+  (await guard(await fetch(`/api/sites/${site}/${p}?period=${document.getElementById('period').value}${qs}${filterQS()}`))).json();
 
 // mirrors shared/flags.ts bit definitions (evidence labels, §11.2)
 const FLAG_LABELS = {
@@ -196,55 +241,73 @@ const FLAG_LABELS = {
 };
 const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
 
-// Sources with click-through to the specific referring URLs behind each source.
-function renderSources(rows) {
-  const el = document.getElementById('sources');
+// Plain-English names + one-line explanations for the fired-signal panel — the
+// raw enum names (TZ_IP_MISMATCH …) mean nothing to a site owner. Keyed by the
+// FlagName the /quality endpoint returns.
+const SIGNAL_INFO = {
+  WEBDRIVER: ['Automated browser', 'Reports navigator.webdriver — a real automation/headless browser'],
+  AUTOMATION_RESIDUE: ['Automation tool traces', 'Globals left behind by PhantomJS / Selenium-style tools'],
+  UA_CH_MISMATCH: ['Browser identity mismatch', 'The declared browser contradicts its own capabilities'],
+  DATACENTER_ASN: ['Datacenter / hosting network', 'Request came from a server network, not a home/mobile ISP'],
+  SEC_FETCH_MISSING: ['Missing security headers', 'Real browsers send Sec-Fetch-* headers; these did not'],
+  TZ_IP_MISMATCH: ['Timezone ≠ location', "Browser timezone doesn't match the IP's country"],
+  ZERO_INTERACTION_NO_LEAVE: ['No interaction at all', 'No clicks, scroll, or page-leave — nobody was really there'],
+  SOFTWARE_WEBGL: ['No real GPU', 'Graphics rendered in software (SwiftShader/llvmpipe) — typical of bots'],
+  MECHANICAL_TIMING: ['Machine-like timing', 'Events spaced too evenly to be human'],
+  BLOCKLIST_CLUSTER: ['Known bad cluster', 'Matches a fingerprint/IP group flagged by batch analysis'],
+  HONEYPOT: ['Fell for a hidden trap', 'Followed an invisible link no human can see'],
+  SCREEN_DEVICE_MISMATCH: ['Fake screen / device', 'Impossible screen size or device characteristics'],
+  MOBILE_NO_MOTION: ['Mobile without sensors', 'Claims to be a phone but reports no motion sensors'],
+  MOTION_STATIC: ['Frozen motion sensors', 'Motion readings never change — a spoofed device'],
+};
+const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
+const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];
+
+// Clickable breakdown table: each row adds a filter for `dim` (Plausible-style).
+// A trailing "+filter" hint appears on hover for filterable dims.
+function renderBreakdown(elId, dim, headers, rows, valueOf, cellsOf) {
+  const el = document.getElementById(elId);
+  const clickable = FILTER_UI.has(dim);
   el.innerHTML = rows.length
-    ? '<table><tr><th>Source</th><th class="num">Sessions</th><th class="num">PV</th><th class="num">PV clean</th><th class="num">Visitors</th></tr>' +
-      rows.map((r) => `<tr class="clickable" data-src="${esc(r.key)}"><td>${esc(r.key)} <span class="drill">↗ pages</span></td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.pv_clean)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
+    ? `<table><tr>${headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>`
+      + rows.map((r, idx) => `<tr${clickable ? ' class="clickable"' : ''} data-i="${idx}">${cellsOf(r).map((c, i) => `<td${i ? ' class="num"' : ''}>${i === 0 && clickable ? `${c} <span class="drill">+ filter</span>` : c}</td>`).join('')}</tr>`).join('') + '</table>'
     : '<p class="muted">no data yet</p>';
-  el.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => openSourceDetail(tr.dataset.src)));
+  if (clickable) el.querySelectorAll('tr.clickable').forEach((tr) =>
+    tr.addEventListener('click', () => addFilter(dim, valueOf(rows[Number(tr.dataset.i)]))));
 }
 
-// referrer URLs are attacker-controlled (raw document.referrer / forged events),
-// so only render http/https as a clickable link — never javascript:/data: etc.
-function refCell(key) {
-  if (key === '(none)') return '<span class="muted">(no referrer — direct/unknown)</span>';
-  const safe = /^https?:\/\//i.test(key);
-  return safe
-    ? `<a href="${esc(key)}" target="_blank" rel="noreferrer noopener">${esc(key)}</a>`
-    : esc(key); // non-http scheme → plain text, not a link
-}
-async function openSourceDetail(source) {
-  document.getElementById('modalTitle').textContent = 'Referring pages · ' + source;
+// "All sources / pages / …" — full (top-100) breakdown for a dimension in the
+// modal. Rows are clickable to add a filter (see faceted filtering below).
+const ALL_META = {
+  source:  { title: 'All sources',   head: ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'], cols: (r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)], val: (r) => r.key },
+  page:    { title: 'All pages',      head: ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],   cols: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)], val: (r) => r.path },
+  country: { title: 'All countries',  head: ['Country', 'PV', 'PV clean', 'Visitors'],           cols: (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)], val: (r) => r.key },
+  device:  { title: 'All devices',    head: ['Device', 'PV', 'PV clean', 'Visitors'],            cols: (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)], val: (r) => r.key },
+};
+async function openAll(dim) {
+  const m = ALL_META[dim];
+  if (!m) return;
+  document.getElementById('modalTitle').textContent = m.title;
   document.getElementById('modalBody').innerHTML = '<p class="muted">loading…</p>';
   document.getElementById('modal').hidden = false;
-  const d = await get('breakdown', `&dim=referrer&key=${encodeURIComponent(source)}`);
+  const d = await get('breakdown', `&dim=${dim}&limit=100`);
   const rows = d.rows || [];
-  const note = '<p class="muted" style="font-size:12px;margin:10px 2px 0">Most external sites expose only their domain — browsers strip the path from cross-site referrers (Referrer-Policy). Full paths appear for same-site referrers or links tagged with UTM parameters.</p>';
-  // helper: since the exact linking page is usually unknowable, offer a Google
-  // `site:` search of the referring domain for this site's domain, opened in a
-  // new tab — the user investigates manually (nothing is fetched or stored).
-  const isDomain = source && source !== '(direct)' && source.includes('.');
-  const gbtn = isDomain && siteDomainPrimary
-    ? `<a class="gbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent('site:' + source + ' "' + siteDomainPrimary + '"')}">🔍 Find linking pages on ${esc(source)} via Google ↗</a>`
-    : '';
-  document.getElementById('modalBody').innerHTML = (rows.length
-    ? '<table><tr><th>Referring URL</th><th class="num">Sessions</th><th class="num">PV</th><th class="num">Visitors</th></tr>' +
-      rows.map((r) => `<tr><td>${refCell(r.key)}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
-    : '<p class="muted">no referring pages recorded for this source in this period</p>') + gbtn + note;
+  document.getElementById('modalBody').innerHTML = rows.length
+    ? `<table><tr>${m.head.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>`
+      + rows.map((r, idx) => `<tr class="clickable" data-i="${idx}">${m.cols(r).map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('') + '</table>'
+      + '<p class="muted" style="font-size:12px;margin:10px 2px 0">Click a row to filter the dashboard by it.</p>'
+    : '<p class="muted">no data yet</p>';
+  document.getElementById('modalBody').querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => {
+    const r = rows[Number(tr.dataset.i)];
+    addFilter(dim, m.val(r)); closeModal();
+  }));
 }
+document.querySelectorAll('.all-btn').forEach((b) => b.addEventListener('click', () => openAll(b.dataset.all)));
+
 function closeModal() { document.getElementById('modal').hidden = true; }
 document.getElementById('modalClose').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
-
-function table(el, headers, rows) {
-  document.getElementById(el).innerHTML = rows.length
-    ? `<table><tr>${headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>` +
-      rows.map((r) => `<tr>${r.map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('') + '</table>'
-    : '<p class="muted">no data yet</p>';
-}
 
 // metric + interval controls (Plausible-style). First interval per period = default.
 const METRICS = [
@@ -271,6 +334,19 @@ function fmtMetric(metric, v) {
   return fmt(v);
 }
 
+// Pick a "nice" axis top + gridline step so the max sits just under a round
+// number and lines land on 1/2/5×10ⁿ values (462 → top 500 step 100; a few
+// thousand → step 500 or 1000). Targets ~5 gridlines.
+function niceScale(max) {
+  if (!(max > 0)) return { top: 1, step: 1 };
+  const raw = max / 5;                             // aim for ~5 intervals
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const frac = raw / pow;
+  const nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  const step = nice * pow;
+  return { top: Math.ceil(max / step) * step, step };
+}
+
 function lineChart(points, metric) {
   const el = document.getElementById('chart');
   // future buckets (time hasn't arrived) are never drawn — otherwise the line
@@ -279,11 +355,20 @@ function lineChart(points, metric) {
   const drawn = points.filter((p) => p.status !== 'future');
   const hasData = drawn.some((p) => p.value != null && p.value !== 0);
   if (!drawn.length || !hasData) { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
-  const W = 980, H = 180, P = 34;
+  const W = 980, H = 190, P = 46, PT = 12;
   const max = Math.max(...drawn.map((p) => p.value ?? 0), 1);
+  const { top, step } = niceScale(max);
   // x spans the full range (axis shows the whole period); future area stays empty
-  const xs = (i) => P + (i * (W - 2 * P)) / Math.max(points.length - 1, 1);
-  const ys = (v) => H - P - ((v ?? 0) * (H - 2 * P)) / max;
+  const xs = (i) => P + (i * (W - P - 12)) / Math.max(points.length - 1, 1);
+  const ys = (v) => H - P - ((v ?? 0) * (H - P - PT)) / top;
+
+  // horizontal gridlines + left-axis value labels at each nice step
+  const grid = [];
+  for (let g = 0; g <= top + 1e-9; g += step) {
+    const y = ys(g).toFixed(1);
+    grid.push(`<line x1="${P}" y1="${y}" x2="${W - 12}" y2="${y}" stroke="#222834" stroke-width="1"/>`
+      + `<text x="${P - 8}" y="${(Number(y) + 3.5).toFixed(1)}" text-anchor="end">${esc(fmtMetric(metric, g))}</text>`);
+  }
 
   const complete = points.map((p, i) => ({ p, i })).filter((x) => x.p.status === 'complete');
   const solid = complete.map((x) => `${xs(x.i).toFixed(1)},${ys(x.p.value).toFixed(1)}`).join(' ');
@@ -296,14 +381,14 @@ function lineChart(points, metric) {
 
   const dot = (p, i) => p.status === 'future' ? '' :
     `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.value).toFixed(1)}" r="2.5" fill="${p.status === 'partial' ? '#0f1115' : '#3b82f6'}" stroke="#3b82f6" stroke-width="${p.status === 'partial' ? 1.5 : 0}"><title>${esc(p.label)}: ${fmtMetric(metric, p.value)}${p.status === 'partial' ? ' (in progress)' : ''}</title></circle>`;
-  const step = Math.ceil(points.length / 8);
-  const labels = points.filter((_, i) => i % step === 0);
+  const lstep = Math.ceil(points.length / 8);
+  const labels = points.filter((_, i) => i % lstep === 0);
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
+    ${grid.join('')}
     ${solid ? `<polyline points="${solid}" fill="none" stroke="#3b82f6" stroke-width="2"/>` : ''}
     ${dashed ? `<polyline points="${dashed}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 3" opacity="0.75"/>` : ''}
     ${points.map(dot).join('')}
-    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 8}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
-    <text x="${P - 6}" y="${ys(max) + 4}" text-anchor="end">${fmtMetric(metric, max)}</text>
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 6}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
   </svg>`;
 }
 
@@ -377,19 +462,21 @@ async function load() {
   renderShadowBanner(ov);
   await loadChart();
 
-  const pages = await get('breakdown', '&dim=page');
-  table('pages', ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],
-    pages.rows.map((r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)]));
+  const sources = await get('breakdown', '&dim=source');
+  renderBreakdown('sources', 'source', ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'],
+    sources.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
 
-  renderSources((await get('breakdown', '&dim=source')).rows);
+  const pages = await get('breakdown', '&dim=page');
+  renderBreakdown('pages', 'page', ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],
+    pages.rows, (r) => r.path, (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)]);
 
   const countries = await get('breakdown', '&dim=country');
-  table('countries', ['Country', 'PV', 'PV clean', 'Visitors'],
-    countries.rows.map((r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+  renderBreakdown('countries', 'country', ['Country', 'PV', 'PV clean', 'Visitors'],
+    countries.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
 
   const devices = await get('breakdown', '&dim=device');
-  table('devices', ['Device', 'PV', 'PV clean', 'Visitors'],
-    devices.rows.map((r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+  renderBreakdown('devices', 'device', ['Device', 'PV', 'PV clean', 'Visitors'],
+    devices.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
 
   await loadUtm();
 
@@ -397,20 +484,25 @@ async function load() {
   donut(qy.totals);
   const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   document.getElementById('flags').innerHTML = firedFlags.length
-    ? '<table><tr><th>Signal</th><th class="num">Events</th></tr>' +
-      firedFlags.map(([k, n]) => `<tr><td>${esc(k.toLowerCase().replace(/_/g, ' '))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
-    : '<p class="muted">no signals fired</p>';
+    ? '<p class="muted" style="margin:0 0 10px;font-size:12px">Bot-detection checks that fired on suspicious traffic — one visit can trip several.</p>'
+      + '<table><tr><th>Signal</th><th class="num">Events</th></tr>' +
+      firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
+    : '<p class="muted">no signals fired — traffic looks clean</p>';
 
+  // high-score drill-down, aggregated by VISITOR (one row per suspicious visitor,
+  // not per event): event/session counts, worst score/verdict, union of evidence.
   const tr = await get('traffic', '&min_score=30&limit=50');
   document.getElementById('traffic').innerHTML = tr.rows.length
-    ? '<table><tr><th>Time</th><th>Event</th><th>Path</th><th>Where</th><th>Agent</th><th class="num">Score</th><th>Verdict</th><th>Evidence</th></tr>' +
+    ? '<table><tr><th>Visitor</th><th class="num">Events</th><th class="num">Sessions</th><th>Last seen</th><th>Where</th><th>Agent</th><th class="num">Max score</th><th>Verdict</th><th>Evidence</th></tr>' +
       tr.rows.map((r) => `<tr>
-        <td>${new Date(r.ts).toISOString().slice(5, 16).replace('T', ' ')}</td>
-        <td>${esc(r.event)}</td><td>${esc(r.path)}</td>
+        <td class="muted" title="${esc(r.visitor_id)}">${esc(String(r.visitor_id).slice(0, 10))}…</td>
+        <td class="num">${fmt(r.events)}</td>
+        <td class="num">${fmt(r.sessions)}</td>
+        <td>${new Date(r.last_ts).toISOString().slice(5, 16).replace('T', ' ')}</td>
         <td>${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''}</td>
-        <td>${esc(r.browser)}/${esc(r.os)}</td>
+        <td>${esc(r.browser ?? '–')}/${esc(r.os ?? '–')}</td>
         <td class="num">${r.bot_score}</td>
-        <td><span class="badge b-${esc(r.verdict)}">${esc(r.verdict)}</span> <span class="muted">${esc(r.score_stage)}</span></td>
+        <td><span class="badge b-${esc(r.verdict)}">${esc(r.verdict)}</span></td>
         <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
       </tr>`).join('') + '</table>'
     : '<p class="muted">nothing above the threshold — looking clean</p>';
@@ -547,8 +639,10 @@ async function loadUtm() {
   const dim = document.getElementById('utmDim').value;
   const label = dim.startsWith('ft_') ? 'First-touch' : 'Value';
   const d = await get('breakdown', `&dim=${dim}`);
-  table('utm', [label, 'PV', 'PV clean', 'Visitors'],
-    d.rows.map((r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+  // rows are clickable-to-filter only for the fully-supported UTM dims
+  // (utm_campaign / utm_medium); the rest render as a plain table.
+  renderBreakdown('utm', dim, [label, 'PV', 'PV clean', 'Visitors'],
+    d.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
 }
 document.getElementById('utmDim').addEventListener('change', loadUtm);
 document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });
@@ -556,6 +650,8 @@ document.getElementById('metric').addEventListener('change', () => { savePrefs()
 document.getElementById('interval').addEventListener('change', () => { savePrefs(); loadChart(); });
 
 restorePrefs();
+loadFilters();
+renderFilters();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();
