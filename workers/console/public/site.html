@@ -124,6 +124,22 @@
     <div><h2>Devices</h2><div class="panel" id="devices"></div></div>
   </div>
 
+  <div class="chart-head">
+    <h2>Campaigns (UTM)</h2>
+    <div class="chart-ctrls">
+      <select id="utmDim" aria-label="UTM dimension">
+        <option value="utm_campaign">Campaign</option>
+        <option value="utm_medium">Medium</option>
+        <option value="utm_term">Term</option>
+        <option value="utm_content">Content</option>
+        <option value="ft_source">First-touch source</option>
+        <option value="ft_medium">First-touch medium</option>
+        <option value="ft_campaign">First-touch campaign</option>
+      </select>
+    </div>
+  </div>
+  <div class="panel" id="utm"></div>
+
   <h2>Traffic quality</h2>
   <div class="grid2">
     <div class="panel" id="quality"></div>
@@ -343,6 +359,8 @@ async function load() {
   table('devices', ['Device', 'PV', 'PV clean', 'Visitors'],
     devices.rows.map((r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
 
+  await loadUtm();
+
   const qy = await get('quality');
   donut(qy.totals);
   const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
@@ -473,6 +491,14 @@ document.getElementById('switchSearch').addEventListener('keydown', (e) => {
 });
 document.addEventListener('click', (e) => { if (!document.getElementById('switcher').contains(e.target)) closeSwitch(); });
 
+async function loadUtm() {
+  const dim = document.getElementById('utmDim').value;
+  const label = dim.startsWith('ft_') ? 'First-touch' : 'Value';
+  const d = await get('breakdown', `&dim=${dim}`);
+  table('utm', [label, 'PV', 'PV clean', 'Visitors'],
+    d.rows.map((r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]));
+}
+document.getElementById('utmDim').addEventListener('change', loadUtm);
 document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });
 document.getElementById('metric').addEventListener('change', () => { savePrefs(); loadChart(); });
 document.getElementById('interval').addEventListener('change', () => { savePrefs(); loadChart(); });

@@ -123,9 +123,9 @@ async function eventTables(db: D1Database, startTs: number, endTs: number): Prom
 /** A UNION-ALL over month partitions scoped to one site + UTC span, so a
  *  COUNT(DISTINCT …) runs ONCE across all months (exact, no cross-month
  *  double-count) without streaming rows into the isolate. */
-function unionOver(tables: string[], cols: string, siteId: string, startTs: number, endTs: number):
+function unionOver(tables: string[], cols: string, siteId: string, startTs: number, endTs: number, extra = ''):
   { sql: string; binds: unknown[] } {
-  const parts = tables.map((t) => `SELECT ${cols} FROM ${t} WHERE site_id = ? AND ts >= ? AND ts < ?`);
+  const parts = tables.map((t) => `SELECT ${cols} FROM ${t} WHERE site_id = ? AND ts >= ? AND ts < ?${extra ? ` AND ${extra}` : ''}`);
   return { sql: parts.join(' UNION ALL '), binds: tables.flatMap(() => [siteId, startTs, endTs]) };
 }
 
@@ -517,6 +517,29 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
         ${dim === 'utm_campaign' ? "AND campaign IS NOT NULL AND campaign != ''" : ''}
       GROUP BY key ORDER BY pv DESC LIMIT ?
     `).bind(siteId, period.startTs, period.endTs, limit).all();
+    return { dim, rows: rows.results };
+  }
+
+  // UTM detail + first-touch dimensions, straight from the pageview events
+  // (only rows actually tagged with that param; the huge untagged bucket is
+  // excluded). utm_source/utm_campaign come from the sessions table above.
+  const EVENT_DIMS: Record<string, string> = {
+    utm_medium: 'utm_medium', utm_term: 'utm_term', utm_content: 'utm_content',
+    ft_source: 'ft_source', ft_medium: 'ft_medium', ft_campaign: 'ft_campaign',
+  };
+  if (Object.prototype.hasOwnProperty.call(EVENT_DIMS, dim)) {
+    const col = EVENT_DIMS[dim];
+    const tables = await eventTables(db, period.startTs, period.endTs);
+    if (tables.length === 0) return { dim, rows: [] };
+    const u = unionOver(tables, `${col} AS k, visitor_id, verdict`, siteId, period.startTs, period.endTs, `event = 'pageview' AND ${col} IS NOT NULL AND ${col} != ''`);
+    const rows = await db.prepare(`
+      SELECT k AS key,
+             COUNT(*) AS pv,
+             COUNT(DISTINCT visitor_id) AS uv,
+             COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END), 0) AS pv_clean
+      FROM (${u.sql})
+      GROUP BY k ORDER BY pv DESC LIMIT ?
+    `).bind(...u.binds, limit).all();
     return { dim, rows: rows.results };
   }
 
