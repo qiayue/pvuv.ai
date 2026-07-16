@@ -42,6 +42,7 @@ export default {
         cf: { cacheEverything: true, cacheTtl: 3600 },
       });
       const h = new Headers(upstream.headers);
+      h.delete('set-cookie'); // never plant the assets origin's cookies onto the measured domain
       h.set('cache-control', 'public, max-age=3600');
       return new Response(upstream.body, { status: upstream.status, headers: h });
     }
@@ -53,6 +54,11 @@ export default {
       const headers = new Headers(request.headers); // keep Origin/Referer/UA/Sec-Fetch/content-type
       // strip any client-supplied x-pv-* so only OUR trusted values reach ingest
       for (const k of [...headers.keys()]) if (k.toLowerCase().startsWith('x-pv-')) headers.delete(k);
+      // NEVER forward the measured site's first-party credentials to the ingest
+      // host — the SDK's requests carry the page's own cookies (same-origin) that
+      // ingest neither needs nor should see (they could surface in its logs).
+      headers.delete('cookie');
+      headers.delete('authorization');
       headers.set('x-pv-proxy', env.PROXY_TOKEN || '');
       const cip = request.headers.get('cf-connecting-ip');
       if (cip) headers.set('x-pv-ip', cip);

@@ -35,7 +35,14 @@ import { monthSuffix, eventsTableName } from '../../../shared/events';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
 import { existingEventTables, rollupSiteDay } from './rollup';
 
-const WATERMARK_KEY = 'batch_watermark_ts';
+// Two watermarks so the ONE non-idempotent step (the Welford profile fold) is
+// committed-once independently of the idempotent cluster/re-verdict work: the
+// profile watermark advances right after an atomic fold, so a later failure
+// can't make the next run re-fold the same window (double-counting stats). The
+// cluster watermark advances at the end; if that work fails it's safely retried.
+const PROFILE_WM_KEY = 'batch_wm_profiles_ts';
+const CLUSTER_WM_KEY = 'batch_wm_clusters_ts';
+const LEGACY_WM_KEY = 'batch_watermark_ts'; // pre-split single watermark (upgrade seam)
 /** Ingest→queue→consumer settle lag before we consider events final. */
 const SETTLE_LAG_MS = 5 * 60_000;
 const DAY_MS = 86_400_000;
@@ -58,22 +65,28 @@ export async function runDailyBatch(env: Env): Promise<void> {
   const now = Date.now();
   const end = now - SETTLE_LAG_MS;
 
-  // window (watermark, end]: each event analyzed exactly once; cap the lookback
-  // at 48h so a long outage doesn't make one run unbounded.
-  const wm = await readWatermark(db);
+  const existing = await existingEventTables(db);
+
+  // ---- 1. Welford profile fold over (profile_wm, end] — ATOMIC, then advance
+  //         its own watermark immediately (the only non-idempotent step).
+  const pStart = Math.max((await readWm(db, PROFILE_WM_KEY)) ?? end - DAY_MS, end - 2 * DAY_MS);
+  if (end > pStart) {
+    const pTables = tablesFor(pStart, end, existing);
+    if (pTables.length) await updateProfiles(db, pTables, pStart, end);
+    await writeWm(db, PROFILE_WM_KEY, end);
+  }
+
+  // ---- cluster analysis over (cluster_wm, end]: all idempotent, so its
+  //      watermark advances only at the very end and a failure is safely retried.
+  const wm = await readWm(db, CLUSTER_WM_KEY);
   const start = Math.max(wm ?? end - DAY_MS, end - 2 * DAY_MS);
   if (end <= start) return;
-
-  const existing = await existingEventTables(db);
   const tables = tablesFor(start, end, existing);
   if (tables.length === 0) {
-    await writeWatermark(db, end);
+    await writeWm(db, CLUSTER_WM_KEY, end);
     return;
   }
   const u = (cols: string, extra = '') => unionOver(tables, cols, start, end, extra);
-
-  // ---- 1. Welford per-visitor interval stats + active hours + session counts
-  await updateProfiles(db, u, start, end);
 
   // ---- 2–4. cluster detection ------------------------------------------------
   const P = CONFIG.population;
@@ -114,8 +127,12 @@ export async function runDailyBatch(env: Env): Promise<void> {
   const affectedSites = await reverdict(db, tables, start, end, fps, ip24Only);
 
   // ---- 6. mechanical-timing profiles: population-level escalation ------------
+  // Raise bot_score above clean_max too (not just the verdict), otherwise the
+  // consumer's profileUpsert would overwrite the verdict back to 'clean' on the
+  // visitor's very next clean-scored event (it only keeps the higher-scoring
+  // verdict). At clean_max+1 a clean event (score ≤ clean_max) can't override it.
   await db.prepare(`
-    UPDATE visitor_profiles SET verdict = 'suspect'
+    UPDATE visitor_profiles SET verdict = 'suspect', bot_score = MAX(bot_score, ${CONFIG.bands.clean_max + 1})
     WHERE interval_n >= ? AND interval_mean > 0 AND interval_cv IS NOT NULL
       AND interval_cv <= ? AND verdict = 'clean'
   `).bind(P.interval_min_n, P.interval_cv_bot_ceiling).run();
@@ -123,7 +140,7 @@ export async function runDailyBatch(env: Env): Promise<void> {
   // ---- 7. recompute the daily rollups the re-verdict touched -----------------
   await recomputeAffectedRollups(db, affectedSites, start, end, existing);
 
-  await writeWatermark(db, end);
+  await writeWm(db, CLUSTER_WM_KEY, end);
   console.log(`batch: window=${new Date(start).toISOString()}..${new Date(end).toISOString()} clusters=${clusters.length} (block=${clusters.filter((c) => c.action === 'block').length}) sites_reverdicted=${affectedSites.size}`);
 }
 
@@ -132,7 +149,9 @@ export async function runDailyBatch(env: Env): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function tablesFor(startTs: number, endTs: number, existing: Set<string>): string[] {
-  const months = new Set([monthSuffix(startTs), monthSuffix(endTs - 1)]);
+  // window predicate is (start, end] inclusive of end, so cover the month of end
+  // too (an event at ts===end on a month's first ms lives in end's partition)
+  const months = new Set([monthSuffix(startTs), monthSuffix(endTs)]);
   return [...months].map(eventsTableName).filter((t) => existing.has(t)).sort();
 }
 
@@ -142,18 +161,23 @@ function unionOver(tables: string[], cols: string, startTs: number, endTs: numbe
   return { sql: `(${parts.join(' UNION ALL ')})`, binds: tables.flatMap(() => [startTs, endTs]) };
 }
 
-async function readWatermark(db: D1Database): Promise<number | null> {
-  try {
-    const r = await db.prepare('SELECT value FROM instance_settings WHERE key = ?').bind(WATERMARK_KEY).first<{ value: string }>();
+async function readWm(db: D1Database, key: string): Promise<number | null> {
+  const get = async (k: string) => {
+    const r = await db.prepare('SELECT value FROM instance_settings WHERE key = ?').bind(k).first<{ value: string }>();
     const n = r ? parseInt(r.value, 10) : NaN;
     return Number.isFinite(n) ? n : null;
+  };
+  try {
+    // fall back to the pre-split single watermark on first run after upgrade, so
+    // the already-processed window isn't re-analyzed / re-folded
+    return (await get(key)) ?? (await get(LEGACY_WM_KEY));
   } catch { return null; }
 }
-async function writeWatermark(db: D1Database, ts: number): Promise<void> {
+async function writeWm(db: D1Database, key: string, ts: number): Promise<void> {
   await db.prepare(`
     INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-  `).bind(WATERMARK_KEY, String(ts), Date.now()).run();
+  `).bind(key, String(ts), Date.now()).run();
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +185,7 @@ async function writeWatermark(db: D1Database, ts: number): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function updateProfiles(
-  db: D1Database, u: (cols: string, extra?: string) => Union, startTs: number, endTs: number,
+  db: D1Database, tables: string[], startTs: number, endTs: number,
 ): Promise<void> {
   // Welford parallel-merge of each visitor's window interval stats into the
   // stored aggregate — a SINGLE set-based UPDATE...FROM (no per-visitor
@@ -170,8 +194,10 @@ async function updateProfiles(
   //   N = n0+n1;  mean = (mean0·n0 + mean1·n1)/N;  M2 = m2_0 + m2_1 + δ²·n0·n1/N
   // Window stats in SQL: n intervals, mean, M2 = Σd² − n·mean² (≡ Welford's M2);
   // active-hours bitmask via SUM(DISTINCT 1<<hour) (== bitwise OR of the powers).
-  const uv = u('site_id, visitor_id, ts');
-  await db.prepare(`
+  // All three statements run in ONE db.batch (atomic transaction) so the fold is
+  // all-or-nothing — its watermark can then advance exactly once (see §B1).
+  const uv = unionOver(tables, 'site_id, visitor_id, ts', startTs, endTs);
+  const merge = db.prepare(`
     UPDATE visitor_profiles AS vp SET
       interval_m2 = CASE WHEN vp.interval_n + w.n > 0
         THEN COALESCE(vp.interval_m2, 0) + w.m2
@@ -206,19 +232,19 @@ async function updateProfiles(
       FROM hours h LEFT JOIN stats s ON s.site_id = h.site_id AND s.visitor_id = h.visitor_id
     ) AS w
     WHERE vp.site_id = w.site_id AND vp.visitor_id = w.visitor_id
-  `).bind(...uv.binds).run();
+  `).bind(...uv.binds);
 
   // derived CV in one pass (sqrt is available in D1's SQLite build)
-  await db.prepare(`
+  const cv = db.prepare(`
     UPDATE visitor_profiles SET interval_cv =
       CASE WHEN interval_n > 0 AND COALESCE(interval_mean, 0) > 0
            THEN sqrt(MAX(interval_m2, 0) / interval_n) / interval_mean END
     WHERE interval_n > 0
-  `).run();
+  `);
 
   // sessions_count: sessions whose started_at falls in the window — each
   // session counted exactly once because started_at never changes.
-  await db.prepare(`
+  const sess = db.prepare(`
     UPDATE visitor_profiles SET sessions_count = sessions_count + (
       SELECT COUNT(*) FROM sessions s
       WHERE s.site_id = visitor_profiles.site_id AND s.visitor_id = visitor_profiles.visitor_id
@@ -229,7 +255,9 @@ async function updateProfiles(
       WHERE s2.site_id = visitor_profiles.site_id AND s2.visitor_id = visitor_profiles.visitor_id
         AND s2.started_at > ?1 AND s2.started_at <= ?2
     )
-  `).bind(startTs, endTs).run();
+  `).bind(startTs, endTs);
+
+  await db.batch([merge, cv, sess]); // atomic: the whole fold commits or none of it
 }
 
 // ---------------------------------------------------------------------------
@@ -341,15 +369,19 @@ async function reverdict(
       s.results.forEach((r) => affected.add(r.site_id));
       if (s.results.length === 0) continue;
       await db.prepare(`UPDATE ${t} SET ${setClause}, score_stage = 'batch' WHERE ts > ? AND ts <= ? AND ${pred} AND (bot_flags & ${flag}) = 0 AND verdict != 'crawler'`).bind(startTs, endTs, ...predBinds).run();
-      await db.prepare(`UPDATE sessions SET ${setClause} WHERE (bot_flags & ${flag}) = 0 AND session_id IN (SELECT DISTINCT session_id FROM ${t} WHERE ts > ? AND ts <= ? AND ${pred})`).bind(startTs, endTs, ...predBinds).run();
+      await db.prepare(`UPDATE sessions SET ${setClause} WHERE (bot_flags & ${flag}) = 0 AND (site_id, session_id) IN (SELECT DISTINCT site_id, session_id FROM ${t} WHERE ts > ? AND ts <= ? AND ${pred})`).bind(startTs, endTs, ...predBinds).run();
     }
   };
 
-  // (1) fp-backed clusters (global, cross-site): ONE pass per table via IN-list
-  if (fps.length) {
-    const inC = fps.map(() => '?').join(',');
-    await pass(`fp_hash IN (${inC})`, fps);
-    await profileSet(`fp_hash IN (${inC})`, fps).run();
+  // (1) fp-backed clusters (global, cross-site): one pass per table via IN-list.
+  // Chunk the fps so the bound-parameter count stays well under D1's per-query
+  // limit (each pass also binds start+end) — up to 100 fps could otherwise exceed it.
+  const FP_CHUNK = 80;
+  for (let i = 0; i < fps.length; i += FP_CHUNK) {
+    const chunk = fps.slice(i, i + FP_CHUNK);
+    const inC = chunk.map(() => '?').join(',');
+    await pass(`fp_hash IN (${inC})`, chunk);
+    await profileSet(`fp_hash IN (${inC})`, chunk).run();
   }
   // (2) bare-IP /24 clusters (opt-in, rare): site-scoped, handled individually
   for (const c of ip24Clusters) {
@@ -374,10 +406,14 @@ async function recomputeAffectedRollups(
 
   for (const s of rows.results) {
     const tz = s.timezone || 'UTC';
-    // every site-local calendar day overlapping the window (≤48h → ≤4 days)
-    let d = localYMD(startTs, tz);
+    // every site-local day overlapping the window, PLUS the day before it: a
+    // re-verdicted session is bucketed by its started_at, which can precede the
+    // window's first event (a session straddling local midnight), so its older
+    // day's session-derived rollup must be recomputed too. (≤48h window + 1 = ≤5
+    // local days; cap 7 for DST slack.)
+    let d = localYMD(startTs - DAY_MS, tz);
     const last = localYMD(endTs, tz);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
       const span = localDaySpan(tz, d.y, d.m0, d.d);
       await rollupSiteDay(db, s.site_id, span.day, span.startTs, span.endTs, existing);
       if (d.y === last.y && d.m0 === last.m0 && d.d === last.d) break;

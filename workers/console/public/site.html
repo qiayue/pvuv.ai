@@ -192,6 +192,15 @@ function renderSources(rows) {
   el.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => openSourceDetail(tr.dataset.src)));
 }
 
+// referrer URLs are attacker-controlled (raw document.referrer / forged events),
+// so only render http/https as a clickable link — never javascript:/data: etc.
+function refCell(key) {
+  if (key === '(none)') return '<span class="muted">(no referrer — direct/unknown)</span>';
+  const safe = /^https?:\/\//i.test(key);
+  return safe
+    ? `<a href="${esc(key)}" target="_blank" rel="noreferrer noopener">${esc(key)}</a>`
+    : esc(key); // non-http scheme → plain text, not a link
+}
 async function openSourceDetail(source) {
   document.getElementById('modalTitle').textContent = 'Referring pages · ' + source;
   document.getElementById('modalBody').innerHTML = '<p class="muted">loading…</p>';
@@ -208,7 +217,7 @@ async function openSourceDetail(source) {
     : '';
   document.getElementById('modalBody').innerHTML = (rows.length
     ? '<table><tr><th>Referring URL</th><th class="num">Sessions</th><th class="num">PV</th><th class="num">Visitors</th></tr>' +
-      rows.map((r) => `<tr><td>${r.key === '(none)' ? '<span class="muted">(no referrer — direct/unknown)</span>' : `<a href="${esc(r.key)}" target="_blank" rel="noreferrer noopener">${esc(r.key)}</a>`}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
+      rows.map((r) => `<tr><td>${refCell(r.key)}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
     : '<p class="muted">no referring pages recorded for this source in this period</p>') + gbtn + note;
 }
 function closeModal() { document.getElementById('modal').hidden = true; }

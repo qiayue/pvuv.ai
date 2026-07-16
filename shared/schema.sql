@@ -89,7 +89,7 @@ CREATE INDEX idx_ev202607_path    ON events_202607(site_id, path);
 
 -- sessions
 CREATE TABLE sessions (
-  session_id   TEXT PRIMARY KEY,
+  session_id   TEXT NOT NULL,
   site_id      TEXT NOT NULL,
   visitor_id   TEXT NOT NULL,
   user_id      TEXT,
@@ -100,7 +100,10 @@ CREATE TABLE sessions (
   source TEXT, medium TEXT, campaign TEXT, referrer TEXT,
   country TEXT, device_type TEXT,
   bot_score INTEGER DEFAULT 0, verdict TEXT DEFAULT 'clean', bot_flags INTEGER DEFAULT 0,
-  started_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL
+  started_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
+  -- keyed per site: _pv_sid is shared across sibling subdomains, so two sites on
+  -- the same registrable domain must not merge sessions (added by 0009)
+  PRIMARY KEY (site_id, session_id)
 );
 CREATE INDEX idx_sess_site ON sessions(site_id, started_at);
 CREATE INDEX idx_sess_visitor ON sessions(site_id, visitor_id);

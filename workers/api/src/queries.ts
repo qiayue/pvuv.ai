@@ -14,7 +14,7 @@
  */
 
 import { FLAG, ALL_FLAGS, type FlagName } from '../../../shared/flags';
-import { localYMD, localMidnightUtc, localDaySpan, addDays, weekdayMon0, dayStr } from '../../../shared/tz';
+import { localYMD, localMidnightUtc, localDaySpan, addDays, weekdayMon0, dayStr, tzOffsetMs } from '../../../shared/tz';
 import { monthSuffix } from '../../../shared/events';
 
 // ---------------------------------------------------------------------------
@@ -45,14 +45,21 @@ export function parsePeriod(raw: string | null, tz = 'UTC', now: number = Date.n
   const today = localYMD(now, tz);
   const token = (raw ?? '30d').toLowerCase();
 
-  // rolling intraday window: exactly the last 24 hours (hour precision), not a
-  // calendar day. overview reads the exact ts range; the chart uses hour buckets.
+  // rolling intraday window: the last 24 hours, snapped to LOCAL clock-hour
+  // boundaries so the hourly chart buckets line up with their "HH:00" labels
+  // (an unaligned start would mislabel every bucket by up to 59 min). Covers the
+  // 24 clock-hours ending with the current (partial) hour.
   if (token === '24h') {
-    const startTs = now - 24 * 3_600_000;
+    const H = 3_600_000;
+    const off = tzOffsetMs(now, tz);
+    const curHourStart = Math.floor((now + off) / H) * H - off; // start of now's local hour (UTC ms)
+    const startTs = curHourStart - 23 * H;
+    const endTs = curHourStart + H;                             // end of the current local hour (24 buckets)
     const s = localYMD(startTs, tz);
+    const e = localYMD(endTs - 1, tz);
     return {
-      start: dayStr(s.y, s.m0, s.d), end: dayStr(today.y, today.m0, today.d),
-      startTs, endTs: now, tz, now, subDay: true,
+      start: dayStr(s.y, s.m0, s.d), end: dayStr(e.y, e.m0, e.d),
+      startTs, endTs, tz, now, subDay: true,
     };
   }
 
@@ -368,26 +375,52 @@ async function subDaySeries(db: D1Database, siteId: string, period: Period, inte
   });
 }
 
-/** day/week/month buckets from rollup history + live today. */
+/** day/week/month buckets. Day = rollup history + live today (exact per day).
+ *  week/month = computed EXACTLY from raw events per bucket, because distinct
+ *  visitor counts don't decompose across days (summing daily uv overcounts) and
+ *  daily rollup rates would be mis-weighted when merged. */
 async function calendarSeries(db: D1Database, siteId: string, period: Period, interval: string, metric: string) {
   const t = localYMD(period.now, period.tz);
   const today = dayStr(t.y, t.m0, t.d);
-  const daily = await dailyAccs(db, siteId, period);
-  const buckets = new Map<string, { label: string; acc: Acc; min: string; max: string }>();
+
+  // group the period's days into buckets, tracking each bucket's day span
+  const order: Array<{ label: string; min: string; max: string }> = [];
+  const byKey = new Map<string, { label: string; min: string; max: string }>();
   for (const day of enumerateDays(period.start, period.end)) {
     const [key, label] = bucketKey(day, interval);
-    let bk = buckets.get(key);
-    if (!bk) { bk = { label, acc: emptyAcc(), min: day, max: day }; buckets.set(key, bk); }
+    let bk = byKey.get(key);
+    if (!bk) { bk = { label, min: day, max: day }; byKey.set(key, bk); order.push(bk); }
     bk.max = day; // enumerateDays is chronological
-    addAcc(bk.acc, daily.get(day) ?? emptyAcc());
   }
-  // Map preserves insertion order, and enumerateDays is chronological.
-  // A bucket that spans today is still filling; one entirely after today is future.
-  return [...buckets.values()].map((b) => ({
-    label: b.label,
-    value: metricOf(b.acc, metric),
-    status: b.max < today ? 'complete' : (b.min > today ? 'future' : 'partial'),
-  }));
+  const statusOf = (b: { min: string; max: string }) => b.max < today ? 'complete' : (b.min > today ? 'future' : 'partial');
+
+  if (interval === 'day') {
+    const daily = await dailyAccs(db, siteId, period);
+    return order.map((b) => ({ label: b.label, value: metricOf(daily.get(b.min) ?? emptyAcc(), metric), status: statusOf(b) }));
+  }
+
+  // week/month: exact from raw events (+ sessions for rate metrics) over the span
+  const needSess = metric === 'bounce_rate' || metric === 'bounce_rate_single' || metric === 'avg_duration_ms';
+  const out: Array<{ label: string; value: number | null; status: string }> = [];
+  for (const b of order) {
+    const [y1, m1, d1] = b.min.split('-').map(Number);
+    const [y2, m2, d2] = b.max.split('-').map(Number);
+    const startTs = localMidnightUtc(period.tz, y1, m1 - 1, d1);
+    const nxt = addDays(y2, m2 - 1, d2, 1);
+    const endTs = localMidnightUtc(period.tz, nxt.y, nxt.m0, nxt.d);
+    const ev = await eventsSiteAgg(db, siteId, startTs, endTs);
+    const a = emptyAcc();
+    a.pv = ev.pv; a.uv = ev.uv; a.sessions = ev.sessions;
+    a.clean = ev.clean_count; a.suspect = ev.suspect_count; a.bot = ev.bot_count; a.crawler = ev.crawler_count;
+    if (needSess) {
+      const sr = await sessionRaw(db, siteId, startTs, endTs);
+      a.bounce_num = sr.bounces; a.bounce_den = sr.sessions;
+      a.bs_num = sr.bounces_single; a.bs_den = sr.sessions;
+      a.dur_num = sr.duration_sum; a.dur_den = sr.sessions;
+    }
+    out.push({ label: b.label, value: metricOf(a, metric), status: statusOf(b) });
+  }
+  return out;
 }
 
 /** Per-day accumulators over the period: rollup for past days, live today. */
@@ -452,7 +485,7 @@ function subDayLabel(instant: number, tz: string, interval: string, withDate: bo
 // ---------------------------------------------------------------------------
 
 export async function breakdown(db: D1Database, siteId: string, dim: string, period: Period, limit: number, key: string | null = null) {
-  limit = Math.min(Math.max(limit, 1), 100);
+  limit = Math.min(Math.max(Number.isFinite(limit) ? limit : 20, 1), 100); // NaN → default, not a 500
 
   // referrer drill-down: the specific referring URLs behind ONE source (the
   // `key`), from the live sessions table. '(direct)' means no referrer.
@@ -467,7 +500,7 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
       FROM sessions
       WHERE site_id = ? AND started_at >= ? AND started_at < ?
         AND ${direct ? 'source IS NULL' : 'source = ?'}
-      GROUP BY referrer ORDER BY sessions DESC LIMIT ?
+      GROUP BY 1 ORDER BY sessions DESC LIMIT ?
     `).bind(...(direct ? [siteId, period.startTs, period.endTs, limit] : [siteId, period.startTs, period.endTs, key, limit])).all();
     return { dim, key, rows: rows.results };
   }
@@ -572,19 +605,33 @@ export async function quality(db: D1Database, siteId: string, period: Period) {
   const ev = await eventsSiteAgg(db, siteId, period.startTs, period.endTs);
   const totals = { clean: ev.clean_count, suspect: ev.suspect_count, bot: ev.bot_count, crawler: ev.crawler_count };
 
-  // daily verdict series: rollup history + live today (for external api consumers)
-  const split = hybridSplit(period);
+  // daily verdict series (for external api consumers). For a rolling intraday
+  // window (24h) each day entry is CLAMPED to the window and computed live, so
+  // Σdaily reconciles with totals; otherwise rollup history + live today.
   const daily: Array<Record<string, unknown>> = [];
-  if (split.hasPast) {
-    const rows = await db.prepare(`
-      SELECT day, pv, bot_count, suspect_count, crawler_count, clean_count
-      FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day
-    `).bind(siteId, split.pastStart, split.pastEnd).all();
-    daily.push(...rows.results);
-  }
-  if (split.today) {
-    const t = await eventsSiteAgg(db, siteId, split.today.startTs, split.today.endTs);
-    daily.push({ day: split.today.day, pv: t.pv, bot_count: t.bot_count, suspect_count: t.suspect_count, crawler_count: t.crawler_count, clean_count: t.clean_count });
+  if (period.subDay) {
+    for (const day of enumerateDays(period.start, period.end)) {
+      const [y, m, d] = day.split('-').map(Number);
+      const nxt = addDays(y, m - 1, d, 1);
+      const s = Math.max(localMidnightUtc(period.tz, y, m - 1, d), period.startTs);
+      const e = Math.min(localMidnightUtc(period.tz, nxt.y, nxt.m0, nxt.d), period.endTs);
+      if (e <= s) continue;
+      const t = await eventsSiteAgg(db, siteId, s, e);
+      daily.push({ day, pv: t.pv, bot_count: t.bot_count, suspect_count: t.suspect_count, crawler_count: t.crawler_count, clean_count: t.clean_count });
+    }
+  } else {
+    const split = hybridSplit(period);
+    if (split.hasPast) {
+      const rows = await db.prepare(`
+        SELECT day, pv, bot_count, suspect_count, crawler_count, clean_count
+        FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day
+      `).bind(siteId, split.pastStart, split.pastEnd).all();
+      daily.push(...rows.results);
+    }
+    if (split.today) {
+      const t = await eventsSiteAgg(db, siteId, split.today.startTs, split.today.endTs);
+      daily.push({ day: split.today.day, pv: t.pv, bot_count: t.bot_count, suspect_count: t.suspect_count, crawler_count: t.crawler_count, clean_count: t.clean_count });
+    }
   }
 
   // which signals fire most (evidence panel, §11.2) — bit-counted in SQL over
@@ -609,7 +656,7 @@ export async function traffic(
   db: D1Database, siteId: string, period: Period,
   opts: { verdict?: string | null; minScore?: number; limit?: number },
 ) {
-  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const limit = Math.min(Math.max(Number.isFinite(opts.limit) ? opts.limit! : 50, 1), 200);
   const conds = ['site_id = ?', 'ts >= ?', 'ts < ?'];
   const binds: unknown[] = [siteId, period.startTs, period.endTs];
   if (opts.verdict && ['clean', 'suspect', 'bot', 'crawler'].includes(opts.verdict)) {
