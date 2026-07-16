@@ -10,6 +10,8 @@
   body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
   header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid #262b36; }
   header b { font-size: 17px; }
+  .brand { font-size: 17px; font-weight: 700; display: inline-flex; align-items: center; }
+  .brand img.logo { height: 28px; display: block; }
   header button { background: none; border: 1px solid #313847; color: #8b93a1; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
   main { max-width: 960px; margin: 28px auto; padding: 0 16px; }
   h2 { font-size: 16px; margin: 26px 0 10px; }
@@ -53,7 +55,13 @@
 </style>
 </head>
 <body>
-<header><b>pvuv.ai</b><a href="/health.html" style="color:#7ab3ff;text-decoration:none;font-size:13px">Self-check</a><button id="logout" style="margin-left:auto">Sign out</button></header>
+<header>
+  <span class="brand" id="brand">pvuv.ai</span>
+  <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
+    <a href="/health.html" id="selfcheckLink" hidden style="color:#7ab3ff;text-decoration:none;font-size:13px">Self-check</a>
+    <button id="logout">Sign out</button>
+  </div>
+</header>
 <main>
   <div class="head">
     <h2>Your sites</h2>
@@ -80,6 +88,7 @@
     </div>
   </div>
   <div id="sites">loading…</div>
+  <datalist id="tzlist"></datalist>
 
   <section class="panel" id="addPanel" hidden>
     <div class="phead"><h3>Add a site</h3><button class="close" data-close="addPanel" aria-label="Close">×</button></div>
@@ -91,7 +100,7 @@
           <option value="balanced">balanced</option><option value="strict">strict</option></select></label></div>
       <div><label>AdSense client (optional)<input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
       <div><label>Timezone <span style="color:#e0a34a">(can't be changed later)</span>
-        <select id="tz"></select></label></div>
+        <input id="tz" list="tzlist" autocomplete="off" placeholder="Search timezone…"></label></div>
       <div><label>Engagement threshold (seconds)
         <input id="engaged" type="number" min="1" max="300" value="15" placeholder="15">
         <span style="color:#8b93a1;font-size:12px">a visit is "engaged" (not a bounce) after this dwell time. GA4 default 10s; we default 15s.</span>
@@ -110,16 +119,24 @@
   </section>
 
   <section class="panel" id="homePanel" hidden>
-    <div class="phead"><h3>Homepage settings</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
+    <div class="phead"><h3>Site &amp; branding</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
     <form class="create" id="homeSettings">
-      <div class="full"><label>Site name (shown on your public homepage)<input id="hsName" maxlength="100" placeholder="Web analytics"></label></div>
+      <div><label>Brand name (header + homepage)<input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
+      <div><label>Primary domain<input id="hsDomain" maxlength="120" placeholder="www.example.com"></label></div>
       <div class="full"><label>Description<input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
+      <div><label>Logo — light (for dark backgrounds)<input id="hsLogoLight" maxlength="500" placeholder="/logo-light.svg or https://…"></label></div>
+      <div><label>Logo — dark (for light backgrounds)<input id="hsLogoDark" maxlength="500" placeholder="/logo-dark.svg or https://…"></label></div>
+      <div class="full"><label>Favicon<input id="hsFavicon" maxlength="500" placeholder="/favicon.ico or https://…"></label></div>
       <p class="err" id="hsMsg"></p>
       <button type="submit">Save</button>
     </form>
+    <p style="margin:14px 0 0;font-size:12.5px;color:#8b93a1;border-top:1px solid #262b36;padding-top:12px">
+      Logos/favicon can be URLs or files you place in <code>workers/console/public/</code>.
+      The console header (dark) uses the light logo. · <a href="/health.html" style="color:#7ab3ff;text-decoration:none">Run self-check ↗</a>
+    </p>
     <form class="create" id="tzSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full"><label>Default timezone for new sites
-        <select id="tzDefault"></select></label></div>
+        <input id="tzDefault" list="tzlist" autocomplete="off" placeholder="Search timezone…"></label></div>
       <p class="err" id="tzMsg"></p>
       <button type="submit">Save default timezone</button>
     </form>
@@ -152,7 +169,13 @@ async function loadSites() {
   const r = await guard(await fetch('/api/sites'));
   const { sites } = await r.json();
   const el = document.getElementById('sites');
-  if (!sites.length) { el.innerHTML = '<p style="color:#8b93a1">No sites yet — add one below.</p>'; return; }
+  const scLink = document.getElementById('selfcheckLink');
+  if (!sites.length) {
+    scLink.hidden = false; // fresh install: surface self-check until a site exists
+    el.innerHTML = '<p style="color:#8b93a1">No sites yet — click <b>＋ New site</b> to add one.<br>Just deployed? <a href="/health.html" style="color:#7ab3ff;text-decoration:none">Run the self-check ↗</a> to confirm everything works.</p>';
+    return;
+  }
+  scLink.hidden = true; // once set up, it's tucked away (Site &amp; branding panel has a link)
 
   // one card per site, each showing its own overview so all sites' numbers
   // are visible at a glance on this page; click a card for the full dashboard
@@ -203,24 +226,28 @@ const TZ_LIST = (() => {
   }
 })();
 const browserTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } })();
-function fillTzSelect(sel, selected) {
-  sel.innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"${z === selected ? ' selected' : ''}>${esc(z)}</option>`).join('');
-}
+const validTz = (z) => TZ_LIST.includes(z);
 let userTz = 'UTC';
 async function loadUserTz() {
-  try { userTz = (await (await fetch('/api/me')).json()).timezone || browserTz || 'UTC'; } catch { userTz = browserTz || 'UTC'; }
-  if (!TZ_LIST.includes(userTz)) userTz = 'UTC';
-  fillTzSelect(document.getElementById('tz'), userTz);            // new-site form default
-  fillTzSelect(document.getElementById('tzDefault'), userTz);     // settings panel
+  // searchable datalist (type to filter hundreds of zones)
+  document.getElementById('tzlist').innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"></option>`).join('');
+  try { userTz = (await (await fetch('/api/me')).json()).timezone || 'UTC'; } catch { userTz = 'UTC'; }
+  if (!validTz(userTz)) userTz = 'UTC';
+  // new-site form: prefill the browser's timezone (unless a non-UTC default is set),
+  // so the common case needs no searching; submitting saves it for real.
+  const createTz = (userTz !== 'UTC') ? userTz : (validTz(browserTz) ? browserTz : 'UTC');
+  document.getElementById('tz').value = createTz;
+  document.getElementById('tzDefault').value = userTz;
 }
 document.getElementById('tzSettings').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const tz = document.getElementById('tzDefault').value;
+  const tz = document.getElementById('tzDefault').value.trim();
+  const el = document.getElementById('tzMsg');
+  if (!validTz(tz)) { el.style.color = ''; el.textContent = 'pick a valid timezone from the list'; return; }
   const r = await guard(await fetch('/api/settings/timezone', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ timezone: tz }),
   }));
-  const el = document.getElementById('tzMsg');
-  if (r.ok) { userTz = tz; fillTzSelect(document.getElementById('tz'), tz); el.style.color = '#6ee7a0'; el.textContent = 'saved'; }
+  if (r.ok) { userTz = tz; document.getElementById('tz').value = tz; el.style.color = '#6ee7a0'; el.textContent = 'saved'; }
   else { el.style.color = ''; el.textContent = 'save failed'; }
 });
 
@@ -256,12 +283,31 @@ document.getElementById('logout').addEventListener('click', async () => {
   location.href = '/login.html';
 });
 
+// apply configured branding to the header, favicon and title (console is dark,
+// so the header uses the LIGHT logo; the dark logo is for light backgrounds).
+function applyBranding(b) {
+  const name = (b.name || '').trim() || 'pvuv.ai';
+  const logo = b.logo_light || b.logo_dark;
+  const brand = document.getElementById('brand');
+  brand.innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : esc(name);
+  document.title = name + ' — Sites';
+  if (b.favicon) {
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = b.favicon;
+  }
+}
 async function loadHomeSettings() {
   const r = await fetch('/api/home');
   if (!r.ok) return;
-  const { name, description } = await r.json();
-  document.getElementById('hsName').value = name || '';
-  document.getElementById('hsDesc').value = description || '';
+  const b = await r.json();
+  applyBranding(b);
+  document.getElementById('hsName').value = b.name || '';
+  document.getElementById('hsDomain').value = b.primary_domain || '';
+  document.getElementById('hsDesc').value = b.description || '';
+  document.getElementById('hsLogoLight').value = b.logo_light || '';
+  document.getElementById('hsLogoDark').value = b.logo_dark || '';
+  document.getElementById('hsFavicon').value = b.favicon || '';
 }
 document.getElementById('homeSettings').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -270,12 +316,17 @@ document.getElementById('homeSettings').addEventListener('submit', async (e) => 
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       name: document.getElementById('hsName').value,
+      primary_domain: document.getElementById('hsDomain').value,
       description: document.getElementById('hsDesc').value,
+      logo_light: document.getElementById('hsLogoLight').value,
+      logo_dark: document.getElementById('hsLogoDark').value,
+      favicon: document.getElementById('hsFavicon').value,
     }),
   }));
   const el = document.getElementById('hsMsg');
   el.style.color = r.ok ? '#6ee7a0' : '';
-  el.textContent = r.ok ? 'saved — view your homepage at /' : 'save failed';
+  el.textContent = r.ok ? 'saved' : 'save failed';
+  if (r.ok) loadHomeSettings(); // re-apply header/favicon immediately
 });
 
 loadSites();

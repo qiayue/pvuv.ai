@@ -104,6 +104,10 @@ export default {
 const DEFAULT_HOME = {
   site_name: 'Web analytics',
   site_description: 'This site runs a self-hosted analytics instance.',
+  primary_domain: '',
+  logo_light: '', // light-colored logo → shown on DARK backgrounds (console/dark theme)
+  logo_dark: '',  // dark-colored logo → shown on LIGHT backgrounds
+  favicon: '',    // favicon url or path
 };
 
 /** Attribution footer (README "Attribution", AGPL-3.0 §7(b) additional term).
@@ -155,12 +159,13 @@ async function homepage(request: Request, env: Env, lang?: string): Promise<Resp
 
 async function instanceSettings(db: D1Database): Promise<typeof DEFAULT_HOME> {
   const out = { ...DEFAULT_HOME };
+  const keys = Object.keys(DEFAULT_HOME) as (keyof typeof DEFAULT_HOME)[];
   try {
     const rows = await db
-      .prepare("SELECT key, value FROM instance_settings WHERE key IN ('site_name','site_description')")
-      .all<{ key: string; value: string }>();
+      .prepare(`SELECT key, value FROM instance_settings WHERE key IN (${keys.map(() => '?').join(',')})`)
+      .bind(...keys).all<{ key: string; value: string }>();
     for (const r of rows.results) {
-      if (r.value && (r.key === 'site_name' || r.key === 'site_description')) out[r.key] = r.value;
+      if (r.value && (keys as string[]).includes(r.key)) out[r.key as keyof typeof DEFAULT_HOME] = r.value;
     }
   } catch {
     /* table missing (migration not applied yet) → defaults */
@@ -180,7 +185,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // public: homepage text (also used by sites.html to prefill the form)
   if (request.method === 'GET' && path === '/api/home') {
     const s = await instanceSettings(env.DB);
-    return json({ name: s.site_name, description: s.site_description });
+    return json({
+      name: s.site_name, description: s.site_description, primary_domain: s.primary_domain,
+      logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon,
+    });
   }
 
   if (request.method === 'POST' && path === '/api/logout') {
@@ -223,18 +231,26 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true, timezone: tz });
   }
 
-  // instance settings: homepage name/description
+  // instance settings: branding (name/description/domain/logos/favicon). Only
+  // keys present in the body are updated, so partial saves don't wipe the rest.
   if (request.method === 'POST' && path === '/api/settings') {
-    let body: { name?: string; description?: string };
+    let body: Record<string, unknown>;
     try {
       body = await request.json();
     } catch {
       return json({ error: 'bad json' }, 400);
     }
-    const entries: [string, string][] = [
-      ['site_name', (body.name ?? '').trim().slice(0, 100)],
-      ['site_description', (body.description ?? '').trim().slice(0, 500)],
+    const fields: Array<[string, string, number]> = [
+      ['name', 'site_name', 100], ['description', 'site_description', 500],
+      ['primary_domain', 'primary_domain', 120],
+      ['logo_light', 'logo_light', 500], ['logo_dark', 'logo_dark', 500],
+      ['favicon', 'favicon', 500],
     ];
+    const entries: [string, string][] = [];
+    for (const [bodyKey, storeKey, cap] of fields) {
+      if (body[bodyKey] !== undefined) entries.push([storeKey, String(body[bodyKey]).trim().slice(0, cap)]);
+    }
+    if (entries.length === 0) return json({ ok: true });
     const now = Date.now();
     await env.DB.batch(entries.map(([k, v]) => env.DB.prepare(`
       INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
