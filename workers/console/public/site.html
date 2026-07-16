@@ -61,6 +61,9 @@
   .switch-pop li .dm { color: #8b93a1; font-size: 12px; }
   .switch-pop .none { color: #8b93a1; padding: 8px 9px; font-size: 13px; }
   .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #aeb6c2; font-size: 13px; }
+  .shadow-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 14px; border: 1px solid #4a3f1e; background: #241f10; color: #e8d9a0; border-radius: 8px; font-size: 13px; }
+  .shadow-banner .enforce { margin-left: auto; background: #b45309; border: 0; color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
+  .shadow-banner .enforce:hover { background: #92400e; }
   .rt .rt-site { font-weight: 600; color: #e6e8eb; padding-right: 10px; margin-right: 4px; border-right: 1px solid #313847; }
   .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: #e6e8eb; }
   .rt .pulse { width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 1.8s infinite; }
@@ -104,6 +107,7 @@
 </header>
 <main>
   <div class="rt" id="realtime"></div>
+  <div class="shadow-banner" id="shadowBanner" hidden></div>
   <div class="cards" id="cards"></div>
 
   <div class="chart-head">
@@ -342,7 +346,9 @@ function donut(t) {
 }
 
 async function load() {
-  renderCards(await get('overview'));
+  const ov = await get('overview');
+  renderCards(ov);
+  renderShadowBanner(ov);
   await loadChart();
 
   const pages = await get('breakdown', '&dim=page');
@@ -429,14 +435,33 @@ function restorePrefs() {
 // fetch the owner's sites: names the header/realtime row + powers the switcher
 let allSites = [];
 let siteDomainPrimary = ''; // this site's first allowed domain (for the Google-search helper)
+let siteShadowUntil = 0;    // record-only until this instant (0 = enforcing)
 async function loadSiteName() {
   try {
     const { sites } = await (await guard(await fetch('/api/sites'))).json();
     allSites = sites || [];
     const s = allSites.find((x) => x.site_id === site);
-    if (s) { if (s.name) siteName = s.name; siteDomainPrimary = siteDomain(s); }
+    if (s) { if (s.name) siteName = s.name; siteDomainPrimary = siteDomain(s); siteShadowUntil = s.shadow_until || 0; }
   } catch { /* fall back to the id */ }
   document.getElementById('titleText').textContent = siteName;
+}
+
+// shadow mode (§7): while record-only, ads still load — show days left + the
+// backtested "would block X%" over the selected period, and an Enforce-now button.
+function renderShadowBanner(o) {
+  const el = document.getElementById('shadowBanner');
+  const now = Date.now();
+  if (!siteShadowUntil || now >= siteShadowUntil) { el.hidden = true; return; }
+  const days = Math.ceil((siteShadowUntil - now) / 86400000);
+  const blocked = o && o.pv ? (((o.pv - o.clean_count) / o.pv) * 100).toFixed(1) : '0.0';
+  el.hidden = false;
+  el.innerHTML = `<span><b>Shadow mode</b> — recording only, ads still load for <b>${days}</b> more day${days === 1 ? '' : 's'}. At the current tier, <b>${blocked}%</b> of pageviews in this range would be blocked once enforcing.</span>`
+    + '<button id="enforceBtn" class="enforce">Enforce now</button>';
+  document.getElementById('enforceBtn').addEventListener('click', async () => {
+    if (!confirm('Start blocking ads for suspected invalid traffic now? This ends the record-only window and can\'t be undone.')) return;
+    const r = await guard(await fetch(`/api/sites/${site}/enforce`, { method: 'POST' }));
+    if (r.ok) { siteShadowUntil = 0; el.hidden = true; }
+  });
 }
 
 // ── site switcher: click the name → searchable dropdown to jump to another site
@@ -504,9 +529,9 @@ document.getElementById('metric').addEventListener('change', () => { savePrefs()
 document.getElementById('interval').addEventListener('change', () => { savePrefs(); loadChart(); });
 
 restorePrefs();
-loadSiteName();
-load();
-pollRealtime();
+// load the site meta (name, domain, shadow_until) before the first render so the
+// header and shadow banner are correct on first paint
+(async () => { await loadSiteName(); load(); pollRealtime(); })();
 setInterval(pollRealtime, 15000);
 </script>
 </body>

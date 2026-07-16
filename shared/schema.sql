@@ -41,7 +41,8 @@ CREATE TABLE sites (
   created_at      INTEGER NOT NULL,
   status          TEXT DEFAULT 'active',
   timezone        TEXT DEFAULT 'UTC',        -- display/aggregation tz, IMMUTABLE (added by 0004)
-  engaged_seconds INTEGER NOT NULL DEFAULT 15 -- GA4 engagement dwell threshold, set at creation (added by 0006)
+  engaged_seconds INTEGER NOT NULL DEFAULT 15, -- GA4 engagement dwell threshold, set at creation (added by 0006)
+  shadow_until    INTEGER                    -- record-only until this instant, then enforce ads (added by 0008)
 );
 
 -- raw events (monthly-partitioned; initial month 202607)

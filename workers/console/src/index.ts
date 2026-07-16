@@ -28,6 +28,7 @@ import {
   clearStateCookie, OAuthError,
 } from './oauth';
 import { isValidTimezone } from '../../../shared/tz';
+import { CONFIG } from '../../../shared/config.gen';
 
 export interface Env {
   DB: D1Database;
@@ -306,11 +307,22 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/sites') {
     if (request.method === 'GET') {
       const rows = await env.DB.prepare(
-        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
+        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status, shadow_until FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
       ).bind(user).all();
       return json({ sites: rows.results });
     }
     if (request.method === 'POST') return createSite(request, env, user);
+  }
+
+  // end shadow mode early → start enforcing ads immediately (§7)
+  const enforceMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/enforce$/);
+  if (enforceMatch && request.method === 'POST') {
+    const siteId = enforceMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+    await env.DB.prepare('UPDATE sites SET shadow_until = ? WHERE site_id = ?').bind(Date.now(), siteId).run();
+    await env.SITE_CONFIG.delete(`site:${siteId}`); // force ingest to re-read the new shadow_until
+    return json({ ok: true });
   }
 
   // site-scoped queries — reuse the api worker's query layer
@@ -447,11 +459,16 @@ async function createSite(request: Request, env: Env, owner: string): Promise<Re
   const engagedSeconds = Number.isFinite(body.engaged_seconds)
     ? Math.min(Math.max(Math.round(body.engaged_seconds!), 1), 300) : 15;
 
+  // shadow mode (§7): new sites record-only for the first shadow_days before
+  // ads are actually blocked. shadow_until = when enforcement begins.
+  const createdAt = Date.now();
+  const shadowUntil = createdAt + Math.max(0, CONFIG.adguard.shadow_days) * 86_400_000;
+
   const siteId = generateSiteId();
   await env.DB.prepare(`
-    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, timezone, engaged_seconds, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, timezone, engagedSeconds, Date.now()).run();
+    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, timezone, engaged_seconds, shadow_until, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, timezone, engagedSeconds, shadowUntil, createdAt).run();
 
   // write-through KV so ingest sees the new site immediately (§5 whitelist);
   // shape must match the ingest worker's SiteConfig
@@ -461,9 +478,10 @@ async function createSite(request: Request, env: Env, owner: string): Promise<Re
     adguard_mode: adguardMode,
     adclient,
     status: 'active',
+    shadow_until: shadowUntil,
   }), { expirationTtl: 300 });
 
-  return json({ site_id: siteId, name, domains, adguard_mode: adguardMode, adclient, timezone });
+  return json({ site_id: siteId, name, domains, adguard_mode: adguardMode, adclient, timezone, shadow_until: shadowUntil });
 }
 
 /** The user's default timezone for new sites (users.timezone), fallback UTC. */

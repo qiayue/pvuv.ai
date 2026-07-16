@@ -261,6 +261,14 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
   };
   const state = await signVerdictState(env.HMAC_KEY, newState);
 
+  // Shadow mode (§7): while a new site is inside its record-only window, ads
+  // ALWAYS load (ok:1) no matter the verdict — the verdict is still computed and
+  // recorded (via /in) so the owner can backtest "at this tier, X% would block"
+  // before enforcement begins. `shadow:1` lets the SDK/telemetry know.
+  if (site.shadow_until && Date.now() < site.shadow_until) {
+    return json({ v: verdict, ok: 1, shadow: 1, state });
+  }
+
   // ok=1 → load now; suspect → client requires stronger interaction evidence
   // (§7.4); bot/crawler → never (verified crawlers get the page, not the ads)
   return json({ v: verdict, ok: verdict === 'clean' ? 1 : 0, state });
@@ -283,6 +291,8 @@ export interface SiteConfig {
   adguard_mode: string;
   adclient: string | null;
   status: string;
+  /** record-only (ads always load) until this instant; null/absent = enforce now */
+  shadow_until: number | null;
 }
 
 async function getSiteConfig(env: Env, siteId: string): Promise<SiteConfig | null> {
@@ -293,9 +303,9 @@ async function getSiteConfig(env: Env, siteId: string): Promise<SiteConfig | nul
   if (cached) return cached.__miss ? null : cached;
 
   const row = await env.DB
-    .prepare('SELECT site_id, allowed_domains, adguard_mode, adclient, status FROM sites WHERE site_id = ?')
+    .prepare('SELECT site_id, allowed_domains, adguard_mode, adclient, status, shadow_until FROM sites WHERE site_id = ?')
     .bind(siteId)
-    .first<{ site_id: string; allowed_domains: string; adguard_mode: string; adclient: string | null; status: string }>();
+    .first<{ site_id: string; allowed_domains: string; adguard_mode: string; adclient: string | null; status: string; shadow_until: number | null }>();
   if (!row) {
     // negative-cache the miss briefly so an unauthenticated flood of distinct
     // bogus site_ids can't re-query D1 on every request
@@ -315,6 +325,7 @@ async function getSiteConfig(env: Env, siteId: string): Promise<SiteConfig | nul
     adguard_mode: row.adguard_mode,
     adclient: row.adclient,
     status: row.status,
+    shadow_until: row.shadow_until ?? null,
   };
   await env.SITE_CONFIG.put(key, JSON.stringify(config), { expirationTtl: SITE_CACHE_TTL_S });
   return config;
