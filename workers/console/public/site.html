@@ -84,6 +84,7 @@
   </div>
   <select id="period" aria-label="Date range">
     <optgroup label="Rolling">
+      <option value="24h">Last 24 hours</option>
       <option value="today" selected>Today</option>
       <option value="7d">Last 7 days</option>
       <option value="30d">Last 30 days</option>
@@ -201,6 +202,7 @@ const METRICS = [
 ];
 const METRIC_LABEL = Object.fromEntries(METRICS);
 const INTERVALS = {
+  '24h': ['hour', 'minute'],
   today: ['hour', 'minute'], yesterday: ['hour', 'minute'],
   '7d': ['day', 'hour'], this_week: ['day', 'hour'], last_week: ['day', 'hour'],
   '30d': ['day', 'week'], this_month: ['day', 'week'], last_month: ['day', 'week'], '90d': ['day', 'week'],

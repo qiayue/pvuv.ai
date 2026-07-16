@@ -28,6 +28,7 @@ export interface Period {
   endTs: number; // exclusive
   tz: string;    // site timezone the range is expressed in
   now: number;   // server instant the range was resolved at (for today-split)
+  subDay?: boolean; // rolling intraday window (e.g. last 24h): chart uses hour/minute buckets only
 }
 
 type YMD = { y: number; m0: number; d: number };
@@ -43,6 +44,17 @@ type YMD = { y: number; m0: number; d: number };
 export function parsePeriod(raw: string | null, tz = 'UTC', now: number = Date.now()): Period {
   const today = localYMD(now, tz);
   const token = (raw ?? '30d').toLowerCase();
+
+  // rolling intraday window: exactly the last 24 hours (hour precision), not a
+  // calendar day. overview reads the exact ts range; the chart uses hour buckets.
+  if (token === '24h') {
+    const startTs = now - 24 * 3_600_000;
+    const s = localYMD(startTs, tz);
+    return {
+      start: dayStr(s.y, s.m0, s.d), end: dayStr(today.y, today.m0, today.d),
+      startTs, endTs: now, tz, now, subDay: true,
+    };
+  }
 
   let start: YMD = today;
   let end: YMD = today;
@@ -296,6 +308,9 @@ async function sessionRaw(db: D1Database, siteId: string, startTs: number, endTs
 export async function timeseries(db: D1Database, siteId: string, metric: string, period: Period, interval = 'day') {
   if (!TS_METRICS.has(metric)) throw new ApiError(400, `unknown metric: ${metric}`);
   if (!TS_INTERVALS.has(interval)) throw new ApiError(400, `unknown interval: ${interval}`);
+  // a rolling intraday window (last 24h) can't use day/week/month rollup buckets
+  // (that would pull whole calendar days) — force an intraday bucket size.
+  if (period.subDay && interval !== 'minute' && interval !== 'hour') interval = 'hour';
   const points = interval === 'minute' || interval === 'hour'
     ? await subDaySeries(db, siteId, period, interval, metric)
     : await calendarSeries(db, siteId, period, interval, metric);
