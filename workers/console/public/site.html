@@ -164,7 +164,19 @@
 const site = new URLSearchParams(location.search).get('id');
 if (!site) location.href = '/sites.html';
 let siteName = site; // replaced with the friendly name once /api/sites loads
+let brandName = 'pvuv.ai'; // instance brand (configurable), for the tab title suffix
 const PREF_KEY = 'pvuv.chartPrefs';
+
+// browser-tab title: "{metric} - {site} - {brand}" so tabs are distinguishable.
+function setTitle() {
+  const m = document.getElementById('metric');
+  const label = m && m.value ? (METRIC_LABEL[m.value] || '') : '';
+  document.title = `${label ? label + ' - ' : ''}${siteName} - ${brandName}`;
+}
+async function loadBrand() {
+  try { const b = await (await fetch('/api/home')).json(); if (b && b.name) brandName = b.name; } catch { /* keep default */ }
+  setTitle();
+}
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
@@ -323,6 +335,7 @@ async function loadChart() {
   const metric = document.getElementById('metric').value;
   const interval = document.getElementById('interval').value;
   document.getElementById('chartTitle').textContent = METRIC_LABEL[metric];
+  setTitle(); // reflect the selected metric in the tab title
   const ts = await get('timeseries', `&metric=${metric}&interval=${interval}`);
   lineChart(ts.points, metric);
 }
@@ -453,6 +466,7 @@ async function loadSiteName() {
     if (s) { if (s.name) siteName = s.name; siteDomainPrimary = siteDomain(s); siteShadowUntil = s.shadow_until || 0; }
   } catch { /* fall back to the id */ }
   document.getElementById('titleText').textContent = siteName;
+  setTitle();
 }
 
 // shadow mode (§7): while record-only, ads still load — show days left + the
@@ -540,6 +554,7 @@ document.getElementById('interval').addEventListener('change', () => { savePrefs
 restorePrefs();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
+loadBrand();
 (async () => { await loadSiteName(); load(); pollRealtime(); })();
 setInterval(pollRealtime, 15000);
 </script>
