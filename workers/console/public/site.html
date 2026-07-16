@@ -100,6 +100,7 @@
       <ul id="switchList" role="listbox"></ul>
     </div>
   </div>
+  <a id="visitorsLink" href="#">visitors →</a>
   <select id="period" aria-label="Date range">
     <optgroup label="Rolling">
       <option value="24h">Last 24 hours</option>
@@ -177,6 +178,10 @@
 <script>
 const site = new URLSearchParams(location.search).get('id');
 if (!site) location.href = '/sites.html';
+document.getElementById('visitorsLink').href = `/visitor.html?site=${encodeURIComponent(site)}`;
+// deep link into the journey finder pre-filtered to one page path
+const visitorsByPath = (path) =>
+  `/visitor.html?site=${encodeURIComponent(site)}&path=${encodeURIComponent(path)}`;
 let siteName = site; // replaced with the friendly name once /api/sites loads
 let brandName = 'pvuv.ai'; // instance brand (configurable), for the tab title suffix
 const PREF_KEY = 'pvuv.chartPrefs';
@@ -495,7 +500,7 @@ async function load() {
   document.getElementById('traffic').innerHTML = tr.rows.length
     ? '<table><tr><th>Visitor</th><th class="num">Events</th><th class="num">Sessions</th><th>Last seen</th><th>Where</th><th>Agent</th><th class="num">Max score</th><th>Verdict</th><th>Evidence</th></tr>' +
       tr.rows.map((r) => `<tr>
-        <td class="muted" title="${esc(r.visitor_id)}">${esc(String(r.visitor_id).slice(0, 10))}…</td>
+        <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="Journey timeline">${esc(String(r.visitor_id).slice(0, 10))}…</a></td>
         <td class="num">${fmt(r.events)}</td>
         <td class="num">${fmt(r.sessions)}</td>
         <td>${new Date(r.last_ts).toISOString().slice(5, 16).replace('T', ' ')}</td>

@@ -817,8 +817,64 @@ export async function traffic(
 }
 
 // ---------------------------------------------------------------------------
+// GET /sites/:id/visitors?path=&limit= — visitor finder (journey entry point)
+// ---------------------------------------------------------------------------
+
+const VERDICT_OF_RANK: Record<number, string> = { 1: 'clean', 2: 'suspect', 3: 'crawler', 4: 'bot' };
+
+/** Visitors active in the period, newest activity first. With `path`, only
+ *  visitors who had a pageview on that path (exact match; trailing '*' =
+ *  prefix) — answers "who opened the payment page?" — and the aggregates then
+ *  cover just the matching events. Verdict shown is the visitor's worst. */
+export async function visitorsList(
+  db: D1Database, siteId: string, period: Period,
+  opts: { path?: string | null; limit?: number },
+) {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const tables = await eventTables(db, period.startTs, period.endTs);
+  if (tables.length === 0) return { path: opts.path ?? null, rows: [] };
+
+  let pathCond = '';
+  const pathBinds: unknown[] = [];
+  if (opts.path) {
+    if (opts.path.endsWith('*')) {
+      pathCond = " AND path LIKE ? || '%'";
+      pathBinds.push(opts.path.slice(0, -1));
+    } else {
+      pathCond = ' AND path = ?';
+      pathBinds.push(opts.path);
+    }
+  }
+  const parts = tables.map((t) =>
+    `SELECT visitor_id, session_id, event, verdict, country, device_type, ts FROM ${t}
+     WHERE site_id = ? AND ts >= ? AND ts < ?${pathCond}`);
+  const binds = tables.flatMap(() => [siteId, period.startTs, period.endTs, ...pathBinds]);
+
+  const rows = await db.prepare(`
+    SELECT visitor_id,
+      COALESCE(SUM(event = 'pageview'), 0) AS pv,
+      COUNT(DISTINCT session_id) AS sessions,
+      MIN(ts) AS first_ts, MAX(ts) AS last_ts,
+      MAX(CASE verdict WHEN 'bot' THEN 4 WHEN 'crawler' THEN 3 WHEN 'suspect' THEN 2 ELSE 1 END) AS vrank,
+      MAX(country) AS country, MAX(device_type) AS device_type
+    FROM (${parts.join(' UNION ALL ')})
+    GROUP BY visitor_id
+    HAVING pv > 0
+    ORDER BY last_ts DESC LIMIT ?
+  `).bind(...binds, limit).all<Record<string, unknown> & { vrank: number }>();
+
+  return {
+    path: opts.path ?? null,
+    rows: rows.results.map(({ vrank, ...r }) => ({ ...r, verdict: VERDICT_OF_RANK[vrank] ?? 'clean' })),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // GET /sites/:id/visitors/:vid/profile
 // ---------------------------------------------------------------------------
+
+/** Event-trail cap for the journey timeline (newest first). */
+const PROFILE_EVENTS_MAX = 300;
 
 export async function visitorProfile(db: D1Database, siteId: string, vid: string, period: Period) {
   const profile = await db.prepare(
@@ -831,14 +887,16 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
     FROM sessions WHERE site_id = ? AND visitor_id = ? ORDER BY started_at DESC LIMIT 50
   `).bind(siteId, vid).all();
 
+  // session_id groups the timeline; hostname disambiguates multi-domain sites;
+  // props carries custom-event payloads (e.g. revenue) for display.
   const events: unknown[] = [];
   for (const table of (await eventTables(db, period.startTs, period.endTs)).reverse()) {
-    if (events.length >= 100) break;
+    if (events.length >= PROFILE_EVENTS_MAX) break;
     const rows = await db.prepare(`
-      SELECT ts, event, path, referrer, duration_ms, scroll_depth, had_interaction,
-             bot_score, verdict, bot_flags, score_stage
+      SELECT ts, event, session_id, hostname, path, referrer, duration_ms, scroll_depth,
+             had_interaction, props, bot_score, verdict, bot_flags, score_stage
       FROM ${table} WHERE site_id = ? AND visitor_id = ? ORDER BY ts DESC LIMIT ?
-    `).bind(siteId, vid, 100 - events.length).all();
+    `).bind(siteId, vid, PROFILE_EVENTS_MAX - events.length).all();
     events.push(...rows.results);
   }
 

@@ -135,6 +135,19 @@ export function refDomain(referrer: string | undefined): string | null {
   }
 }
 
+/** True when a referrer host belongs to the measured site itself — the event
+ *  page's own hostname or any whitelisted domain (exact or subdomain, the same
+ *  matching rule as the ingest origin check). Internal navigation must never
+ *  be attributed as an external traffic source: the first event of a session
+ *  minted mid-visit (30-min idle / day rollover / SPA route change) carries an
+ *  internal referrer, which would otherwise surface the site as its own
+ *  top "source". */
+export function isInternalRef(refHost: string, pageHost: string, allowedDomains: readonly string[]): boolean {
+  const h = refHost.toLowerCase();
+  const same = (d: string) => h === d || h.endsWith(`.${d}`);
+  return same(pageHost) || allowedDomains.some(same);
+}
+
 // ---------------------------------------------------------------------------
 // Privacy-preserving hashes (§5, §16): IP stored ONLY as keyed truncated
 // hashes; fingerprint stored ONLY as a keyed hash. Keyed with HMAC_KEY
@@ -206,6 +219,7 @@ export async function enrichEvent(
   ev: IncomingEvent,
   ctx: RequestContext,
   secret: string,
+  allowedDomains: readonly string[] = [],
 ): Promise<EventRow | null> {
   const urlInfo = parseEventUrl(ev.u);
   if (!urlInfo) return null;
@@ -244,6 +258,12 @@ export async function enrichEvent(
     }
   }
 
+  // self-referral exclusion: keep the raw referrer string (journey display,
+  // debugging) but never attribute an internal hop as a traffic source —
+  // ref_domain is what feeds sessions.source downstream.
+  const rd = refDomain(typeof ev.r === 'string' ? ev.r : undefined);
+  const ref_domain = rd && isInternalRef(rd, urlInfo.hostname, allowedDomains) ? null : rd;
+
   return {
     eid,
     site_id: ev.s,
@@ -255,7 +275,7 @@ export async function enrichEvent(
     hostname: urlInfo.hostname,
     path: urlInfo.path.slice(0, 1024),
     referrer: str(ev.r, 2048),
-    ref_domain: refDomain(typeof ev.r === 'string' ? ev.r : undefined),
+    ref_domain,
     ...urlInfo.utm,
     click_id: urlInfo.click_id,
     click_id_type: urlInfo.click_id_type,

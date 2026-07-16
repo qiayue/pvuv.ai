@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorProfile, ApiError } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -335,17 +335,24 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     // period resolved in the site's own timezone (rollups are keyed on it)
     const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
     const q = url.searchParams;
+    const filters = parseFilters(q.get('filters'));
     if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
-    if (resource === 'overview') return json(await overview(env.DB, siteId, period));
-    if (resource === 'timeseries') return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day'));
+    if (resource === 'overview') return json(await overview(env.DB, siteId, period, filters));
+    if (resource === 'timeseries') return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day', filters));
     if (resource === 'breakdown') {
-      return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key')));
+      return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
     }
-    if (resource === 'quality') return json(await quality(env.DB, siteId, period));
+    if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
     if (resource === 'traffic') {
       return json(await traffic(env.DB, siteId, period, {
         verdict: q.get('verdict'),
         minScore: q.has('min_score') ? parseInt(q.get('min_score')!, 10) : undefined,
+        limit: parseInt(q.get('limit') ?? '50', 10),
+      }, filters));
+    }
+    if (resource === 'visitors' && !subId) {
+      return json(await visitorsList(env.DB, siteId, period, {
+        path: q.get('path'),
         limit: parseInt(q.get('limit') ?? '50', 10),
       }));
     }
@@ -494,4 +501,18 @@ function json(data: unknown, status = 200, setCookie?: string): Response {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (setCookie) headers['set-cookie'] = setCookie;
   return new Response(JSON.stringify(data), { status, headers });
+}
+
+/** Parse the `filters` query param (JSON [{dim,value}]), validated against the
+ *  filterable-dim allowlist and capped. Malformed → no filters. */
+function parseFilters(raw: string | null): Filter[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((f) => f && typeof f.dim === 'string' && typeof f.value === 'string' && FILTERABLE.has(f.dim))
+      .slice(0, 8)
+      .map((f) => ({ dim: f.dim, value: f.value }));
+  } catch { return []; }
 }

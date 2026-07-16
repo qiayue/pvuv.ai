@@ -128,7 +128,7 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
   if (!originHost) return respond(403, 'no origin');
 
   const siteCache = new Map<string, SiteConfig | null>();
-  const valid: IncomingEvent[] = [];
+  const valid: { ev: IncomingEvent; allowed: string[] }[] = [];
   for (const ev of events) {
     if (!ev || typeof ev.s !== 'string' || typeof ev.e !== 'string' || typeof ev.u !== 'string'
       || typeof ev.vid !== 'string' || typeof ev.sid !== 'string') continue;
@@ -139,7 +139,7 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
     }
     if (!site || site.status !== 'active') continue;
     if (!domainAllowed(originHost, site.allowed_domains)) continue; // drop on mismatch (§5)
-    valid.push(ev);
+    valid.push({ ev, allowed: site.allowed_domains });
   }
   if (valid.length === 0) return respond(204);
 
@@ -159,7 +159,7 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
   const { ip24_hash } = await hashIP(env.HMAC_KEY, reqCtx.ip);
   // fp material must match enrichEvent's exactly, so blocklist keys written
   // against stored fp_hash values actually match here.
-  const fpEvent = valid.find((e) => e.x?.x7);
+  const fpEvent = valid.find((v) => v.ev.x?.x7)?.ev;
   const fpForBlocklist = fpEvent
     ? await fingerprintHash(env.HMAC_KEY, fpEvent.x!.x7, reqCtx.ua, fpEvent.sw, fpEvent.sh, fpEvent.lang)
     : null;
@@ -167,8 +167,8 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
 
   // --- enrich + score each event ---
   const rows: EventRow[] = [];
-  for (const ev of valid) {
-    const row = await enrichEvent(ev, reqCtx, env.HMAC_KEY);
+  for (const { ev, allowed } of valid) {
+    const row = await enrichEvent(ev, reqCtx, env.HMAC_KEY, allowed);
     if (!row) continue;
     const scored = scoreRealtime({
       x: ev.x,
