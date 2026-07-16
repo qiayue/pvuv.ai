@@ -235,7 +235,11 @@ async function sessionAgg(db: D1Database, siteId: string, startTs: number, endTs
       ROUND(AVG(CASE WHEN is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4) AS bounce_rate,
       ROUND(AVG(CASE WHEN pageviews <= 1 THEN 1.0 ELSE 0.0 END), 4) AS bounce_rate_single,
       CAST(AVG(duration_ms) AS INTEGER) AS avg_duration_ms,
-      CAST(AVG(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END) AS INTEGER) AS visit_duration_ms
+      -- NULL last_pageview_at = session predating migration 0010 (unknown), which
+      -- AVG skips; genuine single-page visits have last_pageview_at = started_at
+      -- (→ 0) and are correctly included. Never treat unknown as 0 — that would
+      -- dilute the average toward zero while old data dominates the window.
+      CAST(AVG(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at END) AS INTEGER) AS visit_duration_ms
     FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?${sf.sql ? ` AND ${sf.sql}` : ''}
   `).bind(siteId, startTs, endTs, ...sf.binds).first<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null; visit_duration_ms: number | null }>();
   return row ?? { bounce_rate: null, bounce_rate_single: null, avg_duration_ms: null, visit_duration_ms: null };
@@ -366,17 +370,20 @@ function metricOf(a: Acc, metric: string): number | null {
 
 /** Raw session counts over a span (exact bounce/dwell numerators). */
 async function sessionRaw(db: D1Database, siteId: string, startTs: number, endTs: number, filters: Filter[] = []):
-  Promise<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number; visit_duration_sum: number }> {
+  Promise<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number; visit_duration_sum: number; visit_duration_n: number }> {
   const sf = seFilter(filters);
   const r = await db.prepare(`
     SELECT COUNT(*) AS sessions,
            COALESCE(SUM(is_bounce), 0) AS bounces,
            COALESCE(SUM(CASE WHEN pageviews <= 1 THEN 1 ELSE 0 END), 0) AS bounces_single,
            COALESCE(SUM(duration_ms), 0) AS duration_sum,
-           COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END), 0) AS visit_duration_sum
+           -- visit duration sums/counts only sessions with a known last pageview
+           -- (post-migration); NULL = unknown, excluded from BOTH sum and denom
+           COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END), 0) AS visit_duration_sum,
+           COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS visit_duration_n
     FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?${sf.sql ? ` AND ${sf.sql}` : ''}
-  `).bind(siteId, startTs, endTs, ...sf.binds).first<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number; visit_duration_sum: number }>();
-  return r ?? { sessions: 0, bounces: 0, bounces_single: 0, duration_sum: 0, visit_duration_sum: 0 };
+  `).bind(siteId, startTs, endTs, ...sf.binds).first<{ sessions: number; bounces: number; bounces_single: number; duration_sum: number; visit_duration_sum: number; visit_duration_n: number }>();
+  return r ?? { sessions: 0, bounces: 0, bounces_single: 0, duration_sum: 0, visit_duration_sum: 0, visit_duration_n: 0 };
 }
 
 /**
@@ -433,14 +440,15 @@ async function subDaySeries(db: D1Database, siteId: string, period: Period, inte
         COUNT(*) AS sc, COALESCE(SUM(is_bounce), 0) AS bc,
         COALESCE(SUM(CASE WHEN pageviews <= 1 THEN 1 ELSE 0 END), 0) AS bsc,
         COALESCE(SUM(duration_ms), 0) AS ds,
-        COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END), 0) AS vds
+        COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at ELSE 0 END), 0) AS vds,
+        COALESCE(SUM(CASE WHEN last_pageview_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS vdn
       FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?${sf.sql ? ` AND ${sf.sql}` : ''} GROUP BY b
-    `).bind(period.startTs, step, siteId, period.startTs, period.endTs, ...sf.binds).all<{ b: number; sc: number; bc: number; bsc: number; ds: number; vds: number }>();
+    `).bind(period.startTs, step, siteId, period.startTs, period.endTs, ...sf.binds).all<{ b: number; sc: number; bc: number; bsc: number; ds: number; vds: number; vdn: number }>();
     for (const r of rows.results) {
       const a = accs[r.b];
       if (a) {
         a.bounce_num = r.bc; a.bounce_den = r.sc; a.bs_num = r.bsc; a.bs_den = r.sc;
-        a.dur_num = r.ds; a.dur_den = r.sc; a.vdur_num = r.vds; a.vdur_den = r.sc;
+        a.dur_num = r.ds; a.dur_den = r.sc; a.vdur_num = r.vds; a.vdur_den = r.vdn;
       }
     }
   }
@@ -501,7 +509,7 @@ async function calendarSeries(db: D1Database, siteId: string, period: Period, in
       a.bounce_num = sr.bounces; a.bounce_den = sr.sessions;
       a.bs_num = sr.bounces_single; a.bs_den = sr.sessions;
       a.dur_num = sr.duration_sum; a.dur_den = sr.sessions;
-      a.vdur_num = sr.visit_duration_sum; a.vdur_den = sr.sessions;
+      a.vdur_num = sr.visit_duration_sum; a.vdur_den = sr.visit_duration_n;
     }
     out.push({ label: b.label, value: metricOf(a, metric), status: statusOf(b) });
   }
@@ -540,7 +548,7 @@ async function dailyAccs(db: D1Database, siteId: string, period: Period): Promis
     a.clean = ev.clean_count; a.suspect = ev.suspect_count; a.bot = ev.bot_count; a.crawler = ev.crawler_count;
     a.bounce_num = sr.bounces; a.bounce_den = sr.sessions; a.bs_num = sr.bounces_single; a.bs_den = sr.sessions;
     a.dur_num = sr.duration_sum; a.dur_den = sr.sessions;
-    a.vdur_num = sr.visit_duration_sum; a.vdur_den = sr.sessions;
+    a.vdur_num = sr.visit_duration_sum; a.vdur_den = sr.visit_duration_n;
     map.set(split.today.day, a);
   }
   return map;

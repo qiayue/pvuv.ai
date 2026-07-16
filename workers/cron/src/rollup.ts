@@ -156,10 +156,12 @@ export async function rollupSiteDay(
         FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       ),
       -- Plausible/UA visit duration: last−first pageview per session, exit page
-      -- and single-page visits count as 0 (last_pageview_at = started_at → 0)
+      -- and single-page visits count as 0 (last_pageview_at = started_at → 0).
+      -- Sessions predating migration 0010 have NULL last_pageview_at (unknown) —
+      -- AVG skips them rather than counting them as 0 and diluting the average.
       visit_duration_ms = (
         SELECT CAST(AVG(CASE WHEN s.last_pageview_at IS NOT NULL
-                             THEN s.last_pageview_at - s.started_at ELSE 0 END) AS INTEGER)
+                             THEN s.last_pageview_at - s.started_at END) AS INTEGER)
         FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       )
     WHERE site_id = ? AND day = ?
