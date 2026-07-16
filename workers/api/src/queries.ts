@@ -151,6 +151,10 @@ const EVENT_FILTER: Record<string, (v: string) => { sql: string; binds: unknown[
   page: (v) => ({ sql: 'path = ?', binds: [v] }),
   country: (v) => v === '(unknown)' ? { sql: 'country IS NULL', binds: [] } : { sql: 'country = ?', binds: [v] },
   device: (v) => ({ sql: 'device_type = ?', binds: [v] }),
+  browser: (v) => v === '(unknown)' ? { sql: 'browser IS NULL', binds: [] } : { sql: 'browser = ?', binds: [v] },
+  os: (v) => v === '(unknown)' ? { sql: 'os IS NULL', binds: [] } : { sql: 'os = ?', binds: [v] },
+  region: (v) => v === '(unknown)' ? { sql: 'region IS NULL', binds: [] } : { sql: 'region = ?', binds: [v] },
+  city: (v) => v === '(unknown)' ? { sql: 'city IS NULL', binds: [] } : { sql: 'city = ?', binds: [v] },
   source: (v) => v === '(direct)'
     ? { sql: '(utm_source IS NULL AND ref_domain IS NULL)', binds: [] }
     : { sql: 'COALESCE(utm_source, ref_domain) = ?', binds: [v] },
@@ -676,20 +680,63 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
     return { dim, rows: rows.results };
   }
 
-  // country / device: raw pageviews, exact cross-month uv via COUNT(DISTINCT)
-  if (dim === 'country' || dim === 'device') {
-    const col = dim === 'country' ? 'country' : 'device_type';
+  // country / device / browser / os / region / city: raw pageviews, exact
+  // cross-month uv via COUNT(DISTINCT). Sub-tab dimensions of the geo/device panels.
+  const SIMPLE_EVENT_DIMS: Record<string, string> = {
+    country: 'country', device: 'device_type', browser: 'browser',
+    os: 'os', region: 'region', city: 'city',
+  };
+  if (Object.prototype.hasOwnProperty.call(SIMPLE_EVENT_DIMS, dim)) {
+    const col = SIMPLE_EVENT_DIMS[dim];
     const tables = await eventTables(db, period.startTs, period.endTs);
     if (tables.length === 0) return { dim, rows: [] };
     const u = unionOver(tables, `${col} AS k, visitor_id, verdict, event`, siteId, period.startTs, period.endTs, ef.sql, ef.binds);
     const rows = await db.prepare(`
-      SELECT COALESCE(k, '(unknown)') AS key,
+      SELECT COALESCE(NULLIF(k, ''), '(unknown)') AS key,
              COALESCE(SUM(event = 'pageview'), 0) AS pv,
              COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END) AS uv,
              COALESCE(SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')), 0) AS pv_clean
       FROM (${u.sql})
       GROUP BY key ORDER BY pv DESC LIMIT ?
     `).bind(...u.binds, limit).all();
+    return { dim, rows: rows.results };
+  }
+
+  // screen-size buckets (Plausible-style "Size"), from the pageview's viewport width
+  if (dim === 'size') {
+    const tables = await eventTables(db, period.startTs, period.endTs);
+    if (tables.length === 0) return { dim, rows: [] };
+    const u = unionOver(tables, 'screen_w, visitor_id, verdict, event', siteId, period.startTs, period.endTs, ef.sql, ef.binds);
+    const bucket = `CASE
+      WHEN screen_w IS NULL OR screen_w = 0 THEN '(unknown)'
+      WHEN screen_w < 576 THEN 'Mobile (< 576px)'
+      WHEN screen_w < 992 THEN 'Tablet (576–991px)'
+      WHEN screen_w < 1440 THEN 'Laptop (992–1439px)'
+      ELSE 'Desktop (≥ 1440px)' END`;
+    const rows = await db.prepare(`
+      SELECT ${bucket} AS key,
+             COALESCE(SUM(event = 'pageview'), 0) AS pv,
+             COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END) AS uv,
+             COALESCE(SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')), 0) AS pv_clean
+      FROM (${u.sql})
+      GROUP BY key ORDER BY pv DESC LIMIT ?
+    `).bind(...u.binds, limit).all();
+    return { dim, rows: rows.results };
+  }
+
+  // entry / exit pages: session-level (which page began / ended the visit)
+  if (dim === 'entry_page' || dim === 'exit_page') {
+    const col = dim === 'entry_page' ? 'entry_page' : 'exit_page';
+    const rows = await db.prepare(`
+      SELECT COALESCE(NULLIF(${col}, ''), '(unknown)') AS key,
+             COALESCE(SUM(pageviews), 0) AS pv,
+             COUNT(DISTINCT visitor_id) AS uv,
+             COUNT(*) AS sessions,
+             COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN pageviews ELSE 0 END), 0) AS pv_clean
+      FROM sessions
+      WHERE site_id = ? AND started_at >= ? AND started_at < ?${sf.sql ? ` AND ${sf.sql}` : ''}
+      GROUP BY key ORDER BY sessions DESC LIMIT ?
+    `).bind(siteId, period.startTs, period.endTs, ...sf.binds, limit).all();
     return { dim, rows: rows.results };
   }
 

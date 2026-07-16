@@ -77,8 +77,21 @@
   .chart-ctrls select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; font: inherit; }
   .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 26px 0 10px; }
   .sec-head h2 { margin: 0; }
-  .all-btn { margin-left: auto; background: none; border: 0; color: #7ab3ff; font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 4px; }
+  .sec-head .tabs { margin-left: auto; }
+  .tabs { display: inline-flex; gap: 1px; flex-wrap: wrap; }
+  .tabs button { background: none; border: 0; color: #8b93a1; font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 7px; border-radius: 5px; }
+  .tabs button:hover { color: #cdd6e2; }
+  .tabs button.active { color: #7ab3ff; font-weight: 600; }
+  .all-btn { background: none; border: 0; color: #7ab3ff; font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 4px; }
   .all-btn:hover { text-decoration: underline; }
+  /* proportion bar behind the first column (Plausible-style) */
+  td.lead { position: relative; }
+  td.lead .bar { position: absolute; left: 0; top: 3px; bottom: 3px; background: rgba(59,130,246,.13); border-radius: 3px; z-index: 0; }
+  td.lead .lead-in { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+  td.lead .lead-in > .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .favi { width: 16px; height: 16px; border-radius: 3px; flex: 0 0 auto; object-fit: contain; }
+  .favi-generic { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: #8b93a1; font-size: 12px; }
+  .flag { flex: 0 0 auto; font-size: 14px; }
   .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 2px; }
   .filters:empty { display: none; }
   .chip { display: inline-flex; align-items: center; gap: 7px; background: #1c2431; border: 1px solid #2f3a4d; color: #cdd6e2; border-radius: 14px; padding: 3px 6px 3px 11px; font-size: 12.5px; }
@@ -135,12 +148,12 @@
   <div class="panel" id="chart"></div>
 
   <div class="grid2">
-    <div><div class="sec-head"><h2>Top sources</h2><button class="all-btn" data-all="source">All sources →</button></div><div class="panel" id="sources"></div></div>
-    <div><div class="sec-head"><h2>Top pages</h2><button class="all-btn" data-all="page">All pages →</button></div><div class="panel" id="pages"></div></div>
+    <div><div class="sec-head"><h2>Top sources</h2><span class="tabs" data-tabs="sources"></span><button class="all-btn" data-panel="sources">All →</button></div><div class="panel" id="sources"></div></div>
+    <div><div class="sec-head"><h2>Pages</h2><span class="tabs" data-tabs="pages"></span><button class="all-btn" data-panel="pages">All →</button></div><div class="panel" id="pages"></div></div>
   </div>
   <div class="grid2">
-    <div><div class="sec-head"><h2>Countries</h2><button class="all-btn" data-all="country">All countries →</button></div><div class="panel" id="countries"></div></div>
-    <div><div class="sec-head"><h2>Devices</h2><button class="all-btn" data-all="device">All devices →</button></div><div class="panel" id="devices"></div></div>
+    <div><div class="sec-head"><h2>Locations</h2><span class="tabs" data-tabs="countries"></span><button class="all-btn" data-panel="countries">All →</button></div><div class="panel" id="countries"></div></div>
+    <div><div class="sec-head"><h2>Devices</h2><span class="tabs" data-tabs="devices"></span><button class="all-btn" data-panel="devices">All →</button></div><div class="panel" id="devices"></div></div>
   </div>
 
   <div class="chart-head">
@@ -191,8 +204,8 @@ const FILTER_KEY = 'pvuv.filters.' + site;
 // the whole dashboard; filters stack (AND), one per dimension. Persisted per
 // site so a reload keeps the view. Only cleanly-supported dims are clickable.
 let filters = [];
-const FILTER_UI = new Set(['source', 'page', 'country', 'device', 'utm_campaign', 'utm_medium']);
-const FILTER_LABEL = { source: 'Source', page: 'Page', country: 'Country', device: 'Device', utm_campaign: 'Campaign', utm_medium: 'Medium' };
+const FILTER_UI = new Set(['source', 'page', 'country', 'region', 'city', 'device', 'browser', 'os', 'utm_campaign', 'utm_medium']);
+const FILTER_LABEL = { source: 'Source', page: 'Page', country: 'Country', region: 'Region', city: 'City', device: 'Device', browser: 'Browser', os: 'OS', utm_campaign: 'Campaign', utm_medium: 'Medium' };
 function loadFilters() {
   try { filters = JSON.parse(localStorage.getItem(FILTER_KEY)) || []; } catch { filters = []; }
   if (!Array.isArray(filters)) filters = [];
@@ -231,6 +244,37 @@ async function loadBrand() {
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+
+// country code → flag emoji + human name (Intl.DisplayNames, no lookup table)
+let regionNames;
+try { regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); } catch { regionNames = null; }
+function flagEmoji(cc) {
+  if (!/^[A-Za-z]{2}$/.test(cc || '')) return '';
+  const A = 0x1F1E6;
+  return `<span class="flag">${String.fromCodePoint(A + cc.toUpperCase().charCodeAt(0) - 65, A + cc.toUpperCase().charCodeAt(1) - 65)}</span>`;
+}
+function countryLabel(cc) {
+  if (regionNames && /^[A-Za-z]{2}$/.test(cc || '')) { try { return regionNames.of(cc.toUpperCase()) || cc; } catch { return cc; } }
+  return cc || '(unknown)';
+}
+
+// source favicon (admin dashboard only): resolve common engines to their domain,
+// use DuckDuckGo's icon service (privacy-respecting), fall back to a link glyph.
+const SOURCE_DOMAIN = {
+  google: 'google.com', bing: 'bing.com', duckduckgo: 'duckduckgo.com', yahoo: 'yahoo.com',
+  baidu: 'baidu.com', yandex: 'yandex.com', twitter: 'twitter.com', x: 'x.com',
+  facebook: 'facebook.com', instagram: 'instagram.com', linkedin: 'linkedin.com',
+  youtube: 'youtube.com', reddit: 'reddit.com', github: 'github.com', bilibili: 'bilibili.com',
+  weibo: 'weibo.com', zhihu: 'zhihu.com', newsletter: '', email: '',
+};
+const GENERIC_ICON = "this.outerHTML='<span class=\\'favi-generic\\'>🔗</span>'";
+function sourceIcon(src) {
+  if (!src || src === '(direct)') return '<span class="favi-generic" title="Direct / none">↗</span>';
+  const key = src.toLowerCase();
+  const domain = src.includes('.') ? src : SOURCE_DOMAIN[key];
+  if (!domain) return '<span class="favi-generic">🔗</span>';
+  return `<img class="favi" loading="lazy" alt="" src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico" onerror="${GENERIC_ICON}">`;
+}
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 const get = async (p, qs = '') =>
@@ -268,46 +312,102 @@ const SIGNAL_INFO = {
 const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
 const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];
 
-// Clickable breakdown table: each row adds a filter for `dim` (Plausible-style).
-// A trailing "+filter" hint appears on hover for filterable dims.
-function renderBreakdown(elId, dim, headers, rows, valueOf, cellsOf) {
-  const el = document.getElementById(elId);
-  const clickable = FILTER_UI.has(dim);
-  el.innerHTML = rows.length
-    ? `<table><tr>${headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>`
-      + rows.map((r, idx) => `<tr${clickable ? ' class="clickable"' : ''} data-i="${idx}">${cellsOf(r).map((c, i) => `<td${i ? ' class="num"' : ''}>${i === 0 && clickable ? `${c} <span class="drill">+ filter</span>` : c}</td>`).join('')}</tr>`).join('') + '</table>'
-    : '<p class="muted">no data yet</p>';
-  if (clickable) el.querySelectorAll('tr.clickable').forEach((tr) =>
-    tr.addEventListener('click', () => addFilter(dim, valueOf(rows[Number(tr.dataset.i)]))));
+// Per-dimension display config: tab label, column headers, filter value, the
+// bar-length basis (Visitors), an optional leading icon (flag / favicon), and
+// the row cells. Drives the panels, their sub-tabs, and the "All …" modal.
+const utmCell = (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)];
+const geoCell = (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)];
+const dimConfig = {
+  source:      { label: 'Sources',   headers: ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => sourceIcon(r.key), cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  page:        { label: 'Pages',     headers: ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'], val: (r) => r.path, bar: (r) => r.uv, cells: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)] },
+  entry_page:  { label: 'Entry',     headers: ['Entry page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
+  exit_page:   { label: 'Exit',      headers: ['Exit page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
+  country:     { label: 'Countries', headers: ['Country', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => flagEmoji(r.key), cells: (r) => [esc(countryLabel(r.key)), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  region:      { label: 'Regions',   headers: ['Region', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  city:        { label: 'Cities',    headers: ['City', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  browser:     { label: 'Browser',   headers: ['Browser', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  os:          { label: 'OS',        headers: ['OS', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  device:      { label: 'Device',    headers: ['Device', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  size:        { label: 'Size',      headers: ['Screen', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  utm_medium:   { label: 'Medium',   headers: ['Medium', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_campaign: { label: 'Campaign', headers: ['Campaign', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_term:     { label: 'Term',     headers: ['Term', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_content:  { label: 'Content',  headers: ['Content', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_source:    { label: 'FT source',   headers: ['First-touch source', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_medium:    { label: 'FT medium',   headers: ['First-touch medium', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_campaign:  { label: 'FT campaign', headers: ['First-touch campaign', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+};
+
+// Shared table markup: proportion bar behind the first column + optional icon.
+function breakdownTableHTML(dim, rows, clickable) {
+  const cfg = dimConfig[dim];
+  const max = Math.max(1, ...rows.map((r) => Number(cfg.bar(r)) || 0));
+  return `<table><tr>${cfg.headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>`
+    + rows.map((r, idx) => {
+        const cells = cfg.cells(r);
+        const pct = Math.max(2, (Number(cfg.bar(r)) || 0) / max * 100);
+        const icon = cfg.icon ? cfg.icon(r) : '';
+        const lead = `<td class="lead"><span class="bar" style="width:${pct.toFixed(1)}%"></span>`
+          + `<span class="lead-in">${icon}<span class="txt">${cells[0]}</span>${clickable ? '<span class="drill">+ filter</span>' : ''}</span></td>`;
+        return `<tr${clickable ? ' class="clickable"' : ''} data-i="${idx}">${lead}${cells.slice(1).map((c) => `<td class="num">${c}</td>`).join('')}</tr>`;
+      }).join('') + '</table>';
 }
 
-// "All sources / pages / …" — full (top-100) breakdown for a dimension in the
-// modal. Rows are clickable to add a filter (see faceted filtering below).
-const ALL_META = {
-  source:  { title: 'All sources',   head: ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'], cols: (r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)], val: (r) => r.key },
-  page:    { title: 'All pages',      head: ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],   cols: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)], val: (r) => r.path },
-  country: { title: 'All countries',  head: ['Country', 'PV', 'PV clean', 'Visitors'],           cols: (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)], val: (r) => r.key },
-  device:  { title: 'All devices',    head: ['Device', 'PV', 'PV clean', 'Visitors'],            cols: (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)], val: (r) => r.key },
+function renderBreakdown(elId, dim, rows) {
+  const el = document.getElementById(elId);
+  const clickable = FILTER_UI.has(dim);
+  el.innerHTML = rows.length ? breakdownTableHTML(dim, rows, clickable) : '<p class="muted">no data yet</p>';
+  if (clickable) el.querySelectorAll('tr.clickable').forEach((tr) =>
+    tr.addEventListener('click', () => addFilter(dim, dimConfig[dim].val(rows[Number(tr.dataset.i)]))));
+}
+
+// ── tabbed breakdown panels (Plausible-style dimension switchers)
+const PANELS = {
+  sources:   ['source'],
+  pages:     ['page', 'entry_page', 'exit_page'],
+  countries: ['country', 'region', 'city'],
+  devices:   ['browser', 'os', 'device', 'size'],
 };
-async function openAll(dim) {
-  const m = ALL_META[dim];
-  if (!m) return;
-  document.getElementById('modalTitle').textContent = m.title;
+const panelState = {}; // mount id → active dim
+function buildTabs() {
+  for (const [mount, dims] of Object.entries(PANELS)) {
+    panelState[mount] = panelState[mount] || dims[0];
+    const host = document.querySelector(`.tabs[data-tabs="${mount}"]`);
+    if (!host) continue;
+    if (dims.length <= 1) { host.innerHTML = ''; continue; }
+    host.innerHTML = dims.map((d) => `<button data-dim="${d}"${d === panelState[mount] ? ' class="active"' : ''}>${esc(dimConfig[d].label)}</button>`).join('');
+    host.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      panelState[mount] = b.dataset.dim;
+      host.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+      loadPanel(mount);
+    }));
+  }
+}
+async function loadPanel(mount) {
+  const dim = panelState[mount];
+  const d = await get('breakdown', `&dim=${dim}`);
+  renderBreakdown(mount, dim, d.rows || []);
+}
+
+// "All …" — full (top-100) list of the panel's ACTIVE dimension in the modal.
+async function openAll(mount) {
+  const dim = panelState[mount];
+  const cfg = dimConfig[dim];
+  document.getElementById('modalTitle').textContent = `All ${cfg.label.toLowerCase()}`;
   document.getElementById('modalBody').innerHTML = '<p class="muted">loading…</p>';
   document.getElementById('modal').hidden = false;
   const d = await get('breakdown', `&dim=${dim}&limit=100`);
   const rows = d.rows || [];
+  const clickable = FILTER_UI.has(dim);
   document.getElementById('modalBody').innerHTML = rows.length
-    ? `<table><tr>${m.head.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>`
-      + rows.map((r, idx) => `<tr class="clickable" data-i="${idx}">${m.cols(r).map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('') + '</table>'
-      + '<p class="muted" style="font-size:12px;margin:10px 2px 0">Click a row to filter the dashboard by it.</p>'
+    ? breakdownTableHTML(dim, rows, clickable)
+      + (clickable ? '<p class="muted" style="font-size:12px;margin:10px 2px 0">Click a row to filter the dashboard by it.</p>' : '')
     : '<p class="muted">no data yet</p>';
-  document.getElementById('modalBody').querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => {
-    const r = rows[Number(tr.dataset.i)];
-    addFilter(dim, m.val(r)); closeModal();
+  if (clickable) document.getElementById('modalBody').querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => {
+    addFilter(dim, cfg.val(rows[Number(tr.dataset.i)])); closeModal();
   }));
 }
-document.querySelectorAll('.all-btn').forEach((b) => b.addEventListener('click', () => openAll(b.dataset.all)));
+document.querySelectorAll('.all-btn').forEach((b) => b.addEventListener('click', () => openAll(b.dataset.panel)));
 
 function closeModal() { document.getElementById('modal').hidden = true; }
 document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -467,21 +567,7 @@ async function load() {
   renderShadowBanner(ov);
   await loadChart();
 
-  const sources = await get('breakdown', '&dim=source');
-  renderBreakdown('sources', 'source', ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'],
-    sources.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
-
-  const pages = await get('breakdown', '&dim=page');
-  renderBreakdown('pages', 'page', ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'],
-    pages.rows, (r) => r.path, (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)]);
-
-  const countries = await get('breakdown', '&dim=country');
-  renderBreakdown('countries', 'country', ['Country', 'PV', 'PV clean', 'Visitors'],
-    countries.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
-
-  const devices = await get('breakdown', '&dim=device');
-  renderBreakdown('devices', 'device', ['Device', 'PV', 'PV clean', 'Visitors'],
-    devices.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
+  await Promise.all(Object.keys(PANELS).map(loadPanel));
 
   await loadUtm();
 
@@ -642,12 +728,10 @@ document.addEventListener('click', (e) => { if (!document.getElementById('switch
 
 async function loadUtm() {
   const dim = document.getElementById('utmDim').value;
-  const label = dim.startsWith('ft_') ? 'First-touch' : 'Value';
   const d = await get('breakdown', `&dim=${dim}`);
   // rows are clickable-to-filter only for the fully-supported UTM dims
   // (utm_campaign / utm_medium); the rest render as a plain table.
-  renderBreakdown('utm', dim, [label, 'PV', 'PV clean', 'Visitors'],
-    d.rows, (r) => r.key, (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)]);
+  renderBreakdown('utm', dim, d.rows || []);
 }
 document.getElementById('utmDim').addEventListener('change', loadUtm);
 document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });
@@ -657,6 +741,7 @@ document.getElementById('interval').addEventListener('change', () => { savePrefs
 restorePrefs();
 loadFilters();
 renderFilters();
+buildTabs();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();
