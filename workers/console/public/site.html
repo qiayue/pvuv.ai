@@ -45,6 +45,8 @@
   .modal-x { margin-left: auto; background: none; border: 0; color: #8b93a1; font-size: 22px; line-height: 1; cursor: pointer; }
   .modal-body { padding: 10px 16px 16px; overflow: auto; }
   .modal-body a { color: #7ab3ff; text-decoration: none; word-break: break-all; }
+  .gbtn { display: inline-block; margin: 14px 2px 0; padding: 8px 13px; border: 1px solid #313847; border-radius: 8px; font-size: 13px; }
+  .gbtn:hover { background: #1d2230; border-color: #3b4457; }
   .switcher { position: relative; }
   .title-btn { font: 700 16px system-ui, sans-serif; color: #e6e8eb; background: none; border: 0; cursor: pointer; padding: 4px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 7px; }
   .title-btn:hover { background: #171a21; }
@@ -177,10 +179,17 @@ async function openSourceDetail(source) {
   const d = await get('breakdown', `&dim=referrer&key=${encodeURIComponent(source)}`);
   const rows = d.rows || [];
   const note = '<p class="muted" style="font-size:12px;margin:10px 2px 0">Most external sites expose only their domain — browsers strip the path from cross-site referrers (Referrer-Policy). Full paths appear for same-site referrers or links tagged with UTM parameters.</p>';
-  document.getElementById('modalBody').innerHTML = rows.length
+  // helper: since the exact linking page is usually unknowable, offer a Google
+  // `site:` search of the referring domain for this site's domain, opened in a
+  // new tab — the user investigates manually (nothing is fetched or stored).
+  const isDomain = source && source !== '(direct)' && source.includes('.');
+  const gbtn = isDomain && siteDomainPrimary
+    ? `<a class="gbtn" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent('site:' + source + ' "' + siteDomainPrimary + '"')}">🔍 Find linking pages on ${esc(source)} via Google ↗</a>`
+    : '';
+  document.getElementById('modalBody').innerHTML = (rows.length
     ? '<table><tr><th>Referring URL</th><th class="num">Sessions</th><th class="num">PV</th><th class="num">Visitors</th></tr>' +
-      rows.map((r) => `<tr><td>${r.key === '(none)' ? '<span class="muted">(no referrer — direct/unknown)</span>' : `<a href="${esc(r.key)}" target="_blank" rel="noreferrer noopener">${esc(r.key)}</a>`}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>' + note
-    : '<p class="muted">no referring pages recorded for this source in this period</p>';
+      rows.map((r) => `<tr><td>${r.key === '(none)' ? '<span class="muted">(no referrer — direct/unknown)</span>' : `<a href="${esc(r.key)}" target="_blank" rel="noreferrer noopener">${esc(r.key)}</a>`}</td><td class="num">${fmt(r.sessions)}</td><td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td></tr>`).join('') + '</table>'
+    : '<p class="muted">no referring pages recorded for this source in this period</p>') + gbtn + note;
 }
 function closeModal() { document.getElementById('modal').hidden = true; }
 document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -401,12 +410,13 @@ function restorePrefs() {
 
 // fetch the owner's sites: names the header/realtime row + powers the switcher
 let allSites = [];
+let siteDomainPrimary = ''; // this site's first allowed domain (for the Google-search helper)
 async function loadSiteName() {
   try {
     const { sites } = await (await guard(await fetch('/api/sites'))).json();
     allSites = sites || [];
     const s = allSites.find((x) => x.site_id === site);
-    if (s && s.name) siteName = s.name;
+    if (s) { if (s.name) siteName = s.name; siteDomainPrimary = siteDomain(s); }
   } catch { /* fall back to the id */ }
   document.getElementById('titleText').textContent = siteName;
 }
