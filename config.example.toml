@@ -61,9 +61,14 @@ honeypot_enabled           = true
 [population]
 fp_cluster_min_visitors    = 20     # fp_hash shared by >= N visitor_ids -> flag
 ip24_share_threshold       = 0.30   # a /24 contributing >= 30% of site traffic -> flag
+ip24_min_events            = 100    # ...but only when the /24 sent >= N pageviews (small sites: noise guard)
+cookie_reset_min_visitors  = 10     # same fp+/24 cycling through >= N one-shot visitor_ids -> cookie-reset farm
+cookie_reset_epv_max       = 1.5    # ...where avg events per visitor_id <= this ("each appearing once")
 interval_cv_bot_ceiling    = 0.20   # per-visitor interval CV <= this -> mechanical
-path_signature_min_count   = 50     # identical path+dwell signature repeated >= N -> flag
-baseline_deviation_sigma   = 4.0    # MAD-based deviation to raise an anomaly
+interval_min_n             = 20     # ...only judged once a visitor has >= N measured intervals
+max_clusters_per_run       = 50     # safety cap: top-N clusters (by members) re-verdicted per daily run
+path_signature_min_count   = 50     # identical path+dwell signature repeated >= N -> flag (M3)
+baseline_deviation_sigma   = 4.0    # MAD-based deviation to raise an anomaly (M3)
 
 # ------------------------------------------------------------------
 # Cross-site blocklist behavior

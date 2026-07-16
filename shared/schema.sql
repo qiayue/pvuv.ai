@@ -116,6 +116,7 @@ CREATE TABLE visitor_profiles (
   site_id TEXT NOT NULL, visitor_id TEXT NOT NULL,
   events_count INTEGER DEFAULT 0, sessions_count INTEGER DEFAULT 0,
   interval_mean REAL, interval_m2 REAL, interval_cv REAL,
+  interval_n INTEGER NOT NULL DEFAULT 0,  -- Welford sample count (added by 0007)
   active_hours INTEGER,
   fp_hash TEXT, ip24_hash TEXT, asn INTEGER,
   bot_score INTEGER DEFAULT 0, verdict TEXT DEFAULT 'clean',

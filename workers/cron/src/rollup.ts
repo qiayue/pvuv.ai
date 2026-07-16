@@ -41,7 +41,7 @@ export async function runHourlyRollup(env: Env): Promise<void> {
 }
 
 /** All existing events_YYYYMM partitions. */
-async function existingEventTables(db: D1Database): Promise<Set<string>> {
+export async function existingEventTables(db: D1Database): Promise<Set<string>> {
   const rows = await db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'events_[0-9][0-9][0-9][0-9][0-9][0-9]'")
     .all<{ name: string }>();
@@ -61,7 +61,7 @@ function eventSpan(tables: string[], cols: string, siteId: string, startTs: numb
   return { sql: `(${parts.join(' UNION ALL ')})`, binds: tables.flatMap(() => [siteId, startTs, endTs]) };
 }
 
-async function rollupSiteDay(
+export async function rollupSiteDay(
   db: D1Database, siteId: string, day: string, startTs: number, endTs: number, existing: Set<string>,
 ): Promise<void> {
   const tables = tablesForSpan(startTs, endTs, existing);
