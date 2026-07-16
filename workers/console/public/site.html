@@ -326,7 +326,7 @@ function renderCards(o) {
   const pct = (v) => v == null ? '–' : (v * 100).toFixed(1) + '%';
   const card = (k, v, h) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div>${h ? `<div class="h">${h}</div>` : ''}</div>`;
   document.getElementById('cards').innerHTML =
-    card('Pageviews', fmt(o.pv)) + card('Visitors', fmt(o.uv)) + card('Sessions', fmt(o.sessions)) +
+    card('Visitors', fmt(o.uv)) + card('Sessions', fmt(o.sessions)) + card('Pageviews', fmt(o.pv)) +
     card('Pages / visitor', perVisitor) +
     card('Bounce rate (engaged)', pct(o.bounce_rate), 'GA4 engagement metric') +
     card('Bounce rate (1-page)', pct(o.bounce_rate_single), 'UA / Plausible style') +
