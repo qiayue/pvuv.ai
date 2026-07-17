@@ -15,7 +15,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter } from './queries';
 import { verifySession } from './auth';
 import { hmacSign } from '../../../shared/ids';
 
@@ -62,6 +62,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
   }
   if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
+  if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
   if (resource === 'traffic') {
     return json(await traffic(env.DB, siteId, period, {
       verdict: q.get('verdict'),

@@ -99,6 +99,14 @@
   .chip .x { background: #313d50; border: 0; color: #cdd6e2; width: 17px; height: 17px; border-radius: 50%; cursor: pointer; line-height: 1; font-size: 13px; padding: 0; }
   .chip .x:hover { background: #47566e; color: #fff; }
   .filters .clear { background: none; border: 0; color: #8b93a1; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; }
+  .alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .alerts:empty { display: none; }
+  .alert { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 8px; border: 1px solid; font-size: 13px; }
+  .alert .ico { flex: 0 0 auto; }
+  .alert .body b { display: block; margin-bottom: 1px; }
+  .alert .body span { opacity: .85; }
+  .alert-warning { border-color: #4a3f1e; background: #241f10; color: #e8d9a0; }
+  .alert-critical { border-color: #5a2020; background: #241010; color: #f3b0b0; }
 </style>
 </head>
 <body>
@@ -135,6 +143,7 @@
 <main>
   <div class="rt" id="realtime"></div>
   <div class="shadow-banner" id="shadowBanner" hidden></div>
+  <div class="alerts" id="alerts"></div>
   <div class="filters" id="filters"></div>
   <div class="cards" id="cards"></div>
 
@@ -564,10 +573,23 @@ function donut(t) {
     </div>`;
 }
 
+// "Unreasonable data" alerts — self-contained plausibility checks (server-side).
+async function loadAlerts() {
+  const el = document.getElementById('alerts');
+  let list = [];
+  try { list = (await get('alerts')).alerts || []; } catch { el.innerHTML = ''; return; }
+  el.innerHTML = list.map((x) => {
+    const crit = x.severity === 'critical';
+    return `<div class="alert alert-${crit ? 'critical' : 'warning'}"><span class="ico">${crit ? '⛔' : '⚠️'}</span>`
+      + `<span class="body"><b>${esc(x.title)}</b><span>${esc(x.detail)}</span></span></div>`;
+  }).join('');
+}
+
 async function load() {
   const ov = await get('overview');
   renderCards(ov);
   renderShadowBanner(ov);
+  loadAlerts();
   await loadChart();
 
   await Promise.all(Object.keys(PANELS).map(loadPanel));

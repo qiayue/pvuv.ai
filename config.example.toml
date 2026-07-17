@@ -49,6 +49,22 @@ has_interaction           = 10
 has_page_leave            = 10
 
 # ------------------------------------------------------------------
+# Dashboard "unreasonable data" alerts — self-contained plausibility
+# checks over the selected period (no external baseline). Each is a
+# fraction (0..1) or a raw ratio; a check fires when the measured value
+# crosses it. min_pageviews mutes small samples.
+# ------------------------------------------------------------------
+[alerts]
+min_pageviews          = 50      # below this many pageviews, stay silent
+invalid_share          = 0.30    # (bot+suspect)/pageviews above this → alert
+datacenter_share       = 0.25    # datacenter-ASN pageviews / pageviews
+fake_search_share      = 0.10    # forged/fake search-referrer pageviews / pageviews
+zero_interaction_share = 0.40    # no-interaction pageviews / pageviews
+bounce_low             = 0.05    # single-page bounce BELOW this is implausibly low
+pages_per_visitor_high = 15      # pageviews/visitor above this = scraping-like
+source_concentration   = 0.60    # a single non-direct source's session share
+
+# ------------------------------------------------------------------
 # Detection toggles
 # ------------------------------------------------------------------
 [detection]

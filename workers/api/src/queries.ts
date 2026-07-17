@@ -16,6 +16,7 @@
 import { FLAG, ALL_FLAGS, type FlagName } from '../../../shared/flags';
 import { localYMD, localMidnightUtc, localDaySpan, addDays, weekdayMon0, dayStr, tzOffsetMs } from '../../../shared/tz';
 import { monthSuffix } from '../../../shared/events';
+import { CONFIG } from '../../../shared/config.gen';
 
 // ---------------------------------------------------------------------------
 // periods: "7d" | "30d" | "90d" | calendar presets → inclusive day range
@@ -795,6 +796,86 @@ export async function quality(db: D1Database, siteId: string, period: Period, fi
   }
 
   return { totals, daily, flags };
+}
+
+// ---------------------------------------------------------------------------
+// GET /sites/:id/alerts — rule-based "this data looks wrong" checks over the
+// selected period. Self-contained (no external baseline); thresholds from
+// config [alerts]. min_pageviews mutes small samples so quiet sites stay quiet.
+// ---------------------------------------------------------------------------
+
+const ALERT_DEFAULTS = {
+  min_pageviews: 50, invalid_share: 0.30, datacenter_share: 0.25,
+  fake_search_share: 0.10, zero_interaction_share: 0.40, bounce_low: 0.05,
+  pages_per_visitor_high: 15, source_concentration: 0.60,
+};
+
+export interface Alert { id: string; severity: 'warning' | 'critical'; title: string; detail: string; }
+
+export async function alerts(db: D1Database, siteId: string, period: Period, filters: Filter[] = []) {
+  const A = { ...ALERT_DEFAULTS, ...(CONFIG.alerts ?? {}) };
+  const ev = await eventsSiteAgg(db, siteId, period.startTs, period.endTs, filters);
+  const pv = ev.pv;
+  if (pv < A.min_pageviews) return { alerts: [] as Alert[], pv };
+
+  // pageview-level flag tallies (datacenter / no-interaction / forged-search)
+  const FAKE = FLAG.SEARCH_REF_DATACENTER | FLAG.FORGED_SEARCH_REFERRER;
+  const ef = evFilter(filters);
+  let dc = 0, zero = 0, fake = 0;
+  for (const table of await eventTables(db, period.startTs, period.endTs)) {
+    const r = await db.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN bot_flags & ${FLAG.DATACENTER_ASN} THEN 1 ELSE 0 END), 0) AS dc,
+              COALESCE(SUM(CASE WHEN bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE} THEN 1 ELSE 0 END), 0) AS zero,
+              COALESCE(SUM(CASE WHEN bot_flags & ${FAKE} THEN 1 ELSE 0 END), 0) AS fake
+       FROM ${table} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?${ef.sql ? ` AND ${ef.sql}` : ''}`,
+    ).bind(siteId, period.startTs, period.endTs, ...ef.binds).first<{ dc: number; zero: number; fake: number }>();
+    dc += r?.dc ?? 0; zero += r?.zero ?? 0; fake += r?.fake ?? 0;
+  }
+
+  const s = await sessionAgg(db, siteId, period.startTs, period.endTs, filters);
+  const sf = seFilter(filters);
+  const topSrc = await db.prepare(
+    `SELECT source AS key, COUNT(*) AS n FROM sessions
+     WHERE site_id = ? AND started_at >= ? AND started_at < ? AND source IS NOT NULL${sf.sql ? ` AND ${sf.sql}` : ''}
+     GROUP BY source ORDER BY n DESC LIMIT 1`,
+  ).bind(siteId, period.startTs, period.endTs, ...sf.binds).first<{ key: string; n: number }>();
+
+  const out: Alert[] = [];
+  const pct = (x: number) => (x * 100).toFixed(1) + '%';
+  const sev = (ratio: number): Alert['severity'] => (ratio >= 2 ? 'critical' : 'warning');
+  const add = (id: string, ratio: number, title: string, detail: string) => out.push({ id, severity: sev(ratio), title, detail });
+
+  const invalid = (ev.suspect_count + ev.bot_count) / pv;
+  if (invalid > A.invalid_share) add('invalid_share', invalid / A.invalid_share,
+    'High invalid-traffic share', `${pct(invalid)} of pageviews are bot/suspect (alert above ${pct(A.invalid_share)}).`);
+
+  const dcShare = dc / pv;
+  if (dcShare > A.datacenter_share) add('datacenter', dcShare / A.datacenter_share,
+    'Lots of datacenter traffic', `${pct(dcShare)} of pageviews come from cloud/hosting IPs (alert above ${pct(A.datacenter_share)}).`);
+
+  const fakeShare = fake / pv;
+  if (fakeShare > A.fake_search_share) add('fake_search', fakeShare / A.fake_search_share,
+    'Forged search-referrer traffic', `${pct(fakeShare)} of pageviews claim a search referrer but look forged (alert above ${pct(A.fake_search_share)}).`);
+
+  const zeroShare = zero / pv;
+  if (zeroShare > A.zero_interaction_share) add('zero_interaction', zeroShare / A.zero_interaction_share,
+    'Many no-interaction visits', `${pct(zeroShare)} of pageviews had no click / scroll / leave (alert above ${pct(A.zero_interaction_share)}).`);
+
+  if (s.bounce_rate_single != null && ev.sessions >= 30 && s.bounce_rate_single < A.bounce_low)
+    out.push({ id: 'bounce_low', severity: 'warning', title: 'Implausibly low bounce rate',
+      detail: `Single-page bounce is only ${pct(s.bounce_rate_single)} — real audiences rarely fall below ${pct(A.bounce_low)}; often automated multi-hit traffic.` });
+
+  const ppv = ev.uv ? pv / ev.uv : 0;
+  if (ppv > A.pages_per_visitor_high) add('pages_per_visitor', ppv / A.pages_per_visitor_high,
+    'Very high pages per visitor', `${ppv.toFixed(1)} pages/visitor (alert above ${A.pages_per_visitor_high}) — can indicate scraping.`);
+
+  if (topSrc && ev.sessions >= 30) {
+    const share = topSrc.n / ev.sessions;
+    if (share > A.source_concentration) add('source_concentration', share / A.source_concentration,
+      'One source dominates', `“${topSrc.key}” is ${pct(share)} of sessions (alert above ${pct(A.source_concentration)}) — check for referral spam or forged referrers.`);
+  }
+
+  return { alerts: out, pv };
 }
 
 // ---------------------------------------------------------------------------
