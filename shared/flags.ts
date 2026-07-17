@@ -39,6 +39,14 @@ export const FLAG = {
   MOBILE_NO_MOTION: 0x1000,
   /** accelerationIncludingGravity perfectly static across samples (§4.6) */
   MOTION_STATIC: 0x2000,
+  /** referrer claims a search engine but the request comes from a datacenter
+   *  ASN — real organic-search users are on residential/mobile networks, so a
+   *  "Google/Bing" visit from a cloud/hosting IP is almost always forged */
+  SEARCH_REF_DATACENTER: 0x4000,
+  /** referrer claims a search engine but is structurally implausible: http (not
+   *  https), a leaked ?q= query (Google/Bing strip it), or a Sec-Fetch-Site that
+   *  contradicts an external referrer (same-origin/none) */
+  FORGED_SEARCH_REFERRER: 0x8000,
 } as const;
 
 export type FlagName = keyof typeof FLAG;
@@ -63,6 +71,8 @@ export const FLAG_CONFIG_KEY: Record<FlagName, string> = {
   SCREEN_DEVICE_MISMATCH: 'screen_device_mismatch',
   MOBILE_NO_MOTION: 'mobile_no_motion',
   MOTION_STATIC: 'motion_static',
+  SEARCH_REF_DATACENTER: 'search_ref_datacenter',
+  FORGED_SEARCH_REFERRER: 'forged_search_referrer',
 } as const;
 
 /** All flag names, in ascending bit order. */

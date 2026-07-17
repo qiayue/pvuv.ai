@@ -460,6 +460,7 @@ import type { XPayload } from '../../shared/flags';
         body: JSON.stringify({
           s: siteId, vid, sid: currentSid || session(), x,
           sw: screen.width, sh: screen.height, lang: nav.language,
+          r: pageReferrer || undefined,
           i: interacted ? 1 : 0, state: state || undefined,
         }),
       }).then((r) => r.json() as Promise<{ v: string; ok: number; state?: string }>);

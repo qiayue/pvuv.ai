@@ -39,6 +39,8 @@ honeypot               = "hard"   # 0x0400 hidden honeypot link followed
 screen_device_mismatch = 10       # 0x0800 per contradiction (screen / touch / cores)
 mobile_no_motion       = 15       # 0x1000 mobile UA but no motion data (Android)
 motion_static          = 10       # 0x2000 accel-incl-gravity perfectly constant
+search_ref_datacenter  = 35       # 0x4000 search-engine referrer from a datacenter ASN (stacks with datacenter_asn → bot)
+forged_search_referrer = 40       # 0x8000 implausible search-engine referrer (http / ?q= leak / Sec-Fetch contradiction)
 
 [trust_credits]
 # Subtracted from bot_score (make legit traffic look cleaner).

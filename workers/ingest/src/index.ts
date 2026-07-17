@@ -182,6 +182,7 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
       hadInteraction: ev.hi === 1,
       isPageLeave: ev.e === 'page_leave',
       blocklisted,
+      referrer: typeof ev.r === 'string' ? ev.r : undefined,
     });
     rows.push({ ...row, ...scored });
   }
@@ -216,6 +217,8 @@ interface VerdictRequest {
   lang?: string;
   /** whether human interaction has occurred on this page (0/1) */
   i?: 0 | 1;
+  /** navigation referrer (document.referrer) — for forged-search detection at the gate */
+  r?: string;
   /** current _pv_v cookie value (cookies don't cross origins, so it rides the body) */
   state?: string;
 }
@@ -273,6 +276,7 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
     hadInteraction: interacted,
     isPageLeave: false,
     blocklisted,
+    referrer: typeof body.r === 'string' ? body.r : undefined,
   });
 
   // progressive stacking: once judged bot, stay bot for this state chain (§7.3)

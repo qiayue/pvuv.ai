@@ -37,6 +37,23 @@ export interface ScoreInput {
   isPageLeave: boolean;
   /** fp_hash / ip24_hash matched the KV blocklist */
   blocklisted: boolean;
+  /** raw navigation referrer (document.referrer) — for forged-search detection */
+  referrer?: string | undefined;
+}
+
+/** A search-engine referrer host (majors that organic-traffic forgers imitate),
+ *  ignoring a leading www. Google/Yandex span many ccTLDs. */
+function searchEngineHost(host: string): 'google' | 'bing' | 'other' | null {
+  const h = host.replace(/^www\./, '');
+  if (/^google\.[a-z.]{2,}$/.test(h)) return 'google';
+  if (h === 'bing.com') return 'bing';
+  if (
+    h === 'duckduckgo.com' || h === 'yahoo.com' || h === 'search.yahoo.com'
+    || h === 'baidu.com' || h === 'm.baidu.com' || /^yandex\.[a-z.]{2,}$/.test(h)
+    || h === 'ecosia.org' || h === 'search.brave.com' || h === 'qwant.com'
+    || h === 'startpage.com' || h === 'sogou.com' || h === 'so.com'
+  ) return 'other';
+  return null;
 }
 
 export interface ScoreResult {
@@ -99,6 +116,36 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
   }
 
   if (input.blocklisted) fire('BLOCKLIST_CLUSTER');
+
+  // --- forged organic-search referrer (§6.1) ---------------------------------
+  // Real Google/Bing organic clicks arrive over https, from residential/mobile
+  // networks, with the query stripped from the referrer and Sec-Fetch-Site:
+  // cross-site. Crawlers/AI browsers that spoof `referer: google.com` to pass as
+  // organic search break one of these. Two independent signals:
+  //   • search referrer + datacenter ASN  (real searchers aren't in the cloud)
+  //   • structurally implausible referrer  (http, ?q= leak, sec-fetch mismatch)
+  if (input.referrer) {
+    let refHost: string | null = null;
+    let scheme = '';
+    let hasQuery = false;
+    try {
+      const u = new URL(input.referrer);
+      refHost = u.hostname.toLowerCase();
+      scheme = u.protocol;
+      hasQuery = u.search.length > 1 || /\/search\b/i.test(u.pathname);
+    } catch { /* unparseable referrer → not a usable signal */ }
+
+    const engine = refHost ? searchEngineHost(refHost) : null;
+    if (engine) {
+      if (input.asnType === 'datacenter') fire('SEARCH_REF_DATACENTER');
+
+      const sfs = input.headers.get('sec-fetch-site');
+      const notHttps = scheme !== 'https:';                       // majors are https-only
+      const queryLeak = engine === 'google' && hasQuery;          // Google always trims to origin
+      const secFetchContradiction = sfs === 'same-origin' || sfs === 'none';    // ≠ external nav
+      if (notHttps || queryLeak || secFetchContradiction) fire('FORGED_SEARCH_REFERRER');
+    }
+  }
 
   // --- verdict ---
   if (hard) score = 100;
