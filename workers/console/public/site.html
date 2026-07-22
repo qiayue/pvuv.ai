@@ -234,6 +234,9 @@
     <div class="panel" id="flags"></div>
   </div>
 
+  <h2>Ad protection</h2>
+  <div class="panel" id="adguard"></div>
+
   <h2>High-score traffic (drill-down)</h2>
   <div class="panel" id="traffic"></div>
 
@@ -726,6 +729,69 @@ document.getElementById('aiGen').addEventListener('click', async () => {
   finally { btn.disabled = false; btn.textContent = label; }
 });
 
+// ── Ad protection panel (§7.5 / §11.5): current tier + per-tier impact estimate
+// (block rate & est. false-positive), block reasons, top blocked sources, and a
+// block-volume sparkline. The tier can be switched here and applies via /v with
+// no re-embed.
+const MODE_HELP = {
+  off: 'ads always load — protection disabled',
+  loose: 'load ads only for clean traffic (blocks all suspect + bad)',
+  balanced: 'block bots/crawlers always; suspect only without interaction',
+  strict: 'load ads only for clean traffic that also interacted',
+};
+async function loadAdguard() {
+  const el = document.getElementById('adguard');
+  let d;
+  try { d = await get('adguard'); } catch { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
+  const pctf = (x) => (x * 100).toFixed(1) + '%';
+  const MODES = ['off', 'loose', 'balanced', 'strict'];
+  const tierRow = (name) => {
+    const t = d.tiers[name]; if (!t) return '';
+    const cur = d.current_mode === name;
+    return `<tr${cur ? ' style="background:#141a26"' : ''}>
+      <td>${name}${cur ? ' <span class="muted">· current</span>' : ''}</td>
+      <td class="num">${pctf(t.block_rate)}</td>
+      <td class="num">${fmt(t.block)}</td>
+      <td class="num">${pctf(t.fp_rate)}</td></tr>`;
+  };
+  const reasons = (d.reasons || []).map((r) =>
+    `<tr><td title="${esc(signalHelp(r.flag))}">${esc(signalLabel(r.flag))}</td><td class="num">${fmt(r.n)}</td></tr>`).join('');
+  const sources = (d.sources || []).map((s) =>
+    `<tr><td>${esc(s.source)}</td><td class="num">${fmt(s.sessions)}</td><td class="num">${fmt(s.pv)}</td></tr>`).join('');
+  const trend = (d.trend || []).map((x) => x.blocked);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="font-size:13px">Mode
+        <select id="agModeSel" style="margin-left:6px;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px;font:inherit">
+          ${MODES.map((m) => `<option value="${m}"${m === d.current_mode ? ' selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </label>
+      <span class="muted" id="agModeMsg" style="font-size:12px">${esc(MODE_HELP[d.current_mode] || '')}</span>
+    </div>
+    <p class="muted" style="margin:14px 0 6px;font-size:12px">Estimated impact over this period (${fmt(d.pv)} pageviews). “Est. false-positive” = share of blocked traffic that still showed human interaction — treat as an upper bound.</p>
+    <table><tr><th>Tier</th><th class="num">Block rate</th><th class="num">Blocked PV</th><th class="num">Est. false-positive</th></tr>
+      ${['loose', 'balanced', 'strict'].map(tierRow).join('')}</table>
+    ${trend.some((v) => v > 0) ? `<div style="margin-top:12px;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:12px">Blocked/day</span>${sparkline(trend)}</div>` : ''}
+    <div class="grid2" style="margin-top:16px">
+      <div><h3 style="font-size:13px;margin:0 0 8px">Block reasons</h3>
+        ${reasons ? `<table><tr><th>Signal</th><th class="num">Events</th></tr>${reasons}</table>` : '<p class="muted">none</p>'}</div>
+      <div><h3 style="font-size:13px;margin:0 0 8px">Top blocked sources</h3>
+        ${sources ? `<table><tr><th>Source</th><th class="num">Sessions</th><th class="num">PV</th></tr>${sources}</table>` : '<p class="muted">none</p>'}</div>
+    </div>`;
+  document.getElementById('agModeSel').addEventListener('change', async (e) => {
+    const mode = e.target.value;
+    const msg = document.getElementById('agModeMsg');
+    msg.textContent = 'saving…';
+    try {
+      const r = await guard(await fetch(`/api/sites/${site}/adguard`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode }),
+      }));
+      if (r.ok) { msg.textContent = (MODE_HELP[mode] || '') + ' · saved, applies on next page load'; loadAdguard(); }
+      else msg.textContent = 'save failed';
+    } catch { msg.textContent = 'save failed'; }
+  });
+}
+
 async function load() {
   const ov = await get('overview');
   const al = await loadAlerts();
@@ -747,6 +813,8 @@ async function load() {
       + '<table><tr><th>Signal</th><th class="num">Events</th></tr>' +
       firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
     : '<p class="muted">no signals fired — traffic looks clean</p>';
+
+  await loadAdguard();
 
   // high-score drill-down, aggregated by VISITOR (one row per suspicious visitor,
   // not per event): event/session counts, worst score/verdict, union of evidence.

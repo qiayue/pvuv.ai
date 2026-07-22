@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -402,6 +402,29 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true });
   }
 
+  // ad-protection mode switch (§7.5): change the tier (and optionally the ad
+  // client) after creation. Persists to D1 and invalidates the KV site-config
+  // cache so the gate (/v) re-reads it; the SDK picks up the new mode via /v.
+  const agMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/adguard$/);
+  if (agMatch && request.method === 'POST') {
+    const siteId = agMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+    let body: { mode?: string; adclient?: string };
+    try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    if (!ADGUARD_MODES.has(body.mode ?? '')) return json({ error: 'invalid mode' }, 400);
+    const mode = body.mode!;
+    const sets: string[] = ['adguard_mode = ?'];
+    const binds: unknown[] = [mode];
+    if (body.adclient !== undefined) {
+      const ac = body.adclient && /^ca-pub-\d{6,20}$/.test(body.adclient) ? body.adclient : null;
+      sets.push('adclient = ?'); binds.push(ac);
+    }
+    await env.DB.prepare(`UPDATE sites SET ${sets.join(', ')} WHERE site_id = ?`).bind(...binds, siteId).run();
+    await env.SITE_CONFIG.delete(`site:${siteId}`); // force the gate to re-read the new mode
+    return json({ ok: true, adguard_mode: mode });
+  }
+
   // AI report generation (§13): explicit POST action, calls the configured LLM
   // over a factual snapshot and stores the markdown in ai_reports.
   const reportMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/ai_report$/);
@@ -456,6 +479,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
     }
     if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
+    if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
     if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
     if (resource === 'funnel') return json(await funnel(env.DB, siteId, period, parseFunnelSteps(q.get('steps')), filters));

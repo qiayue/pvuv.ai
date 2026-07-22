@@ -298,12 +298,14 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
   // recorded (via /in) so the owner can backtest "at this tier, X% would block"
   // before enforcement begins. `shadow:1` lets the SDK/telemetry know.
   if (site.shadow_until && Date.now() < site.shadow_until) {
-    return json({ v: verdict, ok: 1, shadow: 1, state });
+    return json({ v: verdict, ok: 1, shadow: 1, m: site.adguard_mode, state });
   }
 
   // ok=1 → load now; suspect → client requires stronger interaction evidence
-  // (§7.4); bot/crawler → never (verified crawlers get the page, not the ads)
-  return json({ v: verdict, ok: verdict === 'clean' ? 1 : 0, state });
+  // (§7.4); bot/crawler → never (verified crawlers get the page, not the ads).
+  // `m` carries the site's current tier so the console can switch modes (§7.5)
+  // and the SDK applies it without the site having to re-embed the snippet.
+  return json({ v: verdict, ok: verdict === 'clean' ? 1 : 0, m: site.adguard_mode, state });
 }
 
 function json(data: unknown): Response {

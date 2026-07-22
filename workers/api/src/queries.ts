@@ -1148,6 +1148,84 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
 }
 
 // ---------------------------------------------------------------------------
+// GET /sites/:id/adguard — ad-protection impact estimate & panel data (§7.5,
+// §11.5). For each tier (loose/balanced/strict) it estimates the block rate and
+// a false-positive rate ("share of blocked traffic that shows human-interaction
+// traits", §7.5), plus the block-reason distribution, top blocked source
+// channels, and the daily block-volume trend. All from stored verdicts/flags —
+// a preview of what a tier would do, so owners can tune before enforcing.
+//
+// Tier block sets (mirrors the SDK's client-side decision, §7.2):
+//   loose    — block every non-clean pageview
+//   balanced — block bot/crawler always; suspect only without interaction
+//   strict   — additionally block clean pageviews that showed no interaction
+// "Engaged" ≈ the zero-interaction-and-no-leave flag is NOT set (best available
+// proxy for a human-interaction trait at ad-decision time).
+// ---------------------------------------------------------------------------
+
+export async function adguardImpact(db: D1Database, siteId: string, period: Period) {
+  const ZERO = FLAG.ZERO_INTERACTION_NO_LEAVE;
+  const acc: Record<'clean' | 'suspect' | 'bot' | 'crawler', { n: number; eng: number }> = {
+    clean: { n: 0, eng: 0 }, suspect: { n: 0, eng: 0 }, bot: { n: 0, eng: 0 }, crawler: { n: 0, eng: 0 },
+  };
+  const flags: Record<string, number> = {};
+  const fcols = ALL_FLAGS.map((n) => `SUM(CASE WHEN bot_flags & ${FLAG[n]} THEN 1 ELSE 0 END) AS ${n}`).join(', ');
+  for (const t of await eventTables(db, period.startTs, period.endTs)) {
+    const rows = await db.prepare(`
+      SELECT verdict, COUNT(*) AS n,
+        SUM(CASE WHEN bot_flags & ${ZERO} THEN 0 ELSE 1 END) AS eng
+      FROM ${t} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?
+      GROUP BY verdict
+    `).bind(siteId, period.startTs, period.endTs).all<{ verdict: string; n: number; eng: number }>();
+    for (const r of rows.results) {
+      const a = acc[r.verdict as keyof typeof acc];
+      if (a) { a.n += r.n; a.eng += r.eng; }
+    }
+    // block-reason flags over would-be-blocked (non-clean) pageviews
+    const fr = await db.prepare(
+      `SELECT ${fcols} FROM ${t} WHERE site_id = ? AND event = 'pageview' AND verdict != 'clean' AND ts >= ? AND ts < ?`,
+    ).bind(siteId, period.startTs, period.endTs).first<Record<FlagName, number>>();
+    for (const n of ALL_FLAGS) flags[n] = (flags[n] ?? 0) + (fr?.[n] ?? 0);
+  }
+
+  const pv = acc.clean.n + acc.suspect.n + acc.bot.n + acc.crawler.n;
+  const botcra = acc.bot.n + acc.crawler.n;
+  const engBotcra = acc.bot.eng + acc.crawler.eng;
+  const tier = (block: number, engBlocked: number) => ({
+    block, block_rate: pv ? block / pv : 0, fp_rate: block ? engBlocked / block : 0,
+  });
+  const tiers = {
+    // engaged-in-blocked: balanced/strict block only the NON-engaged of the
+    // conditional bucket (suspect / clean), so those contribute 0 engaged.
+    loose: tier(acc.suspect.n + botcra, acc.suspect.eng + engBotcra),
+    balanced: tier(botcra + (acc.suspect.n - acc.suspect.eng), engBotcra),
+    strict: tier(acc.suspect.n + botcra + (acc.clean.n - acc.clean.eng), acc.suspect.eng + engBotcra),
+  };
+
+  const src = await db.prepare(`
+    SELECT COALESCE(source, '(direct)') AS source, COUNT(*) AS sessions, COALESCE(SUM(pageviews), 0) AS pv
+    FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ? AND verdict != 'clean'
+    GROUP BY COALESCE(source, '(direct)') ORDER BY sessions DESC LIMIT 8
+  `).bind(siteId, period.startTs, period.endTs).all<{ source: string; sessions: number; pv: number }>();
+
+  const trend = await db.prepare(`
+    SELECT day, COALESCE(bot_count, 0) + COALESCE(crawler_count, 0) + COALESCE(suspect_count, 0) AS blocked
+    FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day
+  `).bind(siteId, period.start, period.end).all<{ day: string; blocked: number }>();
+
+  const reasons = ALL_FLAGS.map((n) => ({ flag: n, n: flags[n] ?? 0 }))
+    .filter((r) => r.n > 0).sort((a, b) => b.n - a.n).slice(0, 8);
+  const modeRow = await db.prepare('SELECT adguard_mode FROM sites WHERE site_id = ?')
+    .bind(siteId).first<{ adguard_mode: string }>();
+
+  return {
+    pv, current_mode: modeRow?.adguard_mode ?? 'off',
+    verdicts: { clean: acc.clean.n, suspect: acc.suspect.n, bot: acc.bot.n, crawler: acc.crawler.n },
+    tiers, reasons, sources: src.results, trend: trend.results,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // GET /v1/ranking — cross-site clean-traffic ranking (§14). Server-token only.
 //
 // An optional adapter for an external ranking/scoring system. It reads only

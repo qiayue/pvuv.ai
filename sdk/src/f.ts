@@ -424,7 +424,9 @@ import type { XPayload } from '../../shared/flags';
   // infrastructure problem — a missed block is cheaper than lost revenue.
   // -------------------------------------------------------------------------
 
-  const agMode = script.getAttribute('data-adguard') || 'off';
+  // initial tier from the embed tag; the gate (/v) may override it with the
+  // site's current tier (res.m), so console mode switches apply without re-embed.
+  let agMode = script.getAttribute('data-adguard') || 'off';
   const adClient = script.getAttribute('data-adclient') || '';
   const VERDICT_TTL_MS = 7 * 86400e3;
   const VERDICT_TIMEOUT_MS = parseInt(script.getAttribute('data-adguard-timeout') || '', 10) || 300;
@@ -459,7 +461,12 @@ import type { XPayload } from '../../shared/flags';
     // "load ads regardless of verdict or mode". It is the ONLY server signal that
     // overrides the client-side mode logic below — a plain ok:1 must NOT, or
     // strict mode's interaction gate would be silently bypassed for clean traffic.
-    type VerdictRes = { v: string; ok: number; shadow?: number; state?: string };
+    type VerdictRes = { v: string; ok: number; shadow?: number; m?: string; state?: string };
+    // adopt the server-reported tier (owner may have switched it in the console);
+    // 'off' means the gate is disabled → load ads unconditionally.
+    const applyMode = (res: VerdictRes): void => {
+      if (res.m === 'loose' || res.m === 'balanced' || res.m === 'strict') agMode = res.m;
+    };
     const callVerdict = (state: string | null): Promise<VerdictRes> =>
       fetch(api + '/v', {
         method: 'POST',
@@ -490,7 +497,7 @@ import type { XPayload } from '../../shared/flags';
         // previously-flagged visitors (and no ad loads for a real bot otherwise).
         callVerdict(vc).then((res) => {
           saveState(res);
-          if (res.shadow === 1) inject(); else blocked = true;
+          if (res.m === 'off' || res.shadow === 1) inject(); else blocked = true;
         }).catch(() => { blocked = true; });
         return;
       }
@@ -539,6 +546,8 @@ import type { XPayload } from '../../shared/flags';
       .then((res) => {
         clearTimeout(timer);
         saveState(res);
+        if (res.m === 'off') { inject(); return; }  // gate disabled by the owner → load ads
+        applyMode(res);                             // adopt the current tier (console switch)
         if (res.shadow === 1) { inject(); return; } // record-only window: load regardless of verdict (§7.5)
         if (!verdict || verdict === 'timeout') {
           verdict = res.v;
