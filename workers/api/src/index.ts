@@ -15,7 +15,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { hmacSign } from '../../../shared/ids';
 
@@ -42,6 +42,17 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
 
   const url = new URL(request.url);
+
+  // cross-site ranking (§14) — not site-scoped; server-side token only. Placed
+  // before the site-scoped matcher since it has no site id in the path.
+  if (url.pathname === '/v1/ranking') {
+    await authorizeToken(request, env);
+    // cross-site: no single site timezone, so resolve the period in UTC
+    const period = parsePeriod(url.searchParams.get('period'), 'UTC');
+    const limit = parseInt(url.searchParams.get('limit') ?? '100', 10);
+    return json(await ranking(env.DB, period, limit));
+  }
+
   const m = url.pathname.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/([a-z_]+)(?:\/([^/]+)\/([a-z_]+))?$/);
   if (!m) return json({ error: 'not found' }, 404);
   const [, siteId, resource, subId, subResource] = m;
@@ -88,6 +99,18 @@ async function route(request: Request, env: Env): Promise<Response> {
 // ---------------------------------------------------------------------------
 // auth
 // ---------------------------------------------------------------------------
+
+/** Require the server-side API token (external ranking / AI systems, §10, §14).
+ *  Owner sessions are per-site and can't authorize a cross-site query. */
+async function authorizeToken(request: Request, env: Env): Promise<void> {
+  const auth = request.headers.get('authorization');
+  if (auth?.startsWith('Bearer ') && env.API_TOKEN) {
+    const token = auth.slice(7);
+    const [a, b] = await Promise.all([hmacSign(env.HMAC_KEY, token), hmacSign(env.HMAC_KEY, env.API_TOKEN)]);
+    if (a === b) return;
+  }
+  throw new ApiError(401, 'auth required');
+}
 
 async function authorize(request: Request, env: Env, siteId: string): Promise<void> {
   // server-side token (external ranking / AI systems, §10)

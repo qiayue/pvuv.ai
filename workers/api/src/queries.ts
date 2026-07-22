@@ -1148,6 +1148,101 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
 }
 
 // ---------------------------------------------------------------------------
+// GET /v1/ranking — cross-site clean-traffic ranking (§14). Server-token only.
+//
+// An optional adapter for an external ranking/scoring system. It reads only
+// FILTERED (clean) rollup data — bots and verified crawlers are already out of
+// clean_count, and so are suspects (clean = verdict 'clean'). Each site's clean
+// pageviews are split into INTERNAL (referred by another site in this same
+// deployment — trusted mutual visits) vs EXTERNAL, and the default ranking
+// `score` is external clean pageviews, so mutual visits between owned sites
+// cannot inflate the ranking (§14). All fields are exposed so an external
+// system can apply its own formula.
+// ---------------------------------------------------------------------------
+
+export interface RankingSite {
+  site_id: string;
+  name: string;
+  pv: number;
+  clean_pv: number;
+  invalid_pv: number;
+  sessions: number;
+  human_share: number;   // clean_pv / pv (0..1)
+  quality_score: number; // round(human_share * 100)
+  internal_pv: number;   // clean pv referred by another owned site (mutual)
+  external_pv: number;   // clean pv from outside — the ranking basis
+  score: number;         // default ranking score = external_pv
+}
+
+export async function ranking(db: D1Database, period: Period, limit = 100, ownerId?: string) {
+  const siteRows = await db.prepare(
+    "SELECT site_id, name, allowed_domains, owner_id FROM sites WHERE status = 'active' AND name != '__pvuv_selftest'",
+  ).all<{ site_id: string; name: string; allowed_domains: string; owner_id: string }>();
+
+  // Owned-domain set across the WHOLE deployment — internal-referral detection
+  // is global (a visit from owner A's site to owner B's is still an internal
+  // mutual hop), even when the caller only wants one owner's sites listed.
+  const owned: string[] = [];
+  for (const s of siteRows.results) {
+    try {
+      const ds = JSON.parse(s.allowed_domains || '[]');
+      if (Array.isArray(ds)) for (const d of ds) if (typeof d === 'string' && d) owned.push(d.toLowerCase());
+    } catch { /* skip malformed allowed_domains */ }
+  }
+  const ownedSet = new Set(owned);
+  const isOwned = (source: string | null): boolean => {
+    if (!source) return false;
+    const h = source.toLowerCase();
+    if (ownedSet.has(h)) return true;
+    for (const d of owned) if (h === d || h.endsWith('.' + d)) return true; // subdomain of an owned site
+    return false;
+  };
+
+  // Site totals over the period's local-day range (rollup day = site-local day).
+  const totals = new Map<string, { pv: number; clean_pv: number; invalid_pv: number; sessions: number }>();
+  const tRows = await db.prepare(`
+    SELECT site_id,
+      COALESCE(SUM(pv), 0) AS pv,
+      COALESCE(SUM(clean_count), 0) AS clean_pv,
+      COALESCE(SUM(bot_count + suspect_count + crawler_count), 0) AS invalid_pv,
+      COALESCE(SUM(sessions), 0) AS sessions
+    FROM rollup_site_daily WHERE day BETWEEN ? AND ? GROUP BY site_id
+  `).bind(period.start, period.end).all<{ site_id: string; pv: number; clean_pv: number; invalid_pv: number; sessions: number }>();
+  for (const r of tRows.results) totals.set(r.site_id, r);
+
+  // Clean pageviews per (site, source) → internal/external split.
+  const split = new Map<string, { internal: number; external: number }>();
+  const sRows = await db.prepare(`
+    SELECT site_id, source, COALESCE(SUM(pv_clean), 0) AS pvc
+    FROM rollup_source_daily WHERE day BETWEEN ? AND ? GROUP BY site_id, source
+  `).bind(period.start, period.end).all<{ site_id: string; source: string | null; pvc: number }>();
+  for (const r of sRows.results) {
+    const cur = split.get(r.site_id) ?? { internal: 0, external: 0 };
+    if (isOwned(r.source)) cur.internal += r.pvc; else cur.external += r.pvc;
+    split.set(r.site_id, cur);
+  }
+
+  const out: RankingSite[] = [];
+  for (const s of siteRows.results) {
+    if (ownerId && s.owner_id !== ownerId) continue;
+    const t = totals.get(s.site_id) ?? { pv: 0, clean_pv: 0, invalid_pv: 0, sessions: 0 };
+    const sp = split.get(s.site_id) ?? { internal: 0, external: 0 };
+    const human_share = t.pv ? t.clean_pv / t.pv : 0;
+    out.push({
+      site_id: s.site_id, name: s.name,
+      pv: t.pv, clean_pv: t.clean_pv, invalid_pv: t.invalid_pv, sessions: t.sessions,
+      human_share: Math.round(human_share * 1000) / 1000,
+      quality_score: Math.round(human_share * 100),
+      internal_pv: sp.internal, external_pv: sp.external,
+      score: sp.external,
+    });
+  }
+  out.sort((a, b) => b.score - a.score || b.clean_pv - a.clean_pv);
+  const cap = Math.min(Math.max(Number.isFinite(limit) ? limit : 100, 1), 500);
+  return { period: { start: period.start, end: period.end }, sites: out.slice(0, cap) };
+}
+
+// ---------------------------------------------------------------------------
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {

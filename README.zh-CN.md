@@ -125,6 +125,17 @@ cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 
 评分权重、判定阈值、黑名单都是**可调且部署私有**的。`config.example.toml` 提供示例默认值；复制为 `config.local.toml`（已 gitignore）自行私有调优。引擎从 config 读取权重、代码不硬编码，因此可以在不暴露给刷手的前提下调整检测。详见 [`PROJECT_PLAN.zh-CN.md` §21](./PROJECT_PLAN.zh-CN.md)。
 
+## 外部排名 API（可选）
+
+外部排名/评分系统可以用服务端 API token 一次拉取跨站点、基于清洗流量的榜单：
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.pvuv.ai/v1/ranking?period=30d"
+```
+
+返回每个活跃站点的 clean（已排除 bot/crawler/suspect）浏览量，并拆分为**内部**（本部署内另一站点带来的互访）与**外部**流量。默认 `score` 用的是外部 clean 浏览量——所以你自己站点之间的互访不会抬高排名；所有字段都暴露出来，外部系统可自行套用公式。站长也能在 console 里看到「Site ranking」表格。详见 [`PROJECT_PLAN.zh-CN.md` §14](./PROJECT_PLAN.zh-CN.md)。
+
 ## 版本（开放内核）
 
 pvuv.ai 采用**开放内核（open core）**模式：

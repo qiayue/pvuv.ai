@@ -125,6 +125,17 @@ Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (ingest 
 
 Scoring weights, verdict thresholds, and the blocklist are **tunable and deployment-private**. `config.example.toml` ships example defaults; copy it to `config.local.toml` (gitignored) and tune privately. The engine reads weights from config — nothing is hardcoded — so you can adjust detection without exposing it to fraudsters. See [`PROJECT_PLAN.md` §21](./PROJECT_PLAN.md).
 
+## External ranking API (optional)
+
+An external ranking/scoring system can pull a cross-site, clean-traffic leaderboard in one call, authorized with the server-side API token:
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.pvuv.ai/v1/ranking?period=30d"
+```
+
+Returns each active site with clean (bot/crawler/suspect-excluded) pageviews split into **internal** (mutual visits referred by another site in the same deployment) and **external** traffic. The default `score` is external clean pageviews, so mutual visits between your own sites can't inflate the ranking; every field is exposed so an external system can apply its own formula. Owners also see this as a "Site ranking" table in the console. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
+
 ## Editions
 
 pvuv.ai is **open core**:

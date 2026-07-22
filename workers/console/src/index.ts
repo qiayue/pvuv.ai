@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -248,6 +248,12 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (request.method === 'GET' && path === '/api/me') {
     return json({ user, timezone: await userTimezone(env, user) });
+  }
+
+  // cross-site clean-traffic ranking (§14), scoped to this owner's sites.
+  if (request.method === 'GET' && path === '/api/ranking') {
+    const period = parsePeriod(url.searchParams.get('period'), 'UTC');
+    return json(await ranking(env.DB, period, 200, user));
   }
 
   // user default timezone for new sites (users.timezone)

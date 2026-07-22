@@ -52,6 +52,12 @@
   .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; }
   .err { color: #f87171; font-size: 13px; grid-column: span 2; min-height: 1em; margin: 0; }
   @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create button, .err, .full { grid-column: span 1; } }
+  #ranking table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #ranking th, #ranking td { padding: 8px 10px; border-bottom: 1px solid #1e2530; }
+  #ranking th { text-align: left; color: #8b93a1; font-size: 12px; font-weight: 500; }
+  #ranking td.num, #ranking th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #ranking a { color: #7ab3ff; text-decoration: none; }
+  #ranking a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -88,6 +94,15 @@
     </div>
   </div>
   <div id="sites">loading…</div>
+
+  <section id="rankingSection" hidden style="margin-top:24px">
+    <div class="head">
+      <h2>Site ranking · clean traffic</h2>
+      <span style="font-size:12px;color:#8b93a1">Ranked by external clean pageviews — bots &amp; crawlers excluded, mutual visits between your own sites don't count.</span>
+    </div>
+    <div class="panel" id="ranking">loading…</div>
+  </section>
+
   <datalist id="tzlist"></datalist>
 
   <section class="panel" id="addPanel" hidden>
@@ -230,9 +245,36 @@ async function loadSites() {
   const saved = localStorage.getItem('pvuv.sitesPeriod');
   if (saved && [...sel.options].some((o) => o.value === saved)) sel.value = saved;
 })();
+// cross-site clean-traffic ranking (§14): self-hides with <2 sites (nothing to
+// rank). "External clean" excludes bots/crawlers and mutual visits between your
+// own sites, so it reflects genuinely external human traffic.
+async function loadRanking() {
+  const sec = document.getElementById('rankingSection');
+  const period = document.getElementById('period').value;
+  let sites = [];
+  try { sites = ((await (await guard(await fetch(`/api/ranking?period=${period}`))).json()).sites) || []; }
+  catch { sec.hidden = true; return; }
+  if (sites.length < 2) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const body = sites.map((s, i) => `<tr>
+    <td style="color:#8b93a1">${i + 1}</td>
+    <td><a href="/site.html?id=${esc(s.site_id)}">${esc(s.name)}</a></td>
+    <td class="num"><b>${fmt(s.external_pv)}</b></td>
+    <td class="num" style="color:#8b93a1">${fmt(s.internal_pv)}</td>
+    <td class="num">${fmt(s.clean_pv)}</td>
+    <td class="num" style="color:#8b93a1">${fmt(s.pv)}</td>
+    <td class="num">${s.quality_score}%</td>
+  </tr>`).join('');
+  document.getElementById('ranking').innerHTML = `<table>
+    <thead><tr>
+      <th>#</th><th>Site</th><th class="num">External clean</th><th class="num">Internal (mutual)</th>
+      <th class="num">Clean PV</th><th class="num">Total PV</th><th class="num">Human</th>
+    </tr></thead><tbody>${body}</tbody></table>`;
+}
 document.getElementById('period').addEventListener('change', () => {
   localStorage.setItem('pvuv.sitesPeriod', document.getElementById('period').value);
   loadSites();
+  loadRanking();
 });
 
 // --- timezones -------------------------------------------------------------
@@ -378,6 +420,7 @@ document.getElementById('aiSettings').addEventListener('submit', async (e) => {
 });
 
 loadSites();
+loadRanking();
 loadHomeSettings();
 loadUserTz();
 loadAiSettings();
