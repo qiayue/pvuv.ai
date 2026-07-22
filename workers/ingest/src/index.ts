@@ -7,7 +7,7 @@
  *   POST /v  — fast ad-load verdict (§8) — step 5.
  */
 
-import { enrichEvent, parseUA, isChromiumUA, hashIP, fingerprintHash, type RequestContext } from './enrich';
+import { enrichEvent, parseUA, isChromiumUA, isHeadlessUA, hashIP, fingerprintHash, type RequestContext } from './enrich';
 import { scoreRealtime } from './score';
 import { classifyAsn } from '../../../shared/asn';
 import { signVerdictState, verifyVerdictState, type VerdictState } from '../../../shared/ids';
@@ -181,6 +181,7 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
       deviceType: uaInfo.device_type,
       hadInteraction: ev.hi === 1,
       isPageLeave: ev.e === 'page_leave',
+      headlessUA: isHeadlessUA(reqCtx.ua),
       blocklisted,
       referrer: typeof ev.r === 'string' ? ev.r : undefined,
     });
@@ -275,6 +276,7 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
     deviceType: uaInfo.device_type,
     hadInteraction: interacted,
     isPageLeave: false,
+    headlessUA: isHeadlessUA(ua),
     blocklisted,
     referrer: typeof body.r === 'string' ? body.r : undefined,
   });

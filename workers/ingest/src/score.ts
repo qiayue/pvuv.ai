@@ -35,6 +35,8 @@ export interface ScoreInput {
   deviceType: string;
   hadInteraction: boolean;
   isPageLeave: boolean;
+  /** UA advertises a headless engine ("HeadlessChrome" / "Headless") */
+  headlessUA: boolean;
   /** fp_hash / ip24_hash matched the KV blocklist */
   blocklisted: boolean;
   /** raw navigation referrer (document.referrer) — for forged-search detection */
@@ -87,6 +89,8 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
   if (typeof x.x4 === 'number' && x.x4 > 0) fire('SCREEN_DEVICE_MISMATCH', Math.min(x.x4, MAX_SCREEN_CONTRADICTIONS));
   if (x.x6 === 1) fire('SOFTWARE_WEBGL');
   if (CONFIG.detection.honeypot_enabled && x.x8 === 1) fire('HONEYPOT');
+  if (x.x11 === 1) fire('HEADLESS_WINDOW');
+  if (x.x12 === 1) fire('UA_PLATFORM_MISMATCH');
 
   // --- mobile sensor signals, Android-only (§4.6) ---
   if (CONFIG.detection.mobile_sensors_enabled && input.os === 'Android' && input.deviceType === 'mobile') {
@@ -96,6 +100,7 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
 
   // --- server-side signals (§6.1) ---
   if (input.asnType === 'datacenter') fire('DATACENTER_ASN');
+  if (input.headlessUA) fire('HEADLESS_UA'); // self-declared automation runtime
 
   const hasSecFetch =
     input.headers.has('sec-fetch-mode') || input.headers.has('sec-fetch-site') || input.headers.has('sec-fetch-dest');

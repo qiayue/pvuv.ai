@@ -41,6 +41,9 @@ mobile_no_motion       = 15       # 0x1000 mobile UA but no motion data (Android
 motion_static          = 10       # 0x2000 accel-incl-gravity perfectly constant
 search_ref_datacenter  = 35       # 0x4000 search-engine referrer from a datacenter ASN (stacks with datacenter_asn → bot)
 forged_search_referrer = 40       # 0x8000 implausible search-engine referrer (http / ?q= leak / Sec-Fetch contradiction)
+headless_ua            = 70       # 0x10000 UA advertises a headless engine ("HeadlessChrome") — self-declared automation
+headless_window        = 30       # 0x20000 desktop headless window tell (outerWidth/outerHeight === 0)
+ua_platform_mismatch   = 30       # 0x40000 navigator.platform contradicts the UA OS family (Win/Mac/iOS on Linux)
 
 [trust_credits]
 # Subtracted from bot_score (make legit traffic look cleaner).

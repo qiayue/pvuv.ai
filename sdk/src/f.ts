@@ -204,6 +204,24 @@ import type { XPayload } from '../../shared/flags';
 
       // honeypot: arriving with the marker means a hidden link was followed
       if (new URLSearchParams(loc.search).get('__pvhp') === '1') out.x8 = 1;
+
+      // headless window tell: real desktop browsers always have a non-zero outer
+      // window; old / windowless headless Chrome reports 0. Desktop only, and
+      // only with a real inner viewport (mobile geometry legitimately varies).
+      if (!mobileUA && win.innerWidth > 0 && (win.outerWidth === 0 || win.outerHeight === 0)) out.x11 = 1;
+
+      // OS spoofing: navigator.platform vs the UA OS family. Only high-precision
+      // cases (Windows / macOS / iOS UA on a non-matching platform); Linux and
+      // Android platform strings overlap too much to judge safely.
+      const plat = (nav.platform || '').toLowerCase();
+      if (plat) {
+        const winUA = /Windows/i.test(ua);
+        const iosUA = /iPhone|iPad|iPod/i.test(ua);
+        const macUA = /Macintosh|Mac OS X/i.test(ua) && !iosUA;
+        if ((winUA && plat.indexOf('win') < 0)
+          || (macUA && plat.indexOf('mac') < 0)
+          || (iosUA && !/iphone|ipad|ipod|mac/.test(plat))) out.x12 = 1;
+      }
     } catch { /* never break the host page */ }
     return out;
   })();

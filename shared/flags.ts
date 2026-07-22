@@ -47,6 +47,15 @@ export const FLAG = {
    *  https), a leaked ?q= query (Google/Bing strip it), or a Sec-Fetch-Site that
    *  contradicts an external referrer (same-origin/none) */
   FORGED_SEARCH_REFERRER: 0x8000,
+  /** User-Agent advertises a headless engine ("HeadlessChrome" / "Headless") —
+   *  a self-declared automation runtime (server-side, high precision) */
+  HEADLESS_UA: 0x10000,
+  /** headless window geometry: outer width/height report 0 on a desktop browser
+   *  that has a real inner viewport (a windowless / old-headless-Chrome tell) */
+  HEADLESS_WINDOW: 0x20000,
+  /** navigator.platform contradicts the UA's OS family (e.g. a Windows/macOS/iOS
+   *  UA on a Linux platform) — a common OS-spoofing tell for cloud automation */
+  UA_PLATFORM_MISMATCH: 0x40000,
 } as const;
 
 export type FlagName = keyof typeof FLAG;
@@ -73,6 +82,9 @@ export const FLAG_CONFIG_KEY: Record<FlagName, string> = {
   MOTION_STATIC: 'motion_static',
   SEARCH_REF_DATACENTER: 'search_ref_datacenter',
   FORGED_SEARCH_REFERRER: 'forged_search_referrer',
+  HEADLESS_UA: 'headless_ua',
+  HEADLESS_WINDOW: 'headless_window',
+  UA_PLATFORM_MISMATCH: 'ua_platform_mismatch',
 } as const;
 
 /** All flag names, in ascending bit order. */
@@ -116,6 +128,10 @@ export const XF = {
   HAS_MOTION: 'x9',
   /** 0/1 — Android only: motion readings perfectly static (§4.6) */
   MOTION_STATIC: 'x10',
+  /** 0/1 — desktop headless window tell: outerWidth/outerHeight === 0 */
+  HEADLESS_WINDOW: 'x11',
+  /** 0/1 — navigator.platform contradicts the UA OS family (Win/Mac/iOS) */
+  UA_PLATFORM_MISMATCH: 'x12',
 } as const;
 
 /** Shape of the event `x` payload as sent by f.js. */
@@ -130,6 +146,8 @@ export interface XPayload {
   x8?: 0 | 1;
   x9?: 0 | 1;
   x10?: 0 | 1;
+  x11?: 0 | 1;
+  x12?: 0 | 1;
 }
 
 /** Persisted verdict values (§6.2). Verified crawlers classified separately. */

@@ -63,6 +63,12 @@ export function isChromiumUA(ua: string | null): boolean {
   return !!m && parseInt(m[1], 10) >= 90;
 }
 
+/** Does the UA advertise a headless automation engine? "HeadlessChrome" is the
+ *  default Puppeteer/Selenium token; some frameworks just add "Headless". */
+export function isHeadlessUA(ua: string | null): boolean {
+  return !!ua && /headless/i.test(ua);
+}
+
 // ---------------------------------------------------------------------------
 // URL parsing: UTM + click ids as dedicated columns, rest → extra_params (§5)
 // ---------------------------------------------------------------------------

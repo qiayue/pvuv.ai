@@ -355,6 +355,7 @@ const FLAG_LABELS = {
   0x0200: 'blocklisted cluster', 0x0400: 'honeypot', 0x0800: 'screen/device contradiction',
   0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
   0x4000: 'search referrer from datacenter', 0x8000: 'forged search referrer',
+  0x10000: 'headless UA', 0x20000: 'headless window', 0x40000: 'platform/UA mismatch',
 };
 const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
 
@@ -378,6 +379,9 @@ const SIGNAL_INFO = {
   MOTION_STATIC: ['Frozen motion sensors', 'Motion readings never change — a spoofed device'],
   SEARCH_REF_DATACENTER: ['Fake search visit (datacenter)', 'Claims a Google/Bing referral but comes from a cloud/hosting network — real searchers are on home/mobile ISPs'],
   FORGED_SEARCH_REFERRER: ['Forged search referrer', 'Referrer claims a search engine but is malformed: http, a leaked ?q= query, or navigation headers that contradict an external click'],
+  HEADLESS_UA: ['Headless browser', 'The browser identifies itself as a headless automation engine (HeadlessChrome)'],
+  HEADLESS_WINDOW: ['Windowless browser', 'The browser window reports zero outer size — typical of a headless / windowless runtime'],
+  UA_PLATFORM_MISMATCH: ['OS spoofing', "The claimed operating system (Windows/macOS/iOS) contradicts the browser's actual platform"],
 };
 const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
 const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];
