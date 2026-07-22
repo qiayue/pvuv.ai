@@ -21,6 +21,8 @@ export const COOKIE = {
   FIRST_TOUCH: '_pv_ft',
   /** HMAC-signed verdict state, read by /v for re-checks */
   VERDICT: '_pv_v',
+  /** identified user_id (set by pvuv('identify', …)), rides on later events */
+  USER: '_pv_uid',
 } as const;
 
 /** visitor_id cookie lifetime: 13 months (§3). */

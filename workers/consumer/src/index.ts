@@ -21,7 +21,7 @@
  */
 
 import {
-  monthSuffix, eventsTableDDL, eventInsertSQL, eventRowValues,
+  monthSuffix, eventsTableDDL, eventInsertSQL, eventRowValues, isConversion,
   type EventRow,
 } from '../../../shared/events';
 
@@ -115,7 +115,8 @@ function bindable(values: unknown[]): unknown[] {
 
 function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1PreparedStatement {
   const isPageview = row.event === 'pageview' ? 1 : 0;
-  const isCustom = row.event !== 'pageview' && row.event !== 'page_leave' && row.event !== 'outbound_click' ? 1 : 0;
+  // a custom (goal) event is an engagement signal; identify/lifecycle events are not
+  const isCustom = isConversion(row.event) ? 1 : 0;
   const duration = row.duration_ms ?? 0;
 
   return db.prepare(`

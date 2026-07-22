@@ -19,7 +19,7 @@
 
 import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
-import { monthSuffix, eventsTableName } from '../../../shared/events';
+import { monthSuffix, eventsTableName, RESERVED_EVENTS_SQL } from '../../../shared/events';
 
 export async function runHourlyRollup(env: Env): Promise<void> {
   const now = Date.now();
@@ -120,7 +120,7 @@ export async function rollupSiteDay(
   `).bind(day, siteId, startTs, endTs));
 
   // --- rollup_site_daily ---------------------------------------------------
-  const siteEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict', siteId, startTs, endTs);
+  const siteEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict, revenue_usd', siteId, startTs, endTs);
   stmts.push(db.prepare(`
     INSERT OR REPLACE INTO rollup_site_daily
       (site_id, day, pv, uv, sessions, bounce_rate, avg_duration_ms, visit_duration_ms,
@@ -134,7 +134,9 @@ export async function rollupSiteDay(
       SUM(event = 'pageview' AND verdict = 'suspect'),
       SUM(event = 'pageview' AND verdict = 'crawler'),
       SUM(event = 'pageview' AND verdict = 'clean'),
-      0, 0
+      -- conversions/revenue: custom (goal) events from non-bot/crawler traffic
+      SUM(CASE WHEN event NOT IN (${RESERVED_EVENTS_SQL}) AND verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END),
+      COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN revenue_usd ELSE 0 END), 0)
     FROM ${siteEv.sql}
     GROUP BY site_id
   `).bind(day, ...siteEv.binds));

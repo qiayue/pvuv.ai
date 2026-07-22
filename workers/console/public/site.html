@@ -190,6 +190,11 @@
   </div>
   <div class="panel" id="utm"></div>
 
+  <div id="goalsSection" hidden>
+    <h2>Goals (custom events)</h2>
+    <div class="panel" id="goals"></div>
+  </div>
+
   <h2>Traffic quality</h2>
   <div class="grid2">
     <div class="panel" id="quality"></div>
@@ -357,6 +362,7 @@ const dimConfig = {
   ft_source:    { label: 'FT source',   headers: ['First-touch source', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
   ft_medium:    { label: 'FT medium',   headers: ['First-touch medium', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
   ft_campaign:  { label: 'FT campaign', headers: ['First-touch campaign', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  goal: { label: 'Goals', headers: ['Event', 'Fires', 'Visitors', 'Revenue'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.pv), fmt(r.uv), r.revenue ? money(r.revenue) : '–'] },
 };
 
 // Shared table markup: proportion bar behind the first column + optional icon.
@@ -549,8 +555,12 @@ function renderCards(o, al) {
     card('Engaged time', dur(o.avg_duration_ms), 'Visible dwell, incl. exit page') +
     card('Visit duration', dur(o.visit_duration_ms), 'UA / Plausible style') +
     card('Human share', cleanShare + '%') +
-    card('Forged search', fmt(fakeN), fakeShare, fakeN > 0 ? 'card-warn' : '');
+    card('Forged search', fmt(fakeN), fakeShare, fakeN > 0 ? 'card-warn' : '') +
+    // conversions / revenue only appear once the site sends custom events
+    (o.conversions ? card('Conversions', fmt(o.conversions)) : '') +
+    (o.revenue ? card('Revenue', money(o.revenue)) : '');
 }
+const money = (v) => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 async function loadChart() {
   const metric = document.getElementById('metric').value;
@@ -628,6 +638,7 @@ async function load() {
   await Promise.all(Object.keys(PANELS).map(loadPanel));
 
   await loadUtm();
+  await loadGoals();
 
   const qy = await get('quality');
   donut(qy.totals);
@@ -790,6 +801,17 @@ async function loadUtm() {
   // rows are clickable-to-filter only for the fully-supported UTM dims
   // (utm_campaign / utm_medium); the rest render as a plain table.
   renderBreakdown('utm', dim, d.rows || []);
+}
+
+// Goals = custom (non-lifecycle) events; the panel hides itself when the site
+// sends none, so it never clutters sites that don't use pvuv('event', …).
+async function loadGoals() {
+  const sec = document.getElementById('goalsSection');
+  let rows = [];
+  try { rows = (await get('breakdown', '&dim=goal')).rows || []; } catch { sec.hidden = true; return; }
+  if (!rows.length) { sec.hidden = true; return; }
+  sec.hidden = false;
+  renderBreakdown('goals', 'goal', rows);
 }
 document.getElementById('utmDim').addEventListener('change', loadUtm);
 document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });

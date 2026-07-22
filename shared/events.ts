@@ -128,6 +128,18 @@ export const EVENT_COLUMNS = [
 ] as const satisfies readonly (keyof EventRow)[];
 
 // ---------------------------------------------------------------------------
+// Conversions (§4.2): every event that isn't a lifecycle event is a custom
+// "goal". Shared so consumer / rollup / query layer agree on the definition.
+// ---------------------------------------------------------------------------
+
+export const RESERVED_EVENTS = ['pageview', 'page_leave', 'outbound_click', 'identify'] as const;
+export function isConversion(event: string): boolean {
+  return !(RESERVED_EVENTS as readonly string[]).includes(event);
+}
+/** SQL list literal, e.g. `'pageview','page_leave',…` — for `event NOT IN (…)`. */
+export const RESERVED_EVENTS_SQL = RESERVED_EVENTS.map((e) => `'${e}'`).join(',');
+
+// ---------------------------------------------------------------------------
 // Monthly partitioning (§9.1): events_YYYYMM, UTC month of the event ts
 // ---------------------------------------------------------------------------
 

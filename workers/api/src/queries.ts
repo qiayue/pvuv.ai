@@ -15,7 +15,7 @@
 
 import { FLAG, ALL_FLAGS, type FlagName } from '../../../shared/flags';
 import { localYMD, localMidnightUtc, localDaySpan, addDays, weekdayMon0, dayStr, tzOffsetMs } from '../../../shared/tz';
-import { monthSuffix } from '../../../shared/events';
+import { monthSuffix, RESERVED_EVENTS_SQL } from '../../../shared/events';
 import { CONFIG } from '../../../shared/config.gen';
 
 // ---------------------------------------------------------------------------
@@ -209,13 +209,14 @@ const seFilter = (filters: Filter[], skipDim?: string) => buildWhere(SESSION_FIL
 interface SiteAgg {
   pv: number; uv: number; sessions: number;
   clean_count: number; suspect_count: number; bot_count: number; crawler_count: number;
+  conversions: number; revenue: number;
 }
 async function eventsSiteAgg(db: D1Database, siteId: string, startTs: number, endTs: number, filters: Filter[] = []): Promise<SiteAgg> {
-  const zero: SiteAgg = { pv: 0, uv: 0, sessions: 0, clean_count: 0, suspect_count: 0, bot_count: 0, crawler_count: 0 };
+  const zero: SiteAgg = { pv: 0, uv: 0, sessions: 0, clean_count: 0, suspect_count: 0, bot_count: 0, crawler_count: 0, conversions: 0, revenue: 0 };
   const tables = await eventTables(db, startTs, endTs);
   if (tables.length === 0) return zero;
   const ef = evFilter(filters);
-  const u = unionOver(tables, 'event, visitor_id, session_id, verdict', siteId, startTs, endTs, ef.sql, ef.binds);
+  const u = unionOver(tables, 'event, visitor_id, session_id, verdict, revenue_usd', siteId, startTs, endTs, ef.sql, ef.binds);
   const row = await db.prepare(`
     SELECT
       COALESCE(SUM(event = 'pageview'), 0) AS pv,
@@ -224,7 +225,10 @@ async function eventsSiteAgg(db: D1Database, siteId: string, startTs: number, en
       COALESCE(SUM(event = 'pageview' AND verdict = 'clean'), 0) AS clean_count,
       COALESCE(SUM(event = 'pageview' AND verdict = 'suspect'), 0) AS suspect_count,
       COALESCE(SUM(event = 'pageview' AND verdict = 'bot'), 0) AS bot_count,
-      COALESCE(SUM(event = 'pageview' AND verdict = 'crawler'), 0) AS crawler_count
+      COALESCE(SUM(event = 'pageview' AND verdict = 'crawler'), 0) AS crawler_count,
+      -- conversions/revenue: custom (goal) events from non-bot/crawler traffic
+      COALESCE(SUM(CASE WHEN event NOT IN (${RESERVED_EVENTS_SQL}) AND verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END), 0) AS conversions,
+      COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN revenue_usd ELSE 0 END), 0) AS revenue
     FROM (${u.sql})
   `).bind(...u.binds).first<SiteAgg>();
   return row ?? zero;
@@ -282,6 +286,7 @@ export async function overview(db: D1Database, siteId: string, period: Period, f
     avg_duration_ms: s.avg_duration_ms, visit_duration_ms: s.visit_duration_ms,
     clean_count: ev.clean_count, suspect_count: ev.suspect_count,
     bot_count: ev.bot_count, crawler_count: ev.crawler_count,
+    conversions: ev.conversions, revenue: ev.revenue,
   };
 }
 
@@ -738,6 +743,24 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
       WHERE site_id = ? AND started_at >= ? AND started_at < ?${sf.sql ? ` AND ${sf.sql}` : ''}
       GROUP BY key ORDER BY sessions DESC LIMIT ?
     `).bind(siteId, period.startTs, period.endTs, ...sf.binds, limit).all();
+    return { dim, rows: rows.results };
+  }
+
+  // goals: custom (non-lifecycle) event names — fires, visitors, revenue
+  if (dim === 'goal') {
+    const tables = await eventTables(db, period.startTs, period.endTs);
+    if (tables.length === 0) return { dim, rows: [] };
+    const u = unionOver(tables, 'event AS k, visitor_id, verdict, revenue_usd', siteId, period.startTs, period.endTs,
+      `event NOT IN (${RESERVED_EVENTS_SQL})${ef.sql ? ` AND ${ef.sql}` : ''}`, ef.binds);
+    const rows = await db.prepare(`
+      SELECT k AS key,
+             COUNT(*) AS pv,
+             COUNT(DISTINCT visitor_id) AS uv,
+             COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END), 0) AS pv_clean,
+             COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN revenue_usd ELSE 0 END), 0) AS revenue
+      FROM (${u.sql})
+      GROUP BY k ORDER BY pv DESC LIMIT ?
+    `).bind(...u.binds, limit).all();
     return { dim, rows: rows.results };
   }
 

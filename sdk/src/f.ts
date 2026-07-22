@@ -304,6 +304,9 @@ import type { XPayload } from '../../shared/flags';
   // page_leave must report the URL the dwell belongs to — during an SPA
   // transition location.href has already moved on, so events use the URL
   // snapshotted at pageview time.
+  // user_id set by pvuv('identify', …); persisted so it rides on later pageviews
+  let currentUser = readCookie(COOKIE.USER) || '';
+
   function baseEvent(name: string): IncomingEvent {
     return {
       s: siteId!,
@@ -311,6 +314,7 @@ import type { XPayload } from '../../shared/flags';
       u: currentUrl,
       r: pageReferrer || undefined,
       vid,
+      uid: currentUser || undefined,
       // reuse the session established at pageview time — deriving it here would
       // mint a NEW session for a page_leave sent after 30min idle or a local
       // midnight rollover, stranding the dwell on a phantom session
@@ -534,6 +538,35 @@ import type { XPayload } from '../../shared/flags';
   // -------------------------------------------------------------------------
   // go
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // public API (§4.2): pvuv('event', name, props) / pvuv('identify', id, traits)
+  // A pre-load stub may buffer calls on window.pvuv.q — drain them on init.
+  // -------------------------------------------------------------------------
+  function track(name: string, props?: Record<string, unknown>): void {
+    if (typeof name !== 'string' || !name) return;
+    // reserved lifecycle names can't be sent as custom goals
+    if (name === 'pageview' || name === 'page_leave' || name === 'outbound_click' || name === 'identify') return;
+    const ev = baseEvent(name);
+    if (props && typeof props === 'object') ev.p = props;
+    enqueue(ev);
+  }
+  function identify(userId: unknown, traits?: Record<string, unknown>): void {
+    if (userId == null || userId === '') return;
+    currentUser = String(userId).slice(0, 128);
+    setCookie(COOKIE.USER, currentUser, VISITOR_TTL_S);
+    const ev = baseEvent('identify');
+    if (traits && typeof traits === 'object') ev.p = traits;
+    enqueue(ev);
+  }
+  function apiCall(cmd?: string, a?: unknown, b?: unknown): void {
+    if (cmd === 'event') track(a as string, b as Record<string, unknown>);
+    else if (cmd === 'identify') identify(a, b as Record<string, unknown>);
+  }
+  const wg = win as unknown as { pvuv?: { q?: unknown[][] } };
+  const priorQ = wg.pvuv && wg.pvuv.q;
+  wg.pvuv = apiCall as unknown as { q?: unknown[][] };
+  if (Array.isArray(priorQ)) for (const args of priorQ) apiCall(...(args as [string, unknown, unknown]));
 
   function start(): void {
     plantHoneypot();
