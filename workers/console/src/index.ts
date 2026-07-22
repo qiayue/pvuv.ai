@@ -53,6 +53,14 @@ export interface Env {
 
 const SESSION_TTL_MS = 7 * 86400e3;
 const ADMIN_USER_ID = 'admin';
+// The loader is embedded at a fixed, unversioned URL (/f.js), so an in-place
+// upgrade (e.g. a scoring/ad-guard fix) must still reach already-embedded sites.
+// Serve it revalidating, never immutable: fresh for up to SDK_MAX_AGE, then
+// stale-while-revalidate lets an edge serve the cached copy instantly while
+// fetching the new build in the background — so a fix propagates within a
+// bounded window without a per-request round trip.
+const SDK_MAX_AGE = 3600; // 1h browser/edge freshness
+const SDK_SWR = 86400;    // then background-refresh for up to a day
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -95,6 +103,17 @@ export default {
       }
       const localized = await homepage(request, env, lang);
       if (localized) return localized;
+    }
+    // loader script: serve from assets but pin a bounded, revalidating cache
+    // policy we control (Workers Static Assets defaults aren't guaranteed), so
+    // an in-place f.js upgrade propagates predictably to embedded sites.
+    if (url.pathname === '/f.js' && request.method === 'GET') {
+      const asset = await env.ASSETS.fetch(request);
+      if (!asset.ok) return asset;
+      const h = new Headers(asset.headers);
+      h.set('cache-control', `public, max-age=${SDK_MAX_AGE}, stale-while-revalidate=${SDK_SWR}`);
+      h.set('content-type', 'application/javascript; charset=utf-8');
+      return new Response(asset.body, { status: asset.status, headers: h });
     }
     return env.ASSETS.fetch(request);
   },

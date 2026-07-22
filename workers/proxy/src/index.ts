@@ -36,14 +36,17 @@ export default {
     if (!url.pathname.startsWith(prefix)) return new Response('not found', { status: 404 });
     const rest = url.pathname.slice(prefix.length) || '/';
 
-    // f.js — served first-party, cached hard (it's an immutable build artifact)
+    // f.js — served first-party. The URL is fixed and unversioned, and we DO
+    // upgrade it in place (scoring / ad-guard fixes), so it must NOT be treated
+    // as immutable: serve it revalidating (bounded freshness + background
+    // stale-while-revalidate) so a new build propagates within ~an hour.
     if (request.method === 'GET' && (rest === '/f.js' || rest === '/f.js/')) {
       const upstream = await fetch(`${trimSlash(env.UPSTREAM_ASSETS)}/f.js`, {
         cf: { cacheEverything: true, cacheTtl: 3600 },
       });
       const h = new Headers(upstream.headers);
       h.delete('set-cookie'); // never plant the assets origin's cookies onto the measured domain
-      h.set('cache-control', 'public, max-age=3600');
+      h.set('cache-control', 'public, max-age=3600, stale-while-revalidate=86400');
       return new Response(upstream.body, { status: upstream.status, headers: h });
     }
 
