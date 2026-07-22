@@ -29,6 +29,8 @@ import {
 } from './oauth';
 import { isValidTimezone } from '../../../shared/tz';
 import { CONFIG } from '../../../shared/config.gen';
+import { LlmError } from './llm';
+import { generateReport, type ReportLang } from './report';
 
 export interface Env {
   DB: D1Database;
@@ -38,6 +40,9 @@ export interface Env {
   HMAC_KEY: string;
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_SECRET?: string;
+  /** Optional fallback LLM key for AI reports (§13). The deployer normally sets
+   *  the key in console settings instead (stored in D1, edited via the UI). */
+  AI_API_KEY?: string;
   /** Plain vars (workers/console/wrangler.toml [vars]) */
   ADMIN_EMAILS: string;
   GOOGLE_CLIENT_ID?: string;
@@ -174,6 +179,29 @@ async function instanceSettings(db: D1Database): Promise<typeof DEFAULT_HOME> {
   return out;
 }
 
+/** AI-report settings from instance_settings (§13). The api_key is included for
+ *  server-side use only — callers must never echo it back to the browser. */
+const AI_KEYS = ['ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key', 'ai_lang'] as const;
+async function aiSettings(db: D1Database): Promise<{ provider: string; base_url: string; model: string; api_key: string; lang: string }> {
+  const out = { provider: '', base_url: '', model: '', api_key: '', lang: 'en' };
+  try {
+    const rows = await db
+      .prepare(`SELECT key, value FROM instance_settings WHERE key IN (${AI_KEYS.map(() => '?').join(',')})`)
+      .bind(...AI_KEYS).all<{ key: string; value: string }>();
+    for (const r of rows.results) {
+      const v = r.value || '';
+      if (r.key === 'ai_provider') out.provider = v;
+      else if (r.key === 'ai_base_url') out.base_url = v;
+      else if (r.key === 'ai_model') out.model = v;
+      else if (r.key === 'ai_api_key') out.api_key = v;
+      else if (r.key === 'ai_lang') out.lang = v || 'en';
+    }
+  } catch {
+    /* table missing (migration not applied yet) → defaults */
+  }
+  return out;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
@@ -260,6 +288,45 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true });
   }
 
+  // AI analysis reports (§13): provider/base-url/model/language + API key. The
+  // key is stored in D1 (the deployer's own database) and NEVER returned to the
+  // browser — GET reports only whether one is set (key_set). No secret is
+  // written into a repo file (§21).
+  if (path === '/api/settings/ai') {
+    if (request.method === 'GET') {
+      const ai = await aiSettings(env.DB);
+      return json({
+        provider: ai.provider, base_url: ai.base_url, model: ai.model,
+        lang: ai.lang, key_set: !!(ai.api_key || env.AI_API_KEY),
+      });
+    }
+    if (request.method === 'POST') {
+      let body: Record<string, unknown>;
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const entries: [string, string][] = [];
+      if (body.provider !== undefined) {
+        const p = String(body.provider);
+        if (p !== 'openai' && p !== 'anthropic') return json({ error: 'provider must be openai or anthropic' }, 400);
+        entries.push(['ai_provider', p]);
+      }
+      if (body.base_url !== undefined) entries.push(['ai_base_url', String(body.base_url).trim().slice(0, 300)]);
+      if (body.model !== undefined) entries.push(['ai_model', String(body.model).trim().slice(0, 120)]);
+      if (body.lang !== undefined) entries.push(['ai_lang', String(body.lang) === 'zh' ? 'zh' : 'en']);
+      // api_key: only overwrite when a non-empty value is sent — a blank field
+      // means "keep the existing key", so re-saving the form doesn't wipe it.
+      if (body.api_key !== undefined && String(body.api_key).trim() !== '') {
+        entries.push(['ai_api_key', String(body.api_key).trim().slice(0, 300)]);
+      }
+      if (entries.length === 0) return json({ ok: true });
+      const now = Date.now();
+      await env.DB.batch(entries.map(([k, v]) => env.DB.prepare(`
+        INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).bind(k, v, now)));
+      return json({ ok: true });
+    }
+  }
+
   // --- self-check (health.html) ------------------------------------------
   if (request.method === 'GET' && path === '/api/diagnostics') {
     return json({ checks: await runDiagnostics(env) });
@@ -325,6 +392,42 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true });
   }
 
+  // AI report generation (§13): explicit POST action, calls the configured LLM
+  // over a factual snapshot and stores the markdown in ai_reports.
+  const reportMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/ai_report$/);
+  if (reportMatch && request.method === 'POST') {
+    const siteId = reportMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id, name, timezone FROM sites WHERE site_id = ?')
+      .bind(siteId).first<{ owner_id: string; name: string; timezone: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+
+    const ai = await aiSettings(env.DB);
+    const key = ai.api_key || env.AI_API_KEY || '';
+    if (ai.provider !== 'openai' && ai.provider !== 'anthropic') {
+      return json({ error: 'AI is not configured — set the provider in settings first.' }, 400);
+    }
+    if (!ai.model || !key) {
+      return json({ error: 'AI is not fully configured — a model name and API key are required.' }, 400);
+    }
+    const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
+    const lang: ReportLang = ai.lang === 'zh' ? 'zh' : 'en';
+    let result: { content: string; snapshot: string };
+    try {
+      result = await generateReport(env.DB, siteId, site.name, period, {
+        provider: ai.provider, baseUrl: ai.base_url, model: ai.model, apiKey: key,
+      }, lang);
+    } catch (e) {
+      if (e instanceof LlmError) return json({ error: `LLM request failed (${e.status}): ${e.message}` }, 502);
+      throw e;
+    }
+    const periodLabel = `${period.start}..${period.end}`;
+    const now = Date.now();
+    await env.DB.prepare(
+      'INSERT INTO ai_reports (site_id, period, kind, content, data_snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(siteId, periodLabel, 'summary', result.content, result.snapshot, now).run();
+    return json({ content: result.content, period: periodLabel, created_at: now });
+  }
+
   // site-scoped queries — reuse the api worker's query layer
   const m = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/([a-z_]+)(?:\/([^/]+)\/([a-z_]+))?$/);
   if (m && request.method === 'GET') {
@@ -361,6 +464,17 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (resource === 'visitors' && subId && subResource === 'profile') {
       return json(await visitorProfile(env.DB, siteId, subId, period));
+    }
+    // latest stored AI report + whether generation is available
+    if (resource === 'ai_report') {
+      const ai = await aiSettings(env.DB);
+      const row = await env.DB.prepare(
+        'SELECT period, content, created_at FROM ai_reports WHERE site_id = ? ORDER BY created_at DESC LIMIT 1',
+      ).bind(siteId).first<{ period: string; content: string; created_at: number }>();
+      return json({
+        report: row ?? null,
+        configured: !!(ai.provider && ai.model && (ai.api_key || env.AI_API_KEY)),
+      });
     }
   }
 

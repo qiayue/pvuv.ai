@@ -140,6 +140,24 @@
       <p class="err" id="tzMsg"></p>
       <button type="submit">Save default timezone</button>
     </form>
+    <form class="create" id="aiSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8">AI analysis reports</strong>
+        <span style="font-size:12px;color:#8b93a1"> — used on each site's dashboard to generate a written summary.</span></div>
+      <div><label>Provider (API format)
+        <select id="aiProvider">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+        </select></label></div>
+      <div><label>Model name<input id="aiModel" maxlength="120" placeholder="gpt-4o-mini / claude-opus-4-8"></label></div>
+      <div class="full"><label>API base URL <span style="color:#8b93a1">(optional — blank uses the provider default)</span>
+        <input id="aiBaseUrl" maxlength="300" placeholder="https://api.openai.com/v1 or https://api.anthropic.com"></label></div>
+      <div><label>API key <span id="aiKeyState" style="color:#8b93a1"></span>
+        <input id="aiKey" type="password" maxlength="300" autocomplete="off" placeholder="sk-…"></label></div>
+      <div><label>Report language
+        <select id="aiLang"><option value="en">English</option><option value="zh">中文</option></select></label></div>
+      <p class="err" id="aiMsg"></p>
+      <button type="submit">Save AI settings</button>
+    </form>
   </section>
 </main>
 <script>
@@ -329,9 +347,40 @@ document.getElementById('homeSettings').addEventListener('submit', async (e) => 
   if (r.ok) loadHomeSettings(); // re-apply header/favicon immediately
 });
 
+async function loadAiSettings() {
+  const r = await fetch('/api/settings/ai');
+  if (!r.ok) return;
+  const a = await r.json();
+  document.getElementById('aiProvider').value = a.provider || 'openai';
+  document.getElementById('aiModel').value = a.model || '';
+  document.getElementById('aiBaseUrl').value = a.base_url || '';
+  document.getElementById('aiLang').value = a.lang || 'en';
+  document.getElementById('aiKeyState').textContent = a.key_set ? '(a key is saved — leave blank to keep it)' : '(not set)';
+}
+document.getElementById('aiSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await guard(await fetch('/api/settings/ai', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: document.getElementById('aiProvider').value,
+      model: document.getElementById('aiModel').value,
+      base_url: document.getElementById('aiBaseUrl').value,
+      lang: document.getElementById('aiLang').value,
+      api_key: document.getElementById('aiKey').value,
+    }),
+  }));
+  const el = document.getElementById('aiMsg');
+  const body = await r.json().catch(() => ({}));
+  el.style.color = r.ok ? '#6ee7a0' : '';
+  el.textContent = r.ok ? 'saved' : (body.error || 'save failed');
+  if (r.ok) { document.getElementById('aiKey').value = ''; loadAiSettings(); }
+});
+
 loadSites();
 loadHomeSettings();
 loadUserTz();
+loadAiSettings();
 </script>
 </body>
 </html>

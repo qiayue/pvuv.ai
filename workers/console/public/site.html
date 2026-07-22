@@ -128,6 +128,14 @@
   .fbar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(59,130,246,.35); }
   .flabel { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12.5px; white-space: nowrap; }
   .fstat { flex: 0 0 auto; min-width: 118px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .ai-md { font-size: 13.5px; line-height: 1.65; color: #cdd6e2; }
+  .ai-md h3 { font-size: 14px; margin: 16px 0 6px; color: #e7ecf3; }
+  .ai-md h3:first-child { margin-top: 0; }
+  .ai-md p { margin: 6px 0; }
+  .ai-md ul { margin: 6px 0; padding-left: 20px; }
+  .ai-md li { margin: 3px 0; }
+  .ai-md strong { color: #e7ecf3; }
+  .ai-md code { background: #171a21; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -228,6 +236,14 @@
 
   <h2>High-score traffic (drill-down)</h2>
   <div class="panel" id="traffic"></div>
+
+  <div class="chart-head">
+    <h2>AI report</h2>
+    <div class="chart-ctrls">
+      <button id="aiGen" class="fbtn">Generate</button>
+    </div>
+  </div>
+  <div class="panel" id="aiReport"></div>
 </main>
 
 <div class="modal" id="modal" hidden>
@@ -653,6 +669,63 @@ async function loadAnomalies() {
     : '';
 }
 
+// ── AI report ──────────────────────────────────────────────────────────────
+// Tiny, safe Markdown → HTML (headings / bold / code / bullet lists / paras).
+// Content is escaped BEFORE any formatting, so the model's output can never
+// inject markup — only the whitelisted transforms below produce tags.
+function mdInline(s) {
+  return s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+function mdToHtml(src) {
+  const lines = String(src ?? '').replace(/\r/g, '').split('\n');
+  let html = '', inList = false, m;
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+  for (const raw of lines) {
+    const t = esc(raw).trim();
+    if (!t) { closeList(); continue; }
+    if ((m = t.match(/^#{1,6}\s+(.*)$/))) { closeList(); html += `<h3>${mdInline(m[1])}</h3>`; }
+    else if ((m = t.match(/^[-*]\s+(.*)$/))) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${mdInline(m[1])}</li>`; }
+    else { closeList(); html += `<p>${mdInline(t)}</p>`; }
+  }
+  closeList();
+  return html;
+}
+function renderReport(rep) {
+  const el = document.getElementById('aiReport');
+  if (!rep || !rep.content) { el.innerHTML = '<p class="muted">No report yet — click Generate to analyze the selected period.</p>'; return; }
+  const when = rep.created_at ? new Date(rep.created_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '';
+  el.innerHTML = `<div class="ai-md">${mdToHtml(rep.content)}</div>`
+    + `<p class="muted" style="margin:12px 0 0;font-size:12px">${esc(rep.period || '')}${when ? ' · generated ' + esc(when) : ''}</p>`;
+}
+async function loadAiReport() {
+  const btn = document.getElementById('aiGen');
+  try {
+    const d = await (await guard(await fetch(`/api/sites/${site}/ai_report`))).json();
+    if (!d.configured) {
+      btn.disabled = true;
+      btn.title = 'Configure an AI provider in Settings first';
+      document.getElementById('aiReport').innerHTML =
+        '<p class="muted">AI reports are not configured. Set a provider, model and API key under <a href="/sites.html" style="color:#7ab3ff;text-decoration:none">Settings ⚙</a>.</p>';
+      return;
+    }
+    btn.disabled = false;
+    renderReport(d.report);
+  } catch { /* non-fatal */ }
+}
+document.getElementById('aiGen').addEventListener('click', async () => {
+  const btn = document.getElementById('aiGen'), el = document.getElementById('aiReport');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Generating…';
+  el.innerHTML = '<p class="muted">Analyzing traffic and writing the report — this can take up to a minute.</p>';
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/ai_report?period=${document.getElementById('period').value}`, { method: 'POST' }));
+    const d = await r.json();
+    if (!r.ok) el.innerHTML = `<p class="err" style="color:#f87171">${esc(d.error || 'generation failed')}</p>`;
+    else renderReport(d);
+  } catch { el.innerHTML = '<p class="err" style="color:#f87171">generation failed</p>'; }
+  finally { btn.disabled = false; btn.textContent = label; }
+});
+
 async function load() {
   const ov = await get('overview');
   const al = await loadAlerts();
@@ -895,7 +968,7 @@ renderFunnelSteps();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();
-(async () => { await loadSiteName(); load(); pollRealtime(); loadAnomalies(); })();
+(async () => { await loadSiteName(); load(); pollRealtime(); loadAnomalies(); loadAiReport(); })();
 setInterval(pollRealtime, 15000);
 </script>
 </body>
