@@ -19,6 +19,8 @@
   .card .v { font-size: 22px; font-weight: 700; }
   .card .k { color: #8b93a1; font-size: 12px; }
   .card .h { color: #6b7280; font-size: 11px; margin-top: 2px; }
+  .card.card-warn { border-color: #4a3f1e; background: #241f10; }
+  .card.card-warn .v { color: #e8d9a0; }
   .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
@@ -522,11 +524,16 @@ function populateControls() {
 
 // KPI cards. The two bounce definitions are shown as separate cards (more
 // direct than a toggle): "engaged" = GA4 style, "1-page" = UA/Plausible/Similarweb.
-function renderCards(o) {
+function renderCards(o, al) {
   const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
   const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
   const pct = (v) => v == null ? '–' : (v * 100).toFixed(1) + '%';
-  const card = (k, v, h) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div>${h ? `<div class="h">${h}</div>` : ''}</div>`;
+  const card = (k, v, h, cls) => `<div class="card${cls ? ' ' + cls : ''}"><div class="v">${v}</div><div class="k">${k}</div>${h ? `<div class="h">${h}</div>` : ''}</div>`;
+  // forged search-referrer traffic (the two new signals) + its share of
+  // search-referred visits — makes "fake Google" visible without SQL.
+  const st = (al && al.stats) || {};
+  const fakeN = st.fake_search || 0;
+  const fakeShare = st.search_pv ? (fakeN / st.search_pv * 100).toFixed(1) + '% of search visits' : 'search-referrer forgery';
   document.getElementById('cards').innerHTML =
     card('Visitors', fmt(o.uv)) + card('Sessions', fmt(o.sessions)) + card('Pageviews', fmt(o.pv)) +
     card('Pages / visitor', perVisitor) +
@@ -534,7 +541,8 @@ function renderCards(o) {
     card('Bounce rate (1-page)', pct(o.bounce_rate_single), 'UA / Plausible style') +
     card('Engaged time', dur(o.avg_duration_ms), 'Visible dwell, incl. exit page') +
     card('Visit duration', dur(o.visit_duration_ms), 'UA / Plausible style') +
-    card('Human share', cleanShare + '%');
+    card('Human share', cleanShare + '%') +
+    card('Forged search', fmt(fakeN), fakeShare, fakeN > 0 ? 'card-warn' : '');
 }
 
 async function loadChart() {
@@ -574,22 +582,24 @@ function donut(t) {
 }
 
 // "Unreasonable data" alerts — self-contained plausibility checks (server-side).
+// Returns the full payload so renderCards can reuse its stats (forged-search etc.).
 async function loadAlerts() {
   const el = document.getElementById('alerts');
-  let list = [];
-  try { list = (await get('alerts')).alerts || []; } catch { el.innerHTML = ''; return; }
-  el.innerHTML = list.map((x) => {
+  let res = { alerts: [], stats: {} };
+  try { res = await get('alerts'); } catch { el.innerHTML = ''; return res; }
+  el.innerHTML = (res.alerts || []).map((x) => {
     const crit = x.severity === 'critical';
     return `<div class="alert alert-${crit ? 'critical' : 'warning'}"><span class="ico">${crit ? '⛔' : '⚠️'}</span>`
       + `<span class="body"><b>${esc(x.title)}</b><span>${esc(x.detail)}</span></span></div>`;
   }).join('');
+  return res;
 }
 
 async function load() {
   const ov = await get('overview');
-  renderCards(ov);
+  const al = await loadAlerts();
+  renderCards(ov, al);
   renderShadowBanner(ov);
-  loadAlerts();
   await loadChart();
 
   await Promise.all(Object.keys(PANELS).map(loadPanel));

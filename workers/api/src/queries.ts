@@ -816,21 +816,35 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
   const A = { ...ALERT_DEFAULTS, ...(CONFIG.alerts ?? {}) };
   const ev = await eventsSiteAgg(db, siteId, period.startTs, period.endTs, filters);
   const pv = ev.pv;
-  if (pv < A.min_pageviews) return { alerts: [] as Alert[], pv };
 
-  // pageview-level flag tallies (datacenter / no-interaction / forged-search)
+  // pageview-level flag tallies (datacenter / no-interaction / forged-search),
+  // plus a count of search-engine-referred pageviews (the denominator for the
+  // "forged share of search traffic" card). The search predicate mirrors the
+  // scorer's classifier: google.<tld> / bing / duckduckgo / yahoo / baidu /
+  // yandex, but NOT google SUBDOMAINS like accounts./mail. (login, not search).
   const FAKE = FLAG.SEARCH_REF_DATACENTER | FLAG.FORGED_SEARCH_REFERRER;
+  const SEARCH_REF = `(ref_domain LIKE 'google.%' OR ref_domain LIKE 'www.google.%'
+    OR ref_domain LIKE '%bing.com' OR ref_domain LIKE '%duckduckgo.com'
+    OR ref_domain LIKE '%yahoo.com' OR ref_domain LIKE '%baidu.com'
+    OR ref_domain LIKE 'yandex.%' OR ref_domain LIKE 'www.yandex.%')`;
   const ef = evFilter(filters);
-  let dc = 0, zero = 0, fake = 0;
+  let dc = 0, zero = 0, fake = 0, searchPv = 0;
   for (const table of await eventTables(db, period.startTs, period.endTs)) {
     const r = await db.prepare(
       `SELECT COALESCE(SUM(CASE WHEN bot_flags & ${FLAG.DATACENTER_ASN} THEN 1 ELSE 0 END), 0) AS dc,
               COALESCE(SUM(CASE WHEN bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE} THEN 1 ELSE 0 END), 0) AS zero,
-              COALESCE(SUM(CASE WHEN bot_flags & ${FAKE} THEN 1 ELSE 0 END), 0) AS fake
+              COALESCE(SUM(CASE WHEN bot_flags & ${FAKE} THEN 1 ELSE 0 END), 0) AS fake,
+              COALESCE(SUM(CASE WHEN ${SEARCH_REF} THEN 1 ELSE 0 END), 0) AS search_pv
        FROM ${table} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?${ef.sql ? ` AND ${ef.sql}` : ''}`,
-    ).bind(siteId, period.startTs, period.endTs, ...ef.binds).first<{ dc: number; zero: number; fake: number }>();
-    dc += r?.dc ?? 0; zero += r?.zero ?? 0; fake += r?.fake ?? 0;
+    ).bind(siteId, period.startTs, period.endTs, ...ef.binds).first<{ dc: number; zero: number; fake: number; search_pv: number }>();
+    dc += r?.dc ?? 0; zero += r?.zero ?? 0; fake += r?.fake ?? 0; searchPv += r?.search_pv ?? 0;
   }
+
+  const stats = {
+    pv, search_pv: searchPv, fake_search: fake, datacenter: dc,
+    zero_interaction: zero, invalid: ev.suspect_count + ev.bot_count,
+  };
+  if (pv < A.min_pageviews) return { alerts: [] as Alert[], pv, stats };
 
   const s = await sessionAgg(db, siteId, period.startTs, period.endTs, filters);
   const sf = seFilter(filters);
@@ -875,7 +889,7 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
       'One source dominates', `“${topSrc.key}” is ${pct(share)} of sessions (alert above ${pct(A.source_concentration)}) — check for referral spam or forged referrers.`);
   }
 
-  return { alerts: out, pv };
+  return { alerts: out, pv, stats };
 }
 
 // ---------------------------------------------------------------------------
