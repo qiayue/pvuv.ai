@@ -3,11 +3,12 @@
  *
  * Dispatches by cron expression:
  *   "5 * * * *"  → hourly rollup (src/rollup.ts) — M1
- *   "30 3 * * *" → daily population/batch analysis (src/batch.ts) — M2 stub
+ *   "30 3 * * *" → daily population/batch analysis (src/batch.ts) + retention purge
  */
 
 import { runHourlyRollup } from './rollup';
 import { runDailyBatch } from './batch';
+import { runRetentionPurge } from './retention';
 
 export interface Env {
   DB: D1Database;
@@ -22,6 +23,7 @@ export default {
         break;
       case '30 3 * * *':
         await runDailyBatch(env);
+        await runRetentionPurge(env); // drop raw data past the retention window
         break;
     }
   },
