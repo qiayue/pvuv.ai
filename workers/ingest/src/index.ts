@@ -289,7 +289,6 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
     v: verdict,
     p: (prior?.p ?? 0) + 1,
     i: interacted ? 1 : 0,
-    d: prior?.d ?? 0,
     ts: Date.now(),
   };
   const state = await signVerdictState(env.HMAC_KEY, newState);

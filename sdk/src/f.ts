@@ -455,7 +455,12 @@ import type { XPayload } from '../../shared/flags';
     // ① local hard signals: never load, no network needed (§7.2)
     if (x.x1 === 1 || x.x2 === 1 || x.x8 === 1) return;
 
-    const callVerdict = (state: string | null): Promise<{ v: string; ok: number; state?: string }> =>
+    // shadow:1 = the site is inside its record-only window (§7.5): the gate says
+    // "load ads regardless of verdict or mode". It is the ONLY server signal that
+    // overrides the client-side mode logic below — a plain ok:1 must NOT, or
+    // strict mode's interaction gate would be silently bypassed for clean traffic.
+    type VerdictRes = { v: string; ok: number; shadow?: number; state?: string };
+    const callVerdict = (state: string | null): Promise<VerdictRes> =>
       fetch(api + '/v', {
         method: 'POST',
         headers: { 'content-type': 'text/plain' },
@@ -467,7 +472,7 @@ import type { XPayload } from '../../shared/flags';
           r: pageReferrer || undefined,
           i: interacted ? 1 : 0, state: state || undefined,
         }),
-      }).then((r) => r.json() as Promise<{ v: string; ok: number; state?: string }>);
+      }).then((r) => r.json() as Promise<VerdictRes>);
 
     const saveState = (res: { state?: string }): void => {
       if (res.state) setCookie(COOKIE.VERDICT, res.state, VERDICT_TTL_MS / 1000);
@@ -479,13 +484,23 @@ import type { XPayload } from '../../shared/flags';
     const prior = vc ? decodeState(vc) : null;
     if (prior && Date.now() - prior.ts < VERDICT_TTL_MS) {
       if (prior.v === 'bot' || prior.v === 'crawler') {
-        blocked = true;
-        callVerdict(vc).then(saveState).catch(() => { /* stay blocked */ });
+        // known bot → no ads, EXCEPT during the site's shadow window, where the
+        // gate returns shadow:1 = "load anyway" (§7.5). Defer to the gate rather
+        // than blocking synchronously, so a shadow-mode site still shows ads to
+        // previously-flagged visitors (and no ad loads for a real bot otherwise).
+        callVerdict(vc).then((res) => {
+          saveState(res);
+          if (res.shadow === 1) inject(); else blocked = true;
+        }).catch(() => { blocked = true; });
         return;
       }
       if (prior.v === 'clean') {
-        // background re-check stacks evidence → blocks from page 2 (§7.3)
-        callVerdict(vc).then(saveState).catch(() => { /* keep cookie */ });
+        // background re-check stacks evidence → blocks from page 2 (§7.3); a
+        // shadow-window response also lifts strict mode's interaction gate.
+        callVerdict(vc).then((res) => {
+          saveState(res);
+          if (res.shadow === 1) inject();
+        }).catch(() => { /* keep cookie */ });
         if (agMode === 'strict' && !interacted) {
           // strict: even a returning clean visitor must re-demonstrate
           // interaction before ads load
@@ -524,6 +539,7 @@ import type { XPayload } from '../../shared/flags';
       .then((res) => {
         clearTimeout(timer);
         saveState(res);
+        if (res.shadow === 1) { inject(); return; } // record-only window: load regardless of verdict (§7.5)
         if (!verdict || verdict === 'timeout') {
           verdict = res.v;
           evaluate();

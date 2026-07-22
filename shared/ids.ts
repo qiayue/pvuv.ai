@@ -155,8 +155,6 @@ export interface VerdictState {
   p: number;
   /** whether any human interaction occurred (0/1) */
   i: 0 | 1;
-  /** previous-page dwell, ms */
-  d: number;
   /** unix ms when this state was signed */
   ts: number;
 }
