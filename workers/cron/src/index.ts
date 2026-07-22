@@ -9,6 +9,7 @@
 import { runHourlyRollup } from './rollup';
 import { runDailyBatch } from './batch';
 import { runRetentionPurge } from './retention';
+import { runAnomalyDetection } from './anomaly';
 
 export interface Env {
   DB: D1Database;
@@ -23,7 +24,8 @@ export default {
         break;
       case '30 3 * * *':
         await runDailyBatch(env);
-        await runRetentionPurge(env); // drop raw data past the retention window
+        await runAnomalyDetection(env); // baseline trend anomalies → anomaly_reports
+        await runRetentionPurge(env);   // drop raw data past the retention window
         break;
     }
   },

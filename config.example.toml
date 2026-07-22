@@ -65,6 +65,20 @@ pages_per_visitor_high = 15      # pageviews/visitor above this = scraping-like
 source_concentration   = 0.60    # a single non-direct source's session share
 
 # ------------------------------------------------------------------
+# Baseline anomaly detection (daily cron): compares yesterday against a
+# trailing per-day baseline from the rollups and flags large deviations
+# (traffic spikes/drops, invalid-share jumps, per-source surges).
+# ------------------------------------------------------------------
+[anomaly]
+baseline_days = 14      # trailing window length (days before yesterday)
+min_days      = 5       # need at least this many baseline days to judge
+spike_ratio   = 3.0     # yesterday >= baseline mean × this → spike
+drop_ratio    = 0.34    # yesterday <= baseline mean × this → drop
+min_pv        = 100     # site-level: ignore days below this many pageviews
+min_source_uv = 30      # source-level: ignore sources below this baseline visitors
+invalid_jump  = 0.15    # invalid-traffic share must rise by ≥ this many points
+
+# ------------------------------------------------------------------
 # Detection toggles
 # ------------------------------------------------------------------
 [detection]

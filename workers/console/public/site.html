@@ -109,6 +109,12 @@
   .alert .body span { opacity: .85; }
   .alert-warning { border-color: #4a3f1e; background: #241f10; color: #e8d9a0; }
   .alert-critical { border-color: #5a2020; background: #241010; color: #f3b0b0; }
+  .anomalies { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .anomalies:empty { display: none; }
+  .anomaly-hd { font-size: 12px; color: #8b93a1; }
+  .anomaly { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 7px; border: 1px solid #2a3550; background: #141a26; color: #cdd6e2; font-size: 12.5px; }
+  .anomaly .ico { flex: 0 0 auto; }
+  .anomaly .day { color: #8b93a1; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 </style>
 </head>
 <body>
@@ -146,6 +152,7 @@
   <div class="rt" id="realtime"></div>
   <div class="shadow-banner" id="shadowBanner" hidden></div>
   <div class="alerts" id="alerts"></div>
+  <div class="anomalies" id="anomalies"></div>
   <div class="filters" id="filters"></div>
   <div class="cards" id="cards"></div>
 
@@ -595,6 +602,22 @@ async function loadAlerts() {
   return res;
 }
 
+// Baseline anomalies (daily cron output) — historical, not period-scoped, so
+// fetched directly once rather than through the period-aware get().
+async function loadAnomalies() {
+  const el = document.getElementById('anomalies');
+  let list = [];
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/anomalies`));
+    list = (await r.json()).anomalies || [];
+  } catch { el.innerHTML = ''; return; }
+  el.innerHTML = list.length
+    ? '<div class="anomaly-hd">Recent anomalies (vs baseline)</div>'
+      + list.map((a) => `<div class="anomaly"><span class="ico">${a.kind === 'drop' ? '📉' : '📈'}</span>`
+        + `<span class="day">${esc(a.day)}</span><span>${esc(a.message)}</span></div>`).join('')
+    : '';
+}
+
 async function load() {
   const ov = await get('overview');
   const al = await loadAlerts();
@@ -780,7 +803,7 @@ buildTabs();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();
-(async () => { await loadSiteName(); load(); pollRealtime(); })();
+(async () => { await loadSiteName(); load(); pollRealtime(); loadAnomalies(); })();
 setInterval(pollRealtime, 15000);
 </script>
 </body>

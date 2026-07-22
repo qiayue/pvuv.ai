@@ -57,6 +57,8 @@ export interface ScoringConfig {
   population: Record<string, number>;
   /** dashboard "unreasonable data" alert thresholds (optional; code has defaults) */
   alerts?: Record<string, number>;
+  /** baseline anomaly-detection thresholds (optional; code has defaults) */
+  anomaly?: Record<string, number>;
   blocklist: { default_ttl_days: number; hard_signal_permanent: boolean; share_bare_ip: boolean };
   adguard: { default_mode: string; verdict_timeout_ms: number; shadow_days: number };
   retention: { raw_events_days: number };

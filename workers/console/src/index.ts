@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -344,6 +344,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
+    if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
     if (resource === 'traffic') {
       return json(await traffic(env.DB, siteId, period, {
         verdict: q.get('verdict'),

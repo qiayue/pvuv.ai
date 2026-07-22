@@ -893,6 +893,30 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
 }
 
 // ---------------------------------------------------------------------------
+// GET /sites/:id/anomalies — recent baseline-anomaly reports (daily cron output,
+// §6.4). Not period-scoped: always the most recent flags, newest/biggest first.
+// ---------------------------------------------------------------------------
+
+export async function anomalies(db: D1Database, siteId: string, limit = 40) {
+  const rows = await db.prepare(
+    `SELECT day, dimension, baseline, actual, deviation, evidence
+     FROM anomaly_reports WHERE site_id = ? AND status = 'pending'
+     ORDER BY day DESC, deviation DESC LIMIT ?`,
+  ).bind(siteId, Math.min(Math.max(Number.isFinite(limit) ? limit : 40, 1), 100))
+    .all<{ day: string; dimension: string; baseline: number; actual: number; deviation: number; evidence: string }>();
+  return {
+    anomalies: rows.results.map((r) => {
+      let ev: { kind?: string; message?: string } = {};
+      try { ev = JSON.parse(r.evidence || '{}'); } catch { /* malformed → fall back to dimension */ }
+      return {
+        day: r.day, dimension: r.dimension, baseline: r.baseline, actual: r.actual,
+        deviation: r.deviation, kind: ev.kind ?? 'spike', message: ev.message ?? r.dimension,
+      };
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // GET /sites/:id/traffic?verdict=&min_score=&limit= — drill-down list (§11.2)
 // ---------------------------------------------------------------------------
 
