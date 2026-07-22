@@ -15,7 +15,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { hmacSign } from '../../../shared/ids';
 
@@ -64,6 +64,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
   if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
   if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
+  if (resource === 'funnel') return json(await funnel(env.DB, siteId, period, parseFunnelSteps(q.get('steps')), filters));
   if (resource === 'traffic') {
     return json(await traffic(env.DB, siteId, period, {
       verdict: q.get('verdict'),
@@ -117,6 +118,19 @@ function parseFilters(raw: string | null): Filter[] {
       .filter((f) => f && typeof f.dim === 'string' && typeof f.value === 'string' && FILTERABLE.has(f.dim))
       .slice(0, 8)
       .map((f) => ({ dim: f.dim, value: f.value }));
+  } catch { return []; }
+}
+
+/** Parse the funnel `steps` param: JSON [{type,value}], capped and validated. */
+function parseFunnelSteps(raw: string | null): FunnelStep[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((s) => s && (s.type === 'page' || s.type === 'event') && typeof s.value === 'string')
+      .slice(0, 8)
+      .map((s) => ({ type: s.type, value: s.value }));
   } catch { return []; }
 }
 

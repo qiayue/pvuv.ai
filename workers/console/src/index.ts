@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -345,6 +345,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
     if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
+    if (resource === 'funnel') return json(await funnel(env.DB, siteId, period, parseFunnelSteps(q.get('steps')), filters));
     if (resource === 'traffic') {
       return json(await traffic(env.DB, siteId, period, {
         verdict: q.get('verdict'),
@@ -503,6 +504,19 @@ function json(data: unknown, status = 200, setCookie?: string): Response {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (setCookie) headers['set-cookie'] = setCookie;
   return new Response(JSON.stringify(data), { status, headers });
+}
+
+/** Parse the funnel `steps` param: JSON [{type,value}], capped and validated. */
+function parseFunnelSteps(raw: string | null): FunnelStep[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((s) => s && (s.type === 'page' || s.type === 'event') && typeof s.value === 'string')
+      .slice(0, 8)
+      .map((s) => ({ type: s.type, value: s.value }));
+  } catch { return []; }
 }
 
 /** Parse the `filters` query param (JSON [{dim,value}]), validated against the

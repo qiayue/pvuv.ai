@@ -940,6 +940,53 @@ export async function anomalies(db: D1Database, siteId: string, limit = 40) {
 }
 
 // ---------------------------------------------------------------------------
+// GET /sites/:id/funnel?steps=<json> — ordered conversion funnel (M3).
+// A step is { type:'page', value:'/path' } or { type:'event', value:'signup' }.
+// A visitor reaches step k when the FIRST occurrence of each step 0..k is
+// non-decreasing in time (t0 ≤ t1 ≤ … ≤ tk) — "first-occurrence" ordering,
+// computed entirely in SQL (per-visitor step mins, then monotonic counts).
+// ---------------------------------------------------------------------------
+
+export interface FunnelStep { type: 'page' | 'event'; value: string }
+
+export async function funnel(db: D1Database, siteId: string, period: Period, steps: FunnelStep[], filters: Filter[] = []) {
+  const clean = steps
+    .filter((s) => s && (s.type === 'page' || s.type === 'event') && typeof s.value === 'string' && s.value)
+    .slice(0, 8);
+  if (clean.length < 2) throw new ApiError(400, 'funnel needs 2–8 steps');
+
+  const tables = await eventTables(db, period.startTs, period.endTs);
+  if (tables.length === 0) return { steps: clean.map((s) => ({ ...s, visitors: 0 })) };
+
+  const ef = evFilter(filters);
+  const u = unionOver(tables, 'visitor_id, ts, event, path', siteId, period.startTs, period.endTs, ef.sql, ef.binds);
+
+  const matchBinds: unknown[] = [];
+  const minExprs = clean.map((s, i) => {
+    matchBinds.push(s.value);
+    return s.type === 'page'
+      ? `MIN(CASE WHEN event = 'pageview' AND path = ? THEN ts END) AS t${i}`
+      : `MIN(CASE WHEN event = ? THEN ts END) AS t${i}`;
+  });
+  const countExprs = clean.map((_, i) => {
+    const conds: string[] = [];
+    for (let j = 0; j <= i; j++) conds.push(`t${j} IS NOT NULL`);
+    for (let j = 1; j <= i; j++) conds.push(`t${j} >= t${j - 1}`);
+    return `SUM(CASE WHEN ${conds.join(' AND ')} THEN 1 ELSE 0 END) AS c${i}`;
+  });
+
+  // matchBinds appear (inner SELECT) before u.binds (the FROM subquery)
+  const row = await db.prepare(`
+    SELECT ${countExprs.join(', ')} FROM (
+      SELECT visitor_id, ${minExprs.join(', ')}
+      FROM (${u.sql}) GROUP BY visitor_id
+    )
+  `).bind(...matchBinds, ...u.binds).first<Record<string, number>>();
+
+  return { steps: clean.map((s, i) => ({ type: s.type, value: s.value, visitors: row?.[`c${i}`] ?? 0 })) };
+}
+
+// ---------------------------------------------------------------------------
 // GET /sites/:id/traffic?verdict=&min_score=&limit= — drill-down list (§11.2)
 // ---------------------------------------------------------------------------
 

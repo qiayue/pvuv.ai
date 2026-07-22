@@ -115,6 +115,19 @@
   .anomaly { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 7px; border: 1px solid #2a3550; background: #141a26; color: #cdd6e2; font-size: 12.5px; }
   .anomaly .ico { flex: 0 0 auto; }
   .anomaly .day { color: #8b93a1; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .fbtn { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
+  .fbtn:hover { background: #1d2230; }
+  .fstep { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .fstep .fnum { color: #8b93a1; width: 16px; flex: 0 0 auto; }
+  .fstep select, .fstep input { background: #0f1115; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; font: inherit; }
+  .fstep input { flex: 1; min-width: 0; }
+  .fstep .fx { background: #313d50; border: 0; color: #cdd6e2; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; flex: 0 0 auto; }
+  .fstep .fx:hover { background: #47566e; }
+  .frow { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
+  .fbar-wrap { position: relative; flex: 1; height: 30px; background: #141a26; border-radius: 6px; overflow: hidden; }
+  .fbar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(59,130,246,.35); }
+  .flabel { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12.5px; white-space: nowrap; }
+  .fstat { flex: 0 0 auto; min-width: 118px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -193,6 +206,18 @@
   <div id="goalsSection" hidden>
     <h2>Goals (custom events)</h2>
     <div class="panel" id="goals"></div>
+  </div>
+
+  <div class="chart-head">
+    <h2>Funnel</h2>
+    <div class="chart-ctrls">
+      <button id="funnelAdd" class="fbtn">+ step</button>
+      <button id="funnelRun" class="fbtn">Run</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div id="funnelSteps"></div>
+    <div id="funnelResult"></div>
   </div>
 
   <h2>Traffic quality</h2>
@@ -639,6 +664,7 @@ async function load() {
 
   await loadUtm();
   await loadGoals();
+  runFunnel(); // re-run the saved funnel for the current period (no-op if <2 valid steps)
 
   const qy = await get('quality');
   donut(qy.totals);
@@ -803,6 +829,49 @@ async function loadUtm() {
   renderBreakdown('utm', dim, d.rows || []);
 }
 
+// ── Funnel: user builds ordered steps (page path or event), we compute the
+// first-occurrence-ordered funnel over the selected period. Steps persist per site.
+const FUNNEL_KEY = 'pvuv.funnel.' + site;
+let funnelSteps = (() => { try { return JSON.parse(localStorage.getItem(FUNNEL_KEY)) || []; } catch { return []; } })();
+if (!Array.isArray(funnelSteps) || funnelSteps.length < 2) funnelSteps = [{ type: 'page', value: '/' }, { type: 'event', value: '' }];
+function saveFunnel() { try { localStorage.setItem(FUNNEL_KEY, JSON.stringify(funnelSteps)); } catch { /* non-fatal */ } }
+function renderFunnelSteps() {
+  const el = document.getElementById('funnelSteps');
+  el.innerHTML = funnelSteps.map((s, i) => `<div class="fstep" data-i="${i}">
+      <span class="fnum">${i + 1}</span>
+      <select class="ftype"><option value="page"${s.type === 'page' ? ' selected' : ''}>Page path</option><option value="event"${s.type === 'event' ? ' selected' : ''}>Event</option></select>
+      <input class="fval" value="${esc(s.value)}" placeholder="${s.type === 'page' ? '/pricing' : 'signup'}" aria-label="Step ${i + 1} value">
+      ${funnelSteps.length > 2 ? '<button class="fx" title="Remove step">×</button>' : ''}
+    </div>`).join('');
+  el.querySelectorAll('.fstep').forEach((row) => {
+    const i = Number(row.dataset.i);
+    row.querySelector('.ftype').addEventListener('change', (e) => { funnelSteps[i].type = e.target.value; saveFunnel(); renderFunnelSteps(); });
+    row.querySelector('.fval').addEventListener('input', (e) => { funnelSteps[i].value = e.target.value; saveFunnel(); });
+    const x = row.querySelector('.fx');
+    if (x) x.addEventListener('click', () => { funnelSteps.splice(i, 1); saveFunnel(); renderFunnelSteps(); });
+  });
+}
+async function runFunnel() {
+  const valid = funnelSteps.filter((s) => s.value && s.value.trim());
+  const out = document.getElementById('funnelResult');
+  if (valid.length < 2) { out.innerHTML = '<p class="muted" style="margin:10px 2px 0">Add at least 2 steps with a value, then Run.</p>'; return; }
+  let steps = [];
+  try { steps = (await get('funnel', `&steps=${encodeURIComponent(JSON.stringify(valid))}`)).steps || []; } catch { out.innerHTML = '<p class="muted">funnel failed</p>'; return; }
+  const top = steps[0] ? steps[0].visitors : 0;
+  out.innerHTML = '<div style="margin-top:10px">' + steps.map((s, i) => {
+    const v = s.visitors || 0;
+    const pctTop = top ? (v / top * 100) : 0;
+    const prev = i > 0 ? (steps[i - 1].visitors || 0) : v;
+    const drop = i > 0 && prev > 0 ? (1 - v / prev) * 100 : 0;
+    const label = (s.type === 'page' ? 'Page ' : 'Event ') + s.value;
+    return `<div class="frow"><div class="fbar-wrap"><div class="fbar" style="width:${Math.max(pctTop, 1).toFixed(1)}%"></div>`
+      + `<span class="flabel">${i + 1}. ${esc(label)}</span></div>`
+      + `<div class="fstat"><b>${fmt(v)}</b> <span class="muted">${pctTop.toFixed(0)}%${i > 0 ? ` · −${drop.toFixed(0)}%` : ''}</span></div></div>`;
+  }).join('') + '</div>';
+}
+document.getElementById('funnelAdd').addEventListener('click', () => { if (funnelSteps.length < 8) { funnelSteps.push({ type: 'event', value: '' }); saveFunnel(); renderFunnelSteps(); } });
+document.getElementById('funnelRun').addEventListener('click', runFunnel);
+
 // Goals = custom (non-lifecycle) events; the panel hides itself when the site
 // sends none, so it never clutters sites that don't use pvuv('event', …).
 async function loadGoals() {
@@ -822,6 +891,7 @@ restorePrefs();
 loadFilters();
 renderFilters();
 buildTabs();
+renderFunnelSteps();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();
