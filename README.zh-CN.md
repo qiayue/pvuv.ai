@@ -2,7 +2,7 @@
 
 **自托管、隐私友好的网站统计，内置虚假流量识别与广告防护 —— 跑在 Cloudflare Workers + D1 上。**
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Status: early development](https://img.shields.io/badge/status-early%20development-orange.svg)](#路线图)
 [![Runs on Cloudflare](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020.svg)](https://workers.cloudflare.com/)
 
@@ -125,11 +125,16 @@ cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 
 评分权重、判定阈值、黑名单都是**可调且部署私有**的。`config.example.toml` 提供示例默认值；复制为 `config.local.toml`（已 gitignore）自行私有调优。引擎从 config 读取权重、代码不硬编码，因此可以在不暴露给刷手的前提下调整检测。详见 [`PROJECT_PLAN.zh-CN.md` §21](./PROJECT_PLAN.zh-CN.md)。
 
-## 署名（Attribution）
+## 版本（开放内核）
 
-部署自带一个极简默认首页，其页脚链接指向 [pvuv.ai](https://pvuv.ai) 和本 GitHub 仓库——**仅在部署实例自己的首页**（后台和内页没有链接，也绝不会向被统计的网站注入任何内容）。默认首页欢迎替换成你自己的（`workers/console/public/home.html`）；署名页脚会由 console Worker 自动追加到自定义页面上。免费/自托管部署需保留这两个链接，移除或隐藏需要商业授权（联系作者）。
+pvuv.ai 采用**开放内核（open core）**模式：
 
-依据是 [AGPL-3.0 §7(b)](https://www.gnu.org/licenses/agpl-3.0.html#section7)：该条款允许在许可证之上附加「要求保留指定作者署名」的附加条款。
+- **本仓库——自托管版——采用 MIT 许可**。随便用、随便改、可商用、可闭源集成进你自己的产品。没有 copyleft、没有署名要求、没有任何附加条件。**无所顾忌地用。**
+- **托管的多租户 SaaS 版**（托管账号、计费、组织隔离、技术支持）由作者单独提供，**不在本仓库内**。两者不重叠、不冲突——开源版本身就是完整可用的。
+
+## 署名（可选）
+
+自带的默认首页页脚有一个小小的「Powered by pvuv.ai」链接指回项目——**仅出现在部署实例自己的首页**（后台和内页没有链接，也绝不会向被统计的网站注入任何内容）。这只是个**善意的默认，不是义务**：MIT 不作任何强制。你想支持项目就留着，不想要就随手删掉——放一个你自己的 `workers/console/public/home.html`（原样输出、不再追加任何页脚），或直接改默认页即可。当然，来 GitHub 点个 star 我们会很开心。🙏
 
 > 默认首页刻意做得非常简单——它*就是*为了让你自定义的。成千上万个部署共用同一套落地页文案，只会在搜索引擎里制造重复内容。
 
@@ -163,4 +168,4 @@ pvuv.ai 以数据最小化为设计原则：
 
 ## 许可证
 
-[GNU AGPL-3.0](./LICENSE)。你可以自由自托管和修改，但若以网络服务形式运行修改版，须向用户提供其源码。这既保持项目开放，又防止闭源商业分叉。
+[MIT](./LICENSE)。想怎么用就怎么用——自托管、修改、再分发、商用都行，不必开源你的改动，也没有署名要求。作者单独提供的托管多租户 SaaS 版按其自身条款授权，不在本仓库覆盖范围内。

@@ -2,7 +2,7 @@
 
 **Self-hosted, privacy-conscious web analytics with built-in invalid-traffic detection and ad protection — on Cloudflare Workers + D1.**
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Status: early development](https://img.shields.io/badge/status-early%20development-orange.svg)](#roadmap)
 [![Runs on Cloudflare](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020.svg)](https://workers.cloudflare.com/)
 
@@ -125,11 +125,16 @@ Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (ingest 
 
 Scoring weights, verdict thresholds, and the blocklist are **tunable and deployment-private**. `config.example.toml` ships example defaults; copy it to `config.local.toml` (gitignored) and tune privately. The engine reads weights from config — nothing is hardcoded — so you can adjust detection without exposing it to fraudsters. See [`PROJECT_PLAN.md` §21](./PROJECT_PLAN.md).
 
-## Attribution
+## Editions
 
-Deployments ship with a minimal default homepage whose footer links to [pvuv.ai](https://pvuv.ai) and this GitHub repository — on the deployed instance's **homepage only** (dashboard and inner pages carry no links, and nothing is ever injected into the websites you measure). You are welcome to replace the default homepage with your own (`workers/console/public/home.html`); the console worker appends the attribution footer to it automatically. Free / self-hosted deployments must keep these links intact; removing or hiding them requires a commercial license (contact the author).
+pvuv.ai is **open core**:
 
-This is an additional term under [AGPL-3.0 §7(b)](https://www.gnu.org/licenses/agpl-3.0.html#section7), which permits requiring the preservation of specified author attributions in modified versions.
+- **This repository — the self-hosted edition — is MIT-licensed.** Use it, modify it, run it commercially, fold it into a closed product. No copyleft, no attribution requirement, no strings. Use it without a second thought.
+- **A hosted, multi-tenant SaaS edition** (managed accounts, billing, org isolation, support) is offered separately by the author and is **not** part of this repository. The two do not overlap or conflict — the open-source edition is complete and fully functional on its own.
+
+## Attribution (optional)
+
+The shipped default homepage carries a small "Powered by pvuv.ai" footer linking back to the project — **on the deployed instance's homepage only** (dashboards and inner pages have no links, and nothing is ever injected into the sites you measure). It's a courtesy, **not a requirement**: MIT imposes none. Keep it if you'd like to support the project, or remove it freely — provide your own `workers/console/public/home.html` (served verbatim, with no footer added) or edit the default page. A star on GitHub is always appreciated. 🙏
 
 > The default homepage is intentionally sparse — it is *meant* to be customized. Thousands of deployments sharing identical landing copy would only create duplicate-content noise in search engines.
 
@@ -163,4 +168,4 @@ Found a vulnerability? Please report it privately — see [`SECURITY.md`](./SECU
 
 ## License
 
-[GNU AGPL-3.0](./LICENSE). You may self-host and modify freely, but if you run a modified version as a network service, you must offer its source to your users. This keeps the project open while preventing closed-source commercial forks.
+[MIT](./LICENSE). Do whatever you want — self-host, modify, redistribute, or use it commercially — with no obligation to open your changes and no attribution requirement. The separately-offered hosted multi-tenant SaaS edition is licensed on its own terms and is not covered by this repository.

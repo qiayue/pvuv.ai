@@ -1,7 +1,7 @@
 # pvuv.ai — 自托管网站统计 · 反虚假流量 · 广告防护平台
 
 > **项目规划文档**（交付 Claude Code 用）· v1.1
-> Repo: https://github.com/qiayue/pvuv.ai · License: AGPL-3.0（见 §22）
+> Repo: https://github.com/qiayue/pvuv.ai · License: MIT（见 §22）
 > English version / 英文版（主文档）：[`PROJECT_PLAN.md`](./PROJECT_PLAN.md)
 
 **pvuv.ai** 是一个自托管、隐私友好的网站流量统计平台，跑在 Cloudflare Workers + D1 上。它把全维度流量统计（多站点、多子域、per-page PV/UV、来源、UTM 与全部跟踪参数、跳出率、停留时长、含金额的自定义事件、会话级与用户级归因）、三层虚假流量识别、以及一个可选的广告防护层（判定可信才加载广告代码）叠加在一起。本文件是构建规格说明。
@@ -86,7 +86,7 @@
 - **session_id**：UUID。开新会话条件（任一）：30 分钟无活动 / UTM 变化 / 跨自然日。存 Cookie `_pv_sid` + 最后活动时间戳。
 - **user_id**：`identify()` 后绑定。`identities` 表维护 user↔visitor 映射，实现同一用户多设备多会话合并。
 - **首触归因快照**：首访存 referrer + UTM 于 Cookie `_pv_ft`（永不覆盖）。转化事件同时带首触与末触。
-- **判定状态 Cookie** `_pv_v`：HMAC 签名，存当前 verdict、已看页数、是否交互、上页停留时长，客户端改不了，供 `/v` 复审。
+- **判定状态 Cookie** `_pv_v`：HMAC 签名，存当前 verdict、已看页数、是否交互，客户端改不了，供 `/v` 复审。
 
 ---
 
@@ -594,7 +594,7 @@ M1 可略过（建表/留接口即可）：群体批量分析、分布检验、A
 
 ```
 pvuv.ai/
-├── LICENSE                        # AGPL-3.0（见 §22）
+├── LICENSE                        # MIT（见 §22）
 ├── README.md                      # 中英双语，项目介绍/架构/部署
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -648,7 +648,7 @@ pvuv.ai/
 
 ## 22. 开源协议与安全
 
-**License：AGPL-3.0（已确定）。** 理由：允许自托管与自由使用，但任何人（含以 SaaS 形式提供服务者）修改后必须开源其改动——防止他人直接拿本项目做闭源商业竞品，同时不影响自托管用户。Plausible / Umami / PostHog 等「自身也商业化的开源统计工具」均采此协议。
+**License：MIT（开放内核）。** 本仓库的自托管版采用 MIT——随便用、改、再分发、商用，没有 copyleft、也没有署名要求，让采用者无所顾忌地使用。商业化由单独提供的、闭源的托管**多租户 SaaS** 版承担（托管账号、计费、组织隔离、技术支持），不在本仓库内；两者不重叠、不冲突。
 
 **开源前安全清单（务必逐项确认）**：
 - [ ] 仓库无任何密钥（HMAC key、Cloudflare token、AI API key、`.dev.vars`）

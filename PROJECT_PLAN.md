@@ -1,7 +1,7 @@
 # pvuv.ai — Self-hosted Web Analytics with Invalid-Traffic Detection & Ad Protection
 
 > **Project planning document** (build spec / handoff to Claude Code) · v1.1
-> Repo: https://github.com/qiayue/pvuv.ai · License: AGPL-3.0
+> Repo: https://github.com/qiayue/pvuv.ai · License: MIT
 > 中文版 / Chinese version: [`PROJECT_PLAN.zh-CN.md`](./PROJECT_PLAN.zh-CN.md)
 
 **pvuv.ai** is a self-hosted, privacy-conscious web analytics platform running on Cloudflare Workers + D1. It combines full-dimension traffic analytics (multi-site, multi-subdomain, per-page PV/UV, referrers, UTM & all tracking params, bounce rate, dwell time, custom events with revenue, session- and user-level attribution) with a three-layer invalid-traffic (bot) detection system and an optional ad-protection layer that loads ad code only for traffic judged trustworthy.
@@ -86,7 +86,7 @@ Four ID layers: `site_id → visitor_id → session_id → user_id`.
 - **session_id**: UUID. A new session starts on any of: 30 min inactivity / UTM change / calendar-day rollover. Stored in cookie `_pv_sid` + last-active timestamp.
 - **user_id**: bound after `identify()`. The `identities` table maintains a user↔visitor map, merging one user's multiple visitor_ids across devices/sessions.
 - **First-touch attribution snapshot**: on first visit, referrer + UTM are stored in cookie `_pv_ft` (never overwritten). Conversion events carry both first-touch and last-touch attribution.
-- **Verdict-state cookie** `_pv_v`: HMAC-signed; holds current verdict, pages seen, whether interaction occurred, and previous-page dwell — tamper-proof on the client, used by `/v` for re-checks.
+- **Verdict-state cookie** `_pv_v`: HMAC-signed; holds current verdict, pages seen, and whether interaction occurred — tamper-proof on the client, used by `/v` for re-checks.
 
 ---
 
@@ -596,7 +596,7 @@ May skip in M1 (create tables / stub endpoints only): population batch analysis,
 
 ```
 pvuv.ai/
-├── LICENSE                        # AGPL-3.0 (see §22)
+├── LICENSE                        # MIT (see §22)
 ├── README.md                      # bilingual: intro / architecture / deploy
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -651,7 +651,7 @@ A public repo can't hide client-side logic from anyone reading the code, so the 
 
 ## 22. License & security
 
-**License: AGPL-3.0.** Rationale: it permits self-hosting and free use, but anyone (including those offering it as a SaaS) who modifies it must open-source their changes — preventing others from turning this project into a closed-source commercial competitor, while not affecting self-hosting users. Open-source analytics tools that also commercialize (Plausible / Umami / PostHog) all use this license.
+**License: MIT (open core).** The self-hosted edition in this repo is MIT — use, modify, redistribute, or commercialize it with no copyleft and no attribution requirement, so adopters can use it without reservation. Commercialization is handled by a separately-offered, closed-source hosted **multi-tenant SaaS** edition (managed accounts, billing, org isolation, support) that is not part of this repository; the two do not overlap or conflict.
 
 **Pre-open-source security checklist (confirm every item):**
 - [ ] No secrets anywhere in the repo (HMAC key, Cloudflare token, AI API key, `.dev.vars`)

@@ -263,18 +263,18 @@ Your deployment's `/` is a public landing page. Three tiers, no forking needed:
    (server-side, also in `<title>` and `<meta name="description">`).
 2. **Fully custom page.** Create `workers/console/public/home.html` with any
    HTML you like and redeploy the console — it replaces the default homepage
-   entirely. The file is **gitignored**, so your landing copy never enters
-   the public repo and `git pull` never conflicts. This is also how the
-   official pvuv.ai homepage is expected to work. The attribution footer is
-   appended to the page automatically by the worker — you don't need to
-   (and shouldn't) write it into your HTML yourself.
+   entirely and is served **verbatim** (nothing is injected). The file is
+   **gitignored**, so your landing copy never enters the public repo and
+   `git pull` never conflicts. This is also how the official pvuv.ai homepage
+   is expected to work.
 3. **Default.** Do nothing and you get the minimal shipped page.
 
-Whichever tier you use, the homepage carries the footer attribution links
-(pvuv.ai + GitHub); free deployments must keep them — see README
-"Attribution".
-The default page is intentionally sparse so that thousands of deployments
-don't publish identical landing copy (duplicate content in search engines).
+The shipped default page carries a small optional "Powered by pvuv.ai" footer
+link. It's a courtesy, **not required** — MIT imposes no attribution — so keep
+it to support the project or remove it freely (a custom `home.html` has no
+footer at all). The default page is intentionally sparse so that thousands of
+deployments don't publish identical landing copy (duplicate content in search
+engines).
 
 ## First-party reverse proxy (optional, blocker-resistant)
 
