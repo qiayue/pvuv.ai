@@ -25,7 +25,9 @@
  *   (share_bare_ip=false) — CGNAT/campus networks make raw IP evidence weak;
  *   fp-backed clusters block. Blocklist entries carry a TTL and decay.
  *
- * Behavior-sequence (path-signature) clustering and distribution tests are M3.
+ * Distribution-shape (concentration) checks live in anomaly.ts (clean-traffic
+ * device/landing concentration jumps). Behavior-sequence (path-signature)
+ * clustering is still future work.
  */
 
 import type { Env } from './index';

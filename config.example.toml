@@ -81,6 +81,18 @@ min_pv        = 100     # site-level: ignore days below this many pageviews
 min_source_uv = 30      # source-level: ignore sources below this baseline visitors
 invalid_jump  = 0.15    # invalid-traffic share must rise by ≥ this many points
 
+# Distribution-shape checks (§6.4/§6.5): catch farms whose hits each pass as
+# "clean" but collectively collapse the CLEAN traffic onto one device profile
+# or landing page. Flags a concentration JUMP vs the trailing baseline (so a
+# site that is legitimately concentrated doesn't false-positive — only a change
+# does). Compares yesterday against the same [anomaly] baseline window.
+[distribution]
+min_pv           = 200   # min yesterday clean pageviews/sessions to test
+min_baseline_pv  = 600   # min baseline-window volume for a trustworthy baseline
+top_share_jump   = 0.25  # yesterday top-value share minus baseline top-value share
+top_share_floor  = 0.45  # yesterday top-value share must also be at least this (absolute)
+screen_bucket_px = 100   # screen-width bucket size for the device signature
+
 # ------------------------------------------------------------------
 # Detection toggles
 # ------------------------------------------------------------------
