@@ -61,43 +61,45 @@
 </style>
 </head>
 <body>
+<script src="/i18n.js"></script>
 <header>
   <span class="brand" id="brand">pvuv.ai</span>
   <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
-    <a href="/health.html" id="selfcheckLink" hidden style="color:#7ab3ff;text-decoration:none;font-size:13px">Self-check</a>
-    <button id="logout">Sign out</button>
+    <select id="lang" aria-label="Language" style="background:#171a21;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px;font:inherit"></select>
+    <a href="/health.html" id="selfcheckLink" hidden style="color:#7ab3ff;text-decoration:none;font-size:13px" data-i18n="Self-check">Self-check</a>
+    <button id="logout" data-i18n="Sign out">Sign out</button>
   </div>
 </header>
 <main>
   <div class="head">
-    <h2>Your sites</h2>
+    <h2 data-i18n="Your sites">Your sites</h2>
     <div class="toolbar">
       <select id="period" aria-label="Date range">
-        <optgroup label="Rolling">
-          <option value="24h" selected>Last 24 hours</option>
-          <option value="today">Today</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
+        <optgroup label="Rolling" data-i18n-label="Rolling">
+          <option value="24h" selected data-i18n="Last 24 hours">Last 24 hours</option>
+          <option value="today" data-i18n="Today">Today</option>
+          <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+          <option value="30d" data-i18n="Last 30 days">Last 30 days</option>
+          <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
         </optgroup>
-        <optgroup label="Calendar">
-          <option value="yesterday">Yesterday</option>
-          <option value="this_week">This week</option>
-          <option value="last_week">Last week</option>
-          <option value="this_month">This month</option>
-          <option value="last_month">Last month</option>
-          <option value="this_year">This year</option>
+        <optgroup label="Calendar" data-i18n-label="Calendar">
+          <option value="yesterday" data-i18n="Yesterday">Yesterday</option>
+          <option value="this_week" data-i18n="This week">This week</option>
+          <option value="last_week" data-i18n="Last week">Last week</option>
+          <option value="this_month" data-i18n="This month">This month</option>
+          <option value="last_month" data-i18n="Last month">Last month</option>
+          <option value="this_year" data-i18n="This year">This year</option>
         </optgroup>
       </select>
-      <button class="btn primary" id="btnAdd">＋ New site</button>
-      <button class="btn icon" id="btnSettings" title="Homepage settings" aria-label="Homepage settings">⚙</button>
+      <button class="btn primary" id="btnAdd">＋ <span data-i18n="New site">New site</span></button>
+      <button class="btn icon" id="btnSettings" title="Homepage settings" data-i18n-title="Homepage settings" aria-label="Homepage settings">⚙</button>
     </div>
   </div>
-  <div id="sites">loading…</div>
+  <div id="sites" data-i18n="loading…">loading…</div>
 
   <section id="rankingSection" hidden style="margin-top:24px">
     <div class="head">
-      <h2>Site ranking · clean traffic</h2>
+      <h2 data-i18n="Site ranking · clean traffic">Site ranking · clean traffic</h2>
       <span style="font-size:12px;color:#8b93a1">Ranked by external clean pageviews — bots &amp; crawlers excluded, mutual visits between your own sites don't count.</span>
     </div>
     <div class="panel" id="ranking">loading…</div>
@@ -106,25 +108,25 @@
   <datalist id="tzlist"></datalist>
 
   <section class="panel" id="addPanel" hidden>
-    <div class="phead"><h3>Add a site</h3><button class="close" data-close="addPanel" aria-label="Close">×</button></div>
+    <div class="phead"><h3 data-i18n="Add a site">Add a site</h3><button class="close" data-close="addPanel" aria-label="Close">×</button></div>
     <form class="create" id="create">
-      <div><label>Site name<input id="name" required placeholder="My Blog"></label></div>
-      <div><label>Domains (comma-separated)<input id="domains" required placeholder="example.com, www.example.com"></label></div>
-      <div><label>Ad protection mode
-        <select id="agmode"><option value="off">off</option><option value="loose">loose</option>
-          <option value="balanced">balanced</option><option value="strict">strict</option></select></label></div>
-      <div><label>AdSense client (optional)<input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
-      <div><label>Timezone <span style="color:#e0a34a">(can't be changed later)</span>
-        <input id="tz" list="tzlist" autocomplete="off" placeholder="Search timezone…"></label></div>
-      <div><label>Engagement threshold (seconds)
+      <div><label><span data-i18n="Site name">Site name</span><input id="name" required placeholder="My Blog" data-i18n-ph="My Blog"></label></div>
+      <div><label><span data-i18n="Domains (comma-separated)">Domains (comma-separated)</span><input id="domains" required placeholder="example.com, www.example.com"></label></div>
+      <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
+        <select id="agmode"><option value="off" data-i18n="off">off</option><option value="loose" data-i18n="loose">loose</option>
+          <option value="balanced" data-i18n="balanced">balanced</option><option value="strict" data-i18n="strict">strict</option></select></label></div>
+      <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
+      <div><label><span data-i18n="Timezone">Timezone</span> <span style="color:#e0a34a" data-i18n="(can't be changed later)">(can't be changed later)</span>
+        <input id="tz" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
+      <div><label><span data-i18n="Engagement threshold (seconds)">Engagement threshold (seconds)</span>
         <input id="engaged" type="number" min="1" max="300" value="15" placeholder="15">
         <span style="color:#8b93a1;font-size:12px">a visit is "engaged" (not a bounce) after this dwell time. GA4 default 10s; we default 15s.</span>
       </label></div>
       <p class="err" id="err"></p>
-      <button type="submit">Create site</button>
+      <button type="submit" data-i18n="Create site">Create site</button>
     </form>
     <div class="snippet" id="snippet">
-      <b>Site created — embed this snippet:</b>
+      <b data-i18n="Site created — embed this snippet:">Site created — embed this snippet:</b>
       <pre id="snippetCode"></pre>
       <p style="color:#8b93a1;font-size:12px;margin:8px 0 0">
         data-api must point at your ingest host — adjust it if yours is not
@@ -134,49 +136,51 @@
   </section>
 
   <section class="panel" id="homePanel" hidden>
-    <div class="phead"><h3>Site &amp; branding</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
+    <div class="phead"><h3 data-i18n="Site & branding">Site &amp; branding</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
     <form class="create" id="homeSettings">
-      <div><label>Brand name (header + homepage)<input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
-      <div><label>Primary domain<input id="hsDomain" maxlength="120" placeholder="www.example.com"></label></div>
-      <div class="full"><label>Description<input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
-      <div><label>Logo — light (for dark backgrounds)<input id="hsLogoLight" maxlength="500" placeholder="/logo-light.svg or https://…"></label></div>
-      <div><label>Logo — dark (for light backgrounds)<input id="hsLogoDark" maxlength="500" placeholder="/logo-dark.svg or https://…"></label></div>
-      <div class="full"><label>Favicon<input id="hsFavicon" maxlength="500" placeholder="/favicon.ico or https://…"></label></div>
+      <div><label><span data-i18n="Brand name (header + homepage)">Brand name (header + homepage)</span><input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
+      <div><label><span data-i18n="Primary domain">Primary domain</span><input id="hsDomain" maxlength="120" placeholder="www.example.com"></label></div>
+      <div class="full"><label><span data-i18n="Description">Description</span><input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
+      <div><label><span data-i18n="Logo — light (for dark backgrounds)">Logo — light (for dark backgrounds)</span><input id="hsLogoLight" maxlength="500" placeholder="/logo-light.svg or https://…"></label></div>
+      <div><label><span data-i18n="Logo — dark (for light backgrounds)">Logo — dark (for light backgrounds)</span><input id="hsLogoDark" maxlength="500" placeholder="/logo-dark.svg or https://…"></label></div>
+      <div class="full"><label><span data-i18n="Favicon">Favicon</span><input id="hsFavicon" maxlength="500" placeholder="/favicon.ico or https://…"></label></div>
       <p class="err" id="hsMsg"></p>
-      <button type="submit">Save</button>
+      <button type="submit" data-i18n="Save">Save</button>
     </form>
     <p style="margin:14px 0 0;font-size:12.5px;color:#8b93a1;border-top:1px solid #262b36;padding-top:12px">
       Logos/favicon can be URLs or files you place in <code>workers/console/public/</code>.
       The console header (dark) uses the light logo. · <a href="/health.html" style="color:#7ab3ff;text-decoration:none">Run self-check ↗</a>
     </p>
     <form class="create" id="tzSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full"><label>Default timezone for new sites
-        <input id="tzDefault" list="tzlist" autocomplete="off" placeholder="Search timezone…"></label></div>
+      <div class="full"><label><span data-i18n="Default timezone for new sites">Default timezone for new sites</span>
+        <input id="tzDefault" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
       <p class="err" id="tzMsg"></p>
-      <button type="submit">Save default timezone</button>
+      <button type="submit" data-i18n="Save default timezone">Save default timezone</button>
     </form>
     <form class="create" id="aiSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8">AI analysis reports</strong>
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="AI analysis reports">AI analysis reports</strong>
         <span style="font-size:12px;color:#8b93a1"> — used on each site's dashboard to generate a written summary.</span></div>
-      <div><label>Provider (API format)
+      <div><label><span data-i18n="Provider (API format)">Provider (API format)</span>
         <select id="aiProvider">
-          <option value="openai">OpenAI-compatible</option>
+          <option value="openai" data-i18n="OpenAI-compatible">OpenAI-compatible</option>
           <option value="anthropic">Anthropic (Claude)</option>
         </select></label></div>
-      <div><label>Model name<input id="aiModel" maxlength="120" placeholder="gpt-4o-mini / claude-opus-4-8"></label></div>
-      <div class="full"><label>API base URL <span style="color:#8b93a1">(optional — blank uses the provider default)</span>
+      <div><label><span data-i18n="Model name">Model name</span><input id="aiModel" maxlength="120" placeholder="gpt-4o-mini / claude-opus-4-8"></label></div>
+      <div class="full"><label><span data-i18n="API base URL">API base URL</span> <span style="color:#8b93a1" data-i18n="(optional — blank uses the provider default)">(optional — blank uses the provider default)</span>
         <input id="aiBaseUrl" maxlength="300" placeholder="https://api.openai.com/v1 or https://api.anthropic.com"></label></div>
-      <div><label>API key <span id="aiKeyState" style="color:#8b93a1"></span>
+      <div><label><span data-i18n="API key">API key</span> <span id="aiKeyState" style="color:#8b93a1"></span>
         <input id="aiKey" type="password" maxlength="300" autocomplete="off" placeholder="sk-…"></label></div>
-      <div><label>Report language
+      <div><label><span data-i18n="Report language">Report language</span>
         <select id="aiLang"><option value="en">English</option><option value="zh">中文</option></select></label></div>
       <p class="err" id="aiMsg"></p>
-      <button type="submit">Save AI settings</button>
+      <button type="submit" data-i18n="Save AI settings">Save AI settings</button>
     </form>
   </section>
 </main>
 <script>
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const t = (s) => window.PVI18N.t(s);
+const te = (s) => esc(t(s));
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 
 // collapsible panels: only one open at a time; toolbar buttons toggle them
@@ -205,7 +209,8 @@ async function loadSites() {
   const scLink = document.getElementById('selfcheckLink');
   if (!sites.length) {
     scLink.hidden = false; // fresh install: surface self-check until a site exists
-    el.innerHTML = '<p style="color:#8b93a1">No sites yet — click <b>＋ New site</b> to add one.<br>Just deployed? <a href="/health.html" style="color:#7ab3ff;text-decoration:none">Run the self-check ↗</a> to confirm everything works.</p>';
+    el.innerHTML = `<p style="color:#8b93a1">${te('No sites yet — use the “＋ New site” button to add one.')}<br>`
+      + `${te('Just deployed?')} <a href="/health.html" style="color:#7ab3ff;text-decoration:none">${te('Run the self-check ↗')}</a></p>`;
     return;
   }
   scLink.hidden = true; // once set up, it's tucked away (Site &amp; branding panel has a link)
@@ -217,9 +222,9 @@ async function loadSites() {
       <div class="name">${esc(s.name)}</div>
       <div class="dom">${esc(JSON.parse(s.allowed_domains).join(', '))}</div>
       <div class="stats" id="st-${esc(s.site_id)}">
-        <div class="stat"><div class="v">…</div><div class="k">Pageviews</div></div>
-        <div class="stat"><div class="v">…</div><div class="k">Visitors</div></div>
-        <div class="stat"><div class="v">…</div><div class="k">Sessions</div></div>
+        <div class="stat"><div class="v">…</div><div class="k">${te('Pageviews')}</div></div>
+        <div class="stat"><div class="v">…</div><div class="k">${te('Visitors')}</div></div>
+        <div class="stat"><div class="v">…</div><div class="k">${te('Sessions')}</div></div>
       </div>
       <div class="foot"><span>${esc(s.timezone || 'UTC')} · adguard: ${esc(s.adguard_mode)}</span><span class="badge" id="hs-${esc(s.site_id)}"></span></div>
     </a>`).join('') + '</div>';
@@ -230,10 +235,10 @@ async function loadSites() {
       const o = await (await fetch(`/api/sites/${s.site_id}/overview?period=${period}`)).json();
       const human = o.pv ? (((o.clean_count + o.suspect_count) / o.pv) * 100).toFixed(0) : 0;
       document.getElementById('st-' + s.site_id).innerHTML = `
-        <div class="stat"><div class="v">${fmt(o.pv)}</div><div class="k">Pageviews</div></div>
-        <div class="stat"><div class="v">${fmt(o.uv)}</div><div class="k">Visitors</div></div>
-        <div class="stat"><div class="v">${fmt(o.sessions)}</div><div class="k">Sessions</div></div>`;
-      document.getElementById('hs-' + s.site_id).textContent = o.pv ? human + '% human' : 'no data yet';
+        <div class="stat"><div class="v">${fmt(o.pv)}</div><div class="k">${te('Pageviews')}</div></div>
+        <div class="stat"><div class="v">${fmt(o.uv)}</div><div class="k">${te('Visitors')}</div></div>
+        <div class="stat"><div class="v">${fmt(o.sessions)}</div><div class="k">${te('Sessions')}</div></div>`;
+      document.getElementById('hs-' + s.site_id).textContent = o.pv ? human + '% ' + t('human') : t('no data yet');
     } catch {
       document.getElementById('hs-' + s.site_id).textContent = '';
     }
@@ -267,8 +272,8 @@ async function loadRanking() {
   </tr>`).join('');
   document.getElementById('ranking').innerHTML = `<table>
     <thead><tr>
-      <th>#</th><th>Site</th><th class="num">External clean</th><th class="num">Internal (mutual)</th>
-      <th class="num">Clean PV</th><th class="num">Total PV</th><th class="num">Human</th>
+      <th>#</th><th>${te('Site')}</th><th class="num">${te('External clean')}</th><th class="num">${te('Internal (mutual)')}</th>
+      <th class="num">${te('Clean PV')}</th><th class="num">${te('Total PV')}</th><th class="num">${te('Human')}</th>
     </tr></thead><tbody>${body}</tbody></table>`;
 }
 document.getElementById('period').addEventListener('change', () => {
@@ -303,12 +308,12 @@ document.getElementById('tzSettings').addEventListener('submit', async (e) => {
   e.preventDefault();
   const tz = document.getElementById('tzDefault').value.trim();
   const el = document.getElementById('tzMsg');
-  if (!validTz(tz)) { el.style.color = ''; el.textContent = 'pick a valid timezone from the list'; return; }
+  if (!validTz(tz)) { el.style.color = ''; el.textContent = t('pick a valid timezone from the list'); return; }
   const r = await guard(await fetch('/api/settings/timezone', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ timezone: tz }),
   }));
-  if (r.ok) { userTz = tz; document.getElementById('tz').value = tz; el.style.color = '#6ee7a0'; el.textContent = 'saved'; }
-  else { el.style.color = ''; el.textContent = 'save failed'; }
+  if (r.ok) { userTz = tz; document.getElementById('tz').value = tz; el.style.color = '#6ee7a0'; el.textContent = t('saved'); }
+  else { el.style.color = ''; el.textContent = t('save failed'); }
 });
 
 document.getElementById('create').addEventListener('submit', async (e) => {
@@ -323,7 +328,7 @@ document.getElementById('create').addEventListener('submit', async (e) => {
   };
   const r = await guard(await fetch('/api/sites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
   const data = await r.json();
-  if (!r.ok) { document.getElementById('err').textContent = data.error || 'failed'; return; }
+  if (!r.ok) { document.getElementById('err').textContent = data.error || t('failed'); return; }
   document.getElementById('err').textContent = '';
   // src: f.js as hosted by this console deployment (DEPLOY.md step 8);
   // data-api: ingest host, assumed in.<apex> per the reference layout —
@@ -385,7 +390,7 @@ document.getElementById('homeSettings').addEventListener('submit', async (e) => 
   }));
   const el = document.getElementById('hsMsg');
   el.style.color = r.ok ? '#6ee7a0' : '';
-  el.textContent = r.ok ? 'saved' : 'save failed';
+  el.textContent = r.ok ? t('saved') : t('save failed');
   if (r.ok) loadHomeSettings(); // re-apply header/favicon immediately
 });
 
@@ -397,7 +402,7 @@ async function loadAiSettings() {
   document.getElementById('aiModel').value = a.model || '';
   document.getElementById('aiBaseUrl').value = a.base_url || '';
   document.getElementById('aiLang').value = a.lang || 'en';
-  document.getElementById('aiKeyState').textContent = a.key_set ? '(a key is saved — leave blank to keep it)' : '(not set)';
+  document.getElementById('aiKeyState').textContent = a.key_set ? t('(a key is saved — leave blank to keep it)') : t('(not set)');
 }
 document.getElementById('aiSettings').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -415,8 +420,18 @@ document.getElementById('aiSettings').addEventListener('submit', async (e) => {
   const el = document.getElementById('aiMsg');
   const body = await r.json().catch(() => ({}));
   el.style.color = r.ok ? '#6ee7a0' : '';
-  el.textContent = r.ok ? 'saved' : (body.error || 'save failed');
+  el.textContent = r.ok ? t('saved') : (body.error || t('save failed'));
   if (r.ok) { document.getElementById('aiKey').value = ''; loadAiSettings(); }
+});
+
+// language switcher: mount, apply static labels, and re-render dynamic content
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => {
+  window.PVI18N.applyStatic();
+  loadSites();
+  loadRanking();
+  loadAiSettings(); // refreshes the key-state hint text
 });
 
 loadSites();
