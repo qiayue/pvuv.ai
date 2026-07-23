@@ -12,6 +12,8 @@
   header a { color: #7ab3ff; text-decoration: none; }
   header b { font-size: 16px; }
   header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
+  header select.langsel { margin-left: auto; }
+  header select#period { margin-left: 8px; }
   main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
   h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -139,33 +141,35 @@
 </style>
 </head>
 <body>
+<script src="/i18n.js"></script>
 <header>
-  <a href="/sites.html">← sites</a>
+  <a href="/sites.html" data-i18n="← sites">← sites</a>
   <div class="switcher" id="switcher">
     <button class="title-btn" id="titleBtn" aria-haspopup="listbox" aria-expanded="false">
       <span id="titleText">…</span><span class="caret">▾</span>
     </button>
     <div class="switch-pop" id="switchPop" hidden>
-      <input id="switchSearch" type="text" placeholder="Search sites…" autocomplete="off" aria-label="Search sites">
+      <input id="switchSearch" type="text" placeholder="Search sites…" data-i18n-ph="Search sites…" autocomplete="off" aria-label="Search sites">
       <ul id="switchList" role="listbox"></ul>
     </div>
   </div>
-  <a id="visitorsLink" href="#">visitors →</a>
+  <a id="visitorsLink" href="#" data-i18n="visitors →">visitors →</a>
+  <select id="lang" class="langsel" aria-label="Language"></select>
   <select id="period" aria-label="Date range">
-    <optgroup label="Rolling">
-      <option value="24h">Last 24 hours</option>
-      <option value="today" selected>Today</option>
-      <option value="7d">Last 7 days</option>
-      <option value="30d">Last 30 days</option>
-      <option value="90d">Last 90 days</option>
+    <optgroup label="Rolling" data-i18n-label="Rolling">
+      <option value="24h" data-i18n="Last 24 hours">Last 24 hours</option>
+      <option value="today" selected data-i18n="Today">Today</option>
+      <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+      <option value="30d" data-i18n="Last 30 days">Last 30 days</option>
+      <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
     </optgroup>
-    <optgroup label="Calendar">
-      <option value="yesterday">Yesterday</option>
-      <option value="this_week">This week</option>
-      <option value="last_week">Last week</option>
-      <option value="this_month">This month</option>
-      <option value="last_month">Last month</option>
-      <option value="this_year">This year</option>
+    <optgroup label="Calendar" data-i18n-label="Calendar">
+      <option value="yesterday" data-i18n="Yesterday">Yesterday</option>
+      <option value="this_week" data-i18n="This week">This week</option>
+      <option value="last_week" data-i18n="Last week">Last week</option>
+      <option value="this_month" data-i18n="This month">This month</option>
+      <option value="last_month" data-i18n="Last month">Last month</option>
+      <option value="this_year" data-i18n="This year">This year</option>
     </optgroup>
   </select>
 </header>
@@ -187,40 +191,40 @@
   <div class="panel" id="chart"></div>
 
   <div class="grid2">
-    <div><div class="sec-head"><h2>Top sources</h2><span class="tabs" data-tabs="sources"></span><button class="all-btn" data-panel="sources">All →</button></div><div class="panel" id="sources"></div></div>
-    <div><div class="sec-head"><h2>Pages</h2><span class="tabs" data-tabs="pages"></span><button class="all-btn" data-panel="pages">All →</button></div><div class="panel" id="pages"></div></div>
+    <div><div class="sec-head"><h2 data-i18n="Top sources">Top sources</h2><span class="tabs" data-tabs="sources"></span><button class="all-btn" data-panel="sources" data-i18n="All →">All →</button></div><div class="panel" id="sources"></div></div>
+    <div><div class="sec-head"><h2 data-i18n="Pages">Pages</h2><span class="tabs" data-tabs="pages"></span><button class="all-btn" data-panel="pages" data-i18n="All →">All →</button></div><div class="panel" id="pages"></div></div>
   </div>
   <div class="grid2">
-    <div><div class="sec-head"><h2>Locations</h2><span class="tabs" data-tabs="countries"></span><button class="all-btn" data-panel="countries">All →</button></div><div class="panel" id="countries"></div></div>
-    <div><div class="sec-head"><h2>Devices</h2><span class="tabs" data-tabs="devices"></span><button class="all-btn" data-panel="devices">All →</button></div><div class="panel" id="devices"></div></div>
+    <div><div class="sec-head"><h2 data-i18n="Locations">Locations</h2><span class="tabs" data-tabs="countries"></span><button class="all-btn" data-panel="countries" data-i18n="All →">All →</button></div><div class="panel" id="countries"></div></div>
+    <div><div class="sec-head"><h2 data-i18n="Devices">Devices</h2><span class="tabs" data-tabs="devices"></span><button class="all-btn" data-panel="devices" data-i18n="All →">All →</button></div><div class="panel" id="devices"></div></div>
   </div>
 
   <div class="chart-head">
-    <h2>Campaigns (UTM)</h2>
+    <h2 data-i18n="Campaigns (UTM)">Campaigns (UTM)</h2>
     <div class="chart-ctrls">
       <select id="utmDim" aria-label="UTM dimension">
-        <option value="utm_campaign">Campaign</option>
-        <option value="utm_medium">Medium</option>
-        <option value="utm_term">Term</option>
-        <option value="utm_content">Content</option>
-        <option value="ft_source">First-touch source</option>
-        <option value="ft_medium">First-touch medium</option>
-        <option value="ft_campaign">First-touch campaign</option>
+        <option value="utm_campaign" data-i18n="Campaign">Campaign</option>
+        <option value="utm_medium" data-i18n="Medium">Medium</option>
+        <option value="utm_term" data-i18n="Term">Term</option>
+        <option value="utm_content" data-i18n="Content">Content</option>
+        <option value="ft_source" data-i18n="FT source">FT source</option>
+        <option value="ft_medium" data-i18n="FT medium">FT medium</option>
+        <option value="ft_campaign" data-i18n="FT campaign">FT campaign</option>
       </select>
     </div>
   </div>
   <div class="panel" id="utm"></div>
 
   <div id="goalsSection" hidden>
-    <h2>Goals (custom events)</h2>
+    <h2 data-i18n="Goals (custom events)">Goals (custom events)</h2>
     <div class="panel" id="goals"></div>
   </div>
 
   <div class="chart-head">
-    <h2>Funnel</h2>
+    <h2 data-i18n="Funnel">Funnel</h2>
     <div class="chart-ctrls">
-      <button id="funnelAdd" class="fbtn">+ step</button>
-      <button id="funnelRun" class="fbtn">Run</button>
+      <button id="funnelAdd" class="fbtn" data-i18n="+ step">+ step</button>
+      <button id="funnelRun" class="fbtn" data-i18n="Run">Run</button>
     </div>
   </div>
   <div class="panel">
@@ -228,22 +232,22 @@
     <div id="funnelResult"></div>
   </div>
 
-  <h2>Traffic quality</h2>
+  <h2 data-i18n="Traffic quality">Traffic quality</h2>
   <div class="grid2">
     <div class="panel" id="quality"></div>
     <div class="panel" id="flags"></div>
   </div>
 
-  <h2>Ad protection</h2>
+  <h2 data-i18n="Ad protection">Ad protection</h2>
   <div class="panel" id="adguard"></div>
 
-  <h2>High-score traffic (drill-down)</h2>
+  <h2 data-i18n="High-score traffic (drill-down)">High-score traffic (drill-down)</h2>
   <div class="panel" id="traffic"></div>
 
   <div class="chart-head">
-    <h2>AI report</h2>
+    <h2 data-i18n="AI report">AI report</h2>
     <div class="chart-ctrls">
-      <button id="aiGen" class="fbtn">Generate</button>
+      <button id="aiGen" class="fbtn" data-i18n="Generate">Generate</button>
     </div>
   </div>
   <div class="panel" id="aiReport"></div>
@@ -302,7 +306,7 @@ function renderFilters() {
 // browser-tab title: "{metric} - {site} - {brand}" so tabs are distinguishable.
 function setTitle() {
   const m = document.getElementById('metric');
-  const label = m && m.value ? (METRIC_LABEL[m.value] || '') : '';
+  const label = m && m.value ? t(METRIC_LABEL[m.value] || '') : '';
   document.title = `${label ? label + ' - ' : ''}${siteName} - ${brandName}`;
 }
 async function loadBrand() {
@@ -310,6 +314,10 @@ async function loadBrand() {
   setTitle();
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// i18n: t() translates a UI string for the current language (English falls
+// through unchanged). te() = escape(translate) for safe interpolation.
+const t = (s) => window.PVI18N.t(s);
+const te = (s) => esc(t(s));
 const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
 
 // country code → flag emoji + human name (Intl.DisplayNames, no lookup table)
@@ -417,13 +425,13 @@ const dimConfig = {
 function breakdownTableHTML(dim, rows, clickable) {
   const cfg = dimConfig[dim];
   const max = Math.max(1, ...rows.map((r) => Number(cfg.bar(r)) || 0));
-  return `<table><tr>${cfg.headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${h}</th>`).join('')}</tr>`
+  return `<table><tr>${cfg.headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${te(h)}</th>`).join('')}</tr>`
     + rows.map((r, idx) => {
         const cells = cfg.cells(r);
         const pct = Math.max(2, (Number(cfg.bar(r)) || 0) / max * 100);
         const icon = cfg.icon ? cfg.icon(r) : '';
         const lead = `<td class="lead"><span class="bar" style="width:${pct.toFixed(1)}%"></span>`
-          + `<span class="lead-in">${icon}<span class="txt">${cells[0]}</span>${clickable ? '<span class="drill">+ filter</span>' : ''}</span></td>`;
+          + `<span class="lead-in">${icon}<span class="txt">${cells[0]}</span>${clickable ? `<span class="drill">${te('+ filter')}</span>` : ''}</span></td>`;
         return `<tr${clickable ? ' class="clickable"' : ''} data-i="${idx}">${lead}${cells.slice(1).map((c) => `<td class="num">${c}</td>`).join('')}</tr>`;
       }).join('') + '</table>';
 }
@@ -431,7 +439,7 @@ function breakdownTableHTML(dim, rows, clickable) {
 function renderBreakdown(elId, dim, rows) {
   const el = document.getElementById(elId);
   const clickable = FILTER_UI.has(dim);
-  el.innerHTML = rows.length ? breakdownTableHTML(dim, rows, clickable) : '<p class="muted">no data yet</p>';
+  el.innerHTML = rows.length ? breakdownTableHTML(dim, rows, clickable) : `<p class="muted">${te('no data yet')}</p>`;
   if (clickable) el.querySelectorAll('tr.clickable').forEach((tr) =>
     tr.addEventListener('click', () => addFilter(dim, dimConfig[dim].val(rows[Number(tr.dataset.i)]))));
 }
@@ -450,7 +458,7 @@ function buildTabs() {
     const host = document.querySelector(`.tabs[data-tabs="${mount}"]`);
     if (!host) continue;
     if (dims.length <= 1) { host.innerHTML = ''; continue; }
-    host.innerHTML = dims.map((d) => `<button data-dim="${d}"${d === panelState[mount] ? ' class="active"' : ''}>${esc(dimConfig[d].label)}</button>`).join('');
+    host.innerHTML = dims.map((d) => `<button data-dim="${d}"${d === panelState[mount] ? ' class="active"' : ''}>${te(dimConfig[d].label)}</button>`).join('');
     host.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       panelState[mount] = b.dataset.dim;
       host.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
@@ -469,7 +477,7 @@ async function openAll(mount) {
   const dim = panelState[mount];
   const cfg = dimConfig[dim];
   document.getElementById('modalTitle').textContent = `All ${cfg.label.toLowerCase()}`;
-  document.getElementById('modalBody').innerHTML = '<p class="muted">loading…</p>';
+  document.getElementById('modalBody').innerHTML = `<p class="muted">${te('loading…')}</p>`;
   document.getElementById('modal').hidden = false;
   const d = await get('breakdown', `&dim=${dim}&limit=100`);
   const rows = d.rows || [];
@@ -477,7 +485,7 @@ async function openAll(mount) {
   document.getElementById('modalBody').innerHTML = rows.length
     ? breakdownTableHTML(dim, rows, clickable)
       + (clickable ? '<p class="muted" style="font-size:12px;margin:10px 2px 0">Click a row to filter the dashboard by it.</p>' : '')
-    : '<p class="muted">no data yet</p>';
+    : `<p class="muted">${te('no data yet')}</p>`;
   if (clickable) document.getElementById('modalBody').querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => {
     addFilter(dim, cfg.val(rows[Number(tr.dataset.i)])); closeModal();
   }));
@@ -534,7 +542,7 @@ function lineChart(points, metric) {
   // 'partial') is drawn with a dashed connector to show it's still filling.
   const drawn = points.filter((p) => p.status !== 'future');
   const hasData = drawn.some((p) => p.value != null && p.value !== 0);
-  if (!drawn.length || !hasData) { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
+  if (!drawn.length || !hasData) { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
   const W = 980, H = 190, P = 46, PT = 12;
   const max = Math.max(...drawn.map((p) => p.value ?? 0), 1);
   const { top, step } = niceScale(max);
@@ -574,12 +582,15 @@ function lineChart(points, metric) {
 
 function populateControls() {
   const mSel = document.getElementById('metric');
-  if (!mSel.options.length) mSel.innerHTML = METRICS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  // rebuild each call so labels follow the current language; preserve selection
+  const mCur = mSel.value;
+  mSel.innerHTML = METRICS.map(([v, l]) => `<option value="${v}">${te(l)}</option>`).join('');
+  if (mCur) mSel.value = mCur;
   const period = document.getElementById('period').value;
   const opts = INTERVALS[period] || ['day'];
   const iSel = document.getElementById('interval');
   const cur = iSel.value;
-  iSel.innerHTML = opts.map((v) => `<option value="${v}">${INTERVAL_LABEL[v]}</option>`).join('');
+  iSel.innerHTML = opts.map((v) => `<option value="${v}">${te(INTERVAL_LABEL[v])}</option>`).join('');
   iSel.value = opts.includes(cur) ? cur : opts[0]; // keep choice if still valid, else default
 }
 
@@ -589,7 +600,8 @@ function renderCards(o, al) {
   const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
   const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
   const pct = (v) => v == null ? '–' : (v * 100).toFixed(1) + '%';
-  const card = (k, v, h, cls) => `<div class="card${cls ? ' ' + cls : ''}"><div class="v">${v}</div><div class="k">${k}</div>${h ? `<div class="h">${h}</div>` : ''}</div>`;
+  // k (label) and h (sub-label) are UI strings → translated; v is a value.
+  const card = (k, v, h, cls) => `<div class="card${cls ? ' ' + cls : ''}"><div class="v">${v}</div><div class="k">${te(k)}</div>${h ? `<div class="h">${te(h)}</div>` : ''}</div>`;
   // forged search-referrer traffic (the two new signals) + its share of
   // search-referred visits — makes "fake Google" visible without SQL.
   const st = (al && al.stats) || {};
@@ -613,7 +625,7 @@ const money = (v) => '$' + Number(v || 0).toLocaleString('en-US', { minimumFract
 async function loadChart() {
   const metric = document.getElementById('metric').value;
   const interval = document.getElementById('interval').value;
-  document.getElementById('chartTitle').textContent = METRIC_LABEL[metric];
+  document.getElementById('chartTitle').textContent = t(METRIC_LABEL[metric]);
   setTitle(); // reflect the selected metric in the tab title
   const ts = await get('timeseries', `&metric=${metric}&interval=${interval}`);
   lineChart(ts.points, metric);
@@ -632,16 +644,17 @@ function donut(t) {
     off += frac;
     return seg;
   }).join('');
+  const T = window.PVI18N.t; // `t` is the totals param here, so alias the translator
   document.getElementById('quality').innerHTML = `
     <div style="display:flex;gap:20px;align-items:center">
       <svg viewBox="0 0 120 120" width="130">${segs}
         <text x="60" y="58" text-anchor="middle" style="font-size:15px;fill:#e6e8eb;font-weight:700">${((t.clean + t.suspect) / total * 100).toFixed(1)}%</text>
-        <text x="60" y="74" text-anchor="middle">counted</text></svg>
+        <text x="60" y="74" text-anchor="middle">${esc(T('counted'))}</text></svg>
       <div class="legend" style="flex-direction:column;align-items:flex-start">
-        <span><i class="dot" style="background:#34d399"></i>clean ${fmt(t.clean)}</span>
-        <span><i class="dot" style="background:#fbbf24"></i>suspect ${fmt(t.suspect)} <span class="muted">(counted, flagged)</span></span>
-        <span><i class="dot" style="background:#f87171"></i>bot ${fmt(t.bot)} <span class="muted">(excluded)</span></span>
-        <span><i class="dot" style="background:#64748b"></i>verified crawler ${fmt(t.crawler)} <span class="muted">(separate)</span></span>
+        <span><i class="dot" style="background:#34d399"></i>${esc(T('clean'))} ${fmt(t.clean)}</span>
+        <span><i class="dot" style="background:#fbbf24"></i>${esc(T('suspect'))} ${fmt(t.suspect)} <span class="muted">${esc(T('(counted, flagged)'))}</span></span>
+        <span><i class="dot" style="background:#f87171"></i>${esc(T('bot'))} ${fmt(t.bot)} <span class="muted">${esc(T('(excluded)'))}</span></span>
+        <span><i class="dot" style="background:#64748b"></i>${esc(T('verified crawler'))} ${fmt(t.crawler)} <span class="muted">${esc(T('(separate)'))}</span></span>
       </div>
     </div>`;
 }
@@ -670,7 +683,7 @@ async function loadAnomalies() {
     list = (await r.json()).anomalies || [];
   } catch { el.innerHTML = ''; return; }
   el.innerHTML = list.length
-    ? '<div class="anomaly-hd">Recent anomalies (vs baseline)</div>'
+    ? `<div class="anomaly-hd">${te('Recent anomalies (vs baseline)')}</div>`
       + list.map((a) => `<div class="anomaly"><span class="ico">${a.kind === 'drop' ? '📉' : '📈'}</span>`
         + `<span class="day">${esc(a.day)}</span><span>${esc(a.message)}</span></div>`).join('')
     : '';
@@ -699,7 +712,7 @@ function mdToHtml(src) {
 }
 function renderReport(rep) {
   const el = document.getElementById('aiReport');
-  if (!rep || !rep.content) { el.innerHTML = '<p class="muted">No report yet — click Generate to analyze the selected period.</p>'; return; }
+  if (!rep || !rep.content) { el.innerHTML = `<p class="muted">${te('No report yet — click Generate to analyze the selected period.')}</p>`; return; }
   const when = rep.created_at ? new Date(rep.created_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '';
   el.innerHTML = `<div class="ai-md">${mdToHtml(rep.content)}</div>`
     + `<p class="muted" style="margin:12px 0 0;font-size:12px">${esc(rep.period || '')}${when ? ' · generated ' + esc(when) : ''}</p>`;
@@ -722,14 +735,14 @@ async function loadAiReport() {
 document.getElementById('aiGen').addEventListener('click', async () => {
   const btn = document.getElementById('aiGen'), el = document.getElementById('aiReport');
   const label = btn.textContent;
-  btn.disabled = true; btn.textContent = 'Generating…';
+  btn.disabled = true; btn.textContent = t('Generating…');
   el.innerHTML = '<p class="muted">Analyzing traffic and writing the report — this can take up to a minute.</p>';
   try {
     const r = await guard(await fetch(`/api/sites/${site}/ai_report?period=${document.getElementById('period').value}`, { method: 'POST' }));
     const d = await r.json();
-    if (!r.ok) el.innerHTML = `<p class="err" style="color:#f87171">${esc(d.error || 'generation failed')}</p>`;
+    if (!r.ok) el.innerHTML = `<p class="err" style="color:#f87171">${esc(d.error || t('generation failed'))}</p>`;
     else renderReport(d);
-  } catch { el.innerHTML = '<p class="err" style="color:#f87171">generation failed</p>'; }
+  } catch { el.innerHTML = `<p class="err" style="color:#f87171">${te('generation failed')}</p>`; }
   finally { btn.disabled = false; btn.textContent = label; }
 });
 
@@ -746,14 +759,14 @@ const MODE_HELP = {
 async function loadAdguard() {
   const el = document.getElementById('adguard');
   let d;
-  try { d = await get('adguard'); } catch { el.innerHTML = '<p class="muted">no data yet</p>'; return; }
+  try { d = await get('adguard'); } catch { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
   const pctf = (x) => (x * 100).toFixed(1) + '%';
   const MODES = ['off', 'loose', 'balanced', 'strict'];
   const tierRow = (name) => {
     const t = d.tiers[name]; if (!t) return '';
     const cur = d.current_mode === name;
     return `<tr${cur ? ' style="background:#141a26"' : ''}>
-      <td>${name}${cur ? ' <span class="muted">· current</span>' : ''}</td>
+      <td>${te(name)}${cur ? ` <span class="muted">${te('· current')}</span>` : ''}</td>
       <td class="num">${pctf(t.block_rate)}</td>
       <td class="num">${fmt(t.block)}</td>
       <td class="num">${pctf(t.fp_rate)}</td></tr>`;
@@ -765,34 +778,34 @@ async function loadAdguard() {
   const trend = (d.trend || []).map((x) => x.blocked);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <label style="font-size:13px">Mode
+      <label style="font-size:13px">${te('Mode')}
         <select id="agModeSel" style="margin-left:6px;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px;font:inherit">
-          ${MODES.map((m) => `<option value="${m}"${m === d.current_mode ? ' selected' : ''}>${m}</option>`).join('')}
+          ${MODES.map((m) => `<option value="${m}"${m === d.current_mode ? ' selected' : ''}>${te(m)}</option>`).join('')}
         </select>
       </label>
-      <span class="muted" id="agModeMsg" style="font-size:12px">${esc(MODE_HELP[d.current_mode] || '')}</span>
+      <span class="muted" id="agModeMsg" style="font-size:12px">${te(MODE_HELP[d.current_mode] || '')}</span>
     </div>
-    <p class="muted" style="margin:14px 0 6px;font-size:12px">Estimated impact over this period (${fmt(d.pv)} pageviews). “Est. false-positive” = share of blocked traffic that still showed human interaction — treat as an upper bound.</p>
-    <table><tr><th>Tier</th><th class="num">Block rate</th><th class="num">Blocked PV</th><th class="num">Est. false-positive</th></tr>
+    <p class="muted" style="margin:14px 0 6px;font-size:12px">${te('Estimated impact over this period')} (${fmt(d.pv)} ${te('pageviews')}). ${te('fp-explainer')}</p>
+    <table><tr><th>${te('Tier')}</th><th class="num">${te('Block rate')}</th><th class="num">${te('Blocked PV')}</th><th class="num">${te('Est. false-positive')}</th></tr>
       ${['loose', 'balanced', 'strict'].map(tierRow).join('')}</table>
-    ${trend.some((v) => v > 0) ? `<div style="margin-top:12px;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:12px">Blocked/day</span>${sparkline(trend)}</div>` : ''}
+    ${trend.some((v) => v > 0) ? `<div style="margin-top:12px;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:12px">${te('Blocked/day')}</span>${sparkline(trend)}</div>` : ''}
     <div class="grid2" style="margin-top:16px">
-      <div><h3 style="font-size:13px;margin:0 0 8px">Block reasons</h3>
-        ${reasons ? `<table><tr><th>Signal</th><th class="num">Events</th></tr>${reasons}</table>` : '<p class="muted">none</p>'}</div>
-      <div><h3 style="font-size:13px;margin:0 0 8px">Top blocked sources</h3>
-        ${sources ? `<table><tr><th>Source</th><th class="num">Sessions</th><th class="num">PV</th></tr>${sources}</table>` : '<p class="muted">none</p>'}</div>
+      <div><h3 style="font-size:13px;margin:0 0 8px">${te('Block reasons')}</h3>
+        ${reasons ? `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>${reasons}</table>` : `<p class="muted">${te('none')}</p>`}</div>
+      <div><h3 style="font-size:13px;margin:0 0 8px">${te('Top blocked sources')}</h3>
+        ${sources ? `<table><tr><th>${te('Source')}</th><th class="num">${te('Sessions')}</th><th class="num">PV</th></tr>${sources}</table>` : `<p class="muted">${te('none')}</p>`}</div>
     </div>`;
   document.getElementById('agModeSel').addEventListener('change', async (e) => {
     const mode = e.target.value;
     const msg = document.getElementById('agModeMsg');
-    msg.textContent = 'saving…';
+    msg.textContent = t('saving…');
     try {
       const r = await guard(await fetch(`/api/sites/${site}/adguard`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode }),
       }));
-      if (r.ok) { msg.textContent = (MODE_HELP[mode] || '') + ' · saved, applies on next page load'; loadAdguard(); }
-      else msg.textContent = 'save failed';
-    } catch { msg.textContent = 'save failed'; }
+      if (r.ok) { msg.textContent = t(MODE_HELP[mode] || '') + ' · ' + t('saved, applies on next page load'); loadAdguard(); }
+      else msg.textContent = t('save failed');
+    } catch { msg.textContent = t('save failed'); }
   });
 }
 
@@ -814,9 +827,9 @@ async function load() {
   const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   document.getElementById('flags').innerHTML = firedFlags.length
     ? '<p class="muted" style="margin:0 0 10px;font-size:12px">Bot-detection checks that fired on suspicious traffic — one visit can trip several.</p>'
-      + '<table><tr><th>Signal</th><th class="num">Events</th></tr>' +
+      + `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>` +
       firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
-    : '<p class="muted">no signals fired — traffic looks clean</p>';
+    : `<p class="muted">${te('no signals fired — traffic looks clean')}</p>`;
 
   await loadAdguard();
 
@@ -824,7 +837,7 @@ async function load() {
   // not per event): event/session counts, worst score/verdict, union of evidence.
   const tr = await get('traffic', '&min_score=30&limit=50');
   document.getElementById('traffic').innerHTML = tr.rows.length
-    ? '<table><tr><th>Visitor</th><th class="num">Events</th><th class="num">Sessions</th><th>Last seen</th><th>Where</th><th>Agent</th><th class="num">Max score</th><th>Verdict</th><th>Evidence</th></tr>' +
+    ? `<table><tr><th>${te('Visitor')}</th><th class="num">${te('Events')}</th><th class="num">${te('Sessions')}</th><th>${te('Last seen')}</th><th>${te('Where')}</th><th>${te('Agent')}</th><th class="num">${te('Max score')}</th><th>${te('Verdict')}</th><th>${te('Evidence')}</th></tr>` +
       tr.rows.map((r) => `<tr>
         <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="Journey timeline">${esc(String(r.visitor_id).slice(0, 10))}…</a></td>
         <td class="num">${fmt(r.events)}</td>
@@ -833,10 +846,10 @@ async function load() {
         <td>${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''}</td>
         <td>${esc(r.browser ?? '–')}/${esc(r.os ?? '–')}</td>
         <td class="num">${r.bot_score}</td>
-        <td><span class="badge b-${esc(r.verdict)}">${esc(r.verdict)}</span></td>
+        <td><span class="badge b-${esc(r.verdict)}">${te(r.verdict)}</span></td>
         <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
       </tr>`).join('') + '</table>'
-    : '<p class="muted">nothing above the threshold — looking clean</p>';
+    : `<p class="muted">${te('nothing above the threshold — looking clean')}</p>`;
 }
 
 // live "online now" — polls independently of the selected period (always the
@@ -853,8 +866,8 @@ async function pollRealtime() {
     const d = await r.json();
     document.getElementById('realtime').innerHTML =
       `<span class="rt-site">${esc(siteName)}</span>` +
-      `<span class="live"><span class="pulse"></span>${fmt(d.online)} online now</span>` +
-      `<span class="muted">${fmt(d.pageviews)} views in last ${d.window_minutes}m</span>` +
+      `<span class="live"><span class="pulse"></span>${fmt(d.online)} ${te('online now')}</span>` +
+      `<span class="muted">${fmt(d.pageviews)} ${te('views')} / ${d.window_minutes}m</span>` +
       sparkline(d.minutes || []);
   } catch { /* transient — keep the last value */ }
 }
@@ -1001,7 +1014,7 @@ async function runFunnel() {
   const out = document.getElementById('funnelResult');
   if (valid.length < 2) { out.innerHTML = '<p class="muted" style="margin:10px 2px 0">Add at least 2 steps with a value, then Run.</p>'; return; }
   let steps = [];
-  try { steps = (await get('funnel', `&steps=${encodeURIComponent(JSON.stringify(valid))}`)).steps || []; } catch { out.innerHTML = '<p class="muted">funnel failed</p>'; return; }
+  try { steps = (await get('funnel', `&steps=${encodeURIComponent(JSON.stringify(valid))}`)).steps || []; } catch { out.innerHTML = `<p class="muted">${te('funnel failed')}</p>`; return; }
   const top = steps[0] ? steps[0].visitors : 0;
   out.innerHTML = '<div style="margin-top:10px">' + steps.map((s, i) => {
     const v = s.visitors || 0;
@@ -1040,6 +1053,22 @@ renderFunnelSteps();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();
+// language switcher: mount the picker, apply static labels, and on change
+// re-render everything that builds text dynamically (charts, tables, panels).
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => {
+  buildTabs();
+  populateControls();
+  renderFilters();
+  renderFunnelSteps();
+  setTitle();
+  load();
+  pollRealtime();
+  loadAnomalies();
+  loadAiReport();
+});
+
 (async () => { await loadSiteName(); load(); pollRealtime(); loadAnomalies(); loadAiReport(); })();
 setInterval(pollRealtime, 15000);
 </script>
