@@ -15,7 +15,7 @@ the current `wrangler.toml` files.
 | Queue consumer | (no route — consumes `pvuv-ingest`) | `workers/consumer` |
 | Query API | `https://api.example.com/v1/...` | `workers/api` |
 | Console (dashboards) | `https://example.com/` | `workers/console` |
-| Scheduled rollups | (no route — cron triggers) | `workers/cron` |
+| Scheduled rollups + daily anti-fraud/anomaly analysis | (no route — cron triggers) | `workers/cron` |
 | SDK `f.js` | `https://example.com/f.js` (M1; see step 8) | served by console |
 
 ---
@@ -107,9 +107,13 @@ dashboard: type `AAAA`, name `in` (and `api`), content `100::`, proxy **on**.
 npm run db:migrate:remote     # = wrangler d1 migrations apply pvuv-db --remote
 ```
 
-This creates all tables from `shared/schema.sql`, including the M2+
-placeholder tables. (New monthly `events_YYYYMM` partitions are created
-automatically by the consumer as time passes — no manual action needed.)
+This applies the versioned migrations in `migrations/` (0001 onward) — every
+table the platform uses: the analytics rollups, session/visitor profiles, the
+cluster-flag and anomaly-report tables, and the `ai_reports` and
+`instance_settings` stores. Re-running it later is safe — already-applied
+migrations are skipped ("No migrations to apply"). New monthly
+`events_YYYYMM` partitions are created automatically by the consumer as time
+passes, so no manual action is needed there.
 
 ## 7. Deploy the Workers, then set secrets
 
@@ -215,6 +219,24 @@ that `POST /in` returns **204**. Data timeline:
 - **Within the hour**: metric cards / charts / breakdowns fill in — they read
   the pre-aggregated rollups, which the cron worker recomputes at `:05` every
   hour.
+- **Next day**: the daily job (03:30) produces population-cluster blocks,
+  baseline + distribution anomalies (the dashboard's *Recent anomalies* strip),
+  and purges raw data past the retention window.
+
+## Scheduled jobs (automatic)
+
+The `cron` worker runs two triggers (`workers/cron/wrangler.toml`), no setup
+beyond deploying it:
+
+| Schedule | Job |
+|---|---|
+| `5 * * * *` (hourly) | Recompute the recent daily rollups from raw events + sessions, so cards/charts stay fresh and the just-closed day settles. |
+| `30 3 * * *` (daily) | Population/batch analysis (fingerprint & IP-segment clusters, cookie-reset farms → KV blocklist + batch re-verdict), baseline **and distribution-shape** anomaly detection → `anomaly_reports`, then retention purge of raw events/sessions older than `[retention].raw_events_days`. |
+
+All thresholds are read from your config (`[population]`, `[anomaly]`,
+`[distribution]`, `[retention]` in `config.example.toml` / `config.local.toml`),
+never hardcoded — so regenerate the config (`npm run config:gen`) and redeploy
+`cron` after any tuning.
 
 ## Google / GitHub login (required)
 
@@ -307,6 +329,40 @@ headers; ingest trusts them ONLY when `x-pv-proxy` matches `PROXY_TOKEN`, so a
 direct client can't spoof its IP. If `PROXY_TOKEN` is unset on ingest, forwarded
 headers are ignored (direct embed keeps working unchanged).
 
+## AI analysis reports (optional)
+
+Each site's dashboard has an **AI report** panel that turns a factual traffic
+snapshot into a written summary. It works with **any OpenAI-compatible endpoint**
+(OpenAI, DeepSeek, OpenRouter, a local vLLM/Ollama, …) or the **Anthropic
+(Claude)** API — you choose, so no provider is baked in.
+
+Configure it once in the console, no redeploy needed: sign in → **⚙ Settings** →
+*AI analysis reports*, and set the **provider** (OpenAI-compatible or Anthropic),
+**model name**, optional **API base URL** (blank uses the provider default),
+**report language**, and your **API key**. The key is stored in your own D1
+(entered via the UI, never written into a repo file) and is never returned to the
+browser. Then open any site → *AI report* → **Generate**.
+
+> Prefer a Workers Secret for the key? Set `AI_API_KEY` on the console worker
+> (`npx wrangler secret put AI_API_KEY -c workers/console/wrangler.toml`) and
+> leave the key field blank; the UI value takes precedence when both are set.
+
+## External ranking / scoring API (optional)
+
+An external ranking system can pull a cross-site, clean-traffic leaderboard in
+one call, authorized with the server-side `API_TOKEN` you set in step 7:
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.example.com/v1/ranking?period=30d"
+```
+
+It returns each active site's clean (bot/crawler/suspect-excluded) pageviews
+split into **internal** (mutual visits from your other sites) and **external**
+traffic; the default `score` is external clean pageviews, so mutual visits can't
+inflate a ranking. Owners also see this as a *Site ranking* table on the console
+home page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -318,6 +374,10 @@ headers are ignored (direct embed keeps working unchanged).
 | Can't sign in / "not an admin" | your email isn't in `ADMIN_EMAILS`, or no OAuth provider is configured |
 | API returns 401 | Missing/wrong `Authorization: Bearer <API_TOKEN>` or console session cookie |
 | Queue errors on deploy | Queues need the Workers Paid plan; both `pvuv-ingest` and `pvuv-ingest-dlq` must exist |
+| "AI is not configured" | Set provider + model + API key under ⚙ Settings → AI analysis reports (or the `AI_API_KEY` secret) |
+| AI report "LLM request failed (401/404)" | Wrong API key, base URL, or model name for the chosen provider — recheck the AI settings |
+| New bot signals never fire | Config not regenerated before deploy — run `npm run config:gen` (or `npm install`) then redeploy `ingest`/`cron` |
+| Anomaly / distribution strip empty | The daily job runs at 03:30 site-local-ish (UTC cron); needs a few days of baseline before it flags |
 
 ## Local development
 
@@ -354,8 +414,21 @@ Point a test page's snippet at `data-api="http://localhost:8788"`.
 
 ```bash
 git pull
-npm install                   # regenerates config.gen.ts
+npm install                   # regenerates config.gen.ts from your config
 npm run db:migrate:remote     # applies any new migrations (no-op otherwise)
 npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
-npm run deploy:all
+npm run deploy:all            # ingest + consumer + api + console + cron
+npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
 ```
+
+Two things people miss:
+
+- **Always regenerate the config before deploying.** New signal weights and
+  threshold sections only take effect once `shared/config.gen.ts` is
+  regenerated (`npm install` does it, or `npm run config:gen`). Skip it and new
+  detection signals silently score 0.
+- **`f.js` changes reach browsers within ~1 hour.** The loader is served with a
+  bounded, revalidating cache (`max-age=3600, stale-while-revalidate`), so a
+  rebuilt `f.js` propagates to already-embedded sites automatically. Server-side
+  changes (ingest scoring, API, dashboards, cron) take effect immediately on
+  deploy. To force the SDK out at once, purge `/f.js` in the Cloudflare cache.

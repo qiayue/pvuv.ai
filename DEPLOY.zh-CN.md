@@ -14,7 +14,7 @@
 | 队列消费者 | （无路由——消费 `pvuv-ingest`） | `workers/consumer` |
 | 查询 API | `https://api.example.com/v1/...` | `workers/api` |
 | 控制台（后台） | `https://example.com/` | `workers/console` |
-| 定时聚合 | （无路由——Cron 触发） | `workers/cron` |
+| 定时聚合 + 每日反作弊/异常分析 | （无路由——Cron 触发） | `workers/cron` |
 | SDK `f.js` | `https://example.com/f.js`（M1 方案，见第 8 步） | 由 console 托管 |
 
 ---
@@ -103,8 +103,10 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 npm run db:migrate:remote     # 即 wrangler d1 migrations apply pvuv-db --remote
 ```
 
-这会创建 `shared/schema.sql` 里的全部表（含 M2+ 占位表）。之后每个月的
-`events_YYYYMM` 分表由 consumer 自动创建，无需手动操作。
+这会应用 `migrations/` 里的版本化迁移（0001 起）——平台用到的所有表：分析
+rollup、会话/访客画像、聚簇标记表、异常报告表，以及 `ai_reports` 和
+`instance_settings`。以后再跑也安全，已应用的迁移会跳过（显示 "No migrations
+to apply"）。之后每个月的 `events_YYYYMM` 分表由 consumer 自动创建，无需手动。
 
 ## 7. 部署 Worker，然后设置密钥
 
@@ -201,6 +203,21 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 - **立即**：console 的 High-score traffic 钻取列表能看到事件（它直接读原始事件表）。
 - **一小时内**：指标卡/趋势图/各维度表填充——它们读预聚合表，cron 每小时
   `:05` 重算。
+- **次日**：每日任务（03:30 UTC）产出群体聚簇封禁、基线 + 分布形态异常
+  （仪表盘「Recent anomalies」条），并清理超出保留期的原始数据。
+
+## 定时任务（自动）
+
+`cron` worker 有两个触发（`workers/cron/wrangler.toml`），部署即生效，无需额外配置：
+
+| 计划 | 任务 |
+|---|---|
+| `5 * * * *`（每小时） | 从原始事件 + 会话重算最近几天的日 rollup，让卡片/图表保持新鲜、刚结束的一天定稿。 |
+| `30 3 * * *`（每天） | 群体/批量分析（指纹簇、IP 段簇、cookie 重置农场 → KV 黑名单 + 批量重判）、基线**与分布形态**异常检测 → `anomaly_reports`，然后清理早于 `[retention].raw_events_days` 的原始事件/会话。 |
+
+所有阈值都从你的 config 读取（`config.example.toml` / `config.local.toml` 里的
+`[population]`、`[anomaly]`、`[distribution]`、`[retention]`），不硬编码——调完
+记得重新生成 config（`npm run config:gen`）并重新部署 `cron`。
 
 ## Google / GitHub 登录(必需)
 
@@ -281,6 +298,36 @@ npm run deploy:console
 `PROXY_TOKEN` 匹配时才信任它们,所以普通客户端无法伪造自己的 IP。若 ingest 没设
 `PROXY_TOKEN`,转发头一律忽略（直连嵌入照常工作,不受影响）。
 
+## AI 分析报告（可选）
+
+每个站点的仪表盘有一个 **AI report** 面板，把真实流量快照生成一份文字分析。它支持
+**任意 OpenAI 兼容端点**（OpenAI、DeepSeek、OpenRouter、本地 vLLM/Ollama……）或
+**Anthropic (Claude)** API——由你选，不绑定任何厂商。
+
+在控制台配置一次即可，无需重新部署：登录 → **⚙ 设置** → *AI analysis reports*，
+填 **provider**（OpenAI 兼容 或 Anthropic）、**模型名**、可选 **API base URL**
+（留空用默认）、**报告语言**、以及你的 **API key**。key 存在你自己的 D1 里（从
+界面录入，不写进仓库任何文件），且永不回传浏览器。然后打开任意站点 → *AI report*
+→ **Generate**。
+
+> 更想用 Workers Secret 存 key？在 console worker 上设 `AI_API_KEY`
+> （`npx wrangler secret put AI_API_KEY -c workers/console/wrangler.toml`），把
+> 界面里的 key 留空即可；两者都设时以界面值优先。
+
+## 外部排名 / 评分 API（可选）
+
+外部排名系统可以用第 7 步设的服务端 `API_TOKEN`，一次拉取跨站点、基于清洗流量的榜单：
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.example.com/v1/ranking?period=30d"
+```
+
+返回每个活跃站点的 clean（已排除 bot/crawler/suspect）浏览量，拆分为**内部**
+（你其它站点带来的互访）和**外部**流量；默认 `score` 用外部 clean 浏览量，所以
+互访不会抬高排名。站长也能在控制台首页看到 *Site ranking* 表格。详见
+[`PROJECT_PLAN.zh-CN.md` §14](./PROJECT_PLAN.zh-CN.md)。
+
 ## 常见问题排查
 
 | 现象 | 大概率原因 |
@@ -292,6 +339,10 @@ npm run deploy:console
 | 无法登录 / 提示「非管理员」 | 你的邮箱不在 `ADMIN_EMAILS` 里,或没配置任何 OAuth 渠道 |
 | API 返回 401 | 缺少/错误的 `Authorization: Bearer <API_TOKEN>` 或 console 会话 cookie |
 | 部署时 Queue 报错 | Queues 需要 Workers Paid 套餐；`pvuv-ingest` 和 `pvuv-ingest-dlq` 都要先建好 |
+| 提示「AI is not configured」 | 在 ⚙ 设置 → AI analysis reports 里配好 provider + 模型 + API key（或设 `AI_API_KEY` 密钥） |
+| AI 报告「LLM request failed (401/404)」 | 所选厂商的 API key / base URL / 模型名不对——重新核对 AI 设置 |
+| 新的机器人信号一直不触发 | 部署前没重新生成 config——先 `npm run config:gen`（或 `npm install`）再重部署 `ingest`/`cron` |
+| 异常 / 分布告警条空 | 每日任务 03:30（UTC cron）才跑，且需要几天基线数据才会告警 |
 
 ## 本地开发
 
@@ -327,8 +378,19 @@ curl "http://localhost:8791/__scheduled?cron=5+*+*+*+*"
 
 ```bash
 git pull
-npm install                   # 重新生成 config.gen.ts
+npm install                   # 从你的 config 重新生成 config.gen.ts
 npm run db:migrate:remote     # 应用新迁移（没有就是空操作）
 npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
-npm run deploy:all
+npm run deploy:all            # ingest + consumer + api + console + cron
+npm run deploy:proxy          # 仅当你用了第一方反代
 ```
+
+两个最容易踩的坑：
+
+- **部署前一定要重新生成 config。** 新的信号权重和阈值段只有在 `shared/config.gen.ts`
+  重新生成后才生效（`npm install` 会做，或 `npm run config:gen`）。漏了这步，新增的
+  检测信号会静默地按 0 分计。
+- **`f.js` 的改动约 1 小时内到达浏览器。** loader 用的是有界、可回源刷新的缓存
+  （`max-age=3600, stale-while-revalidate`），所以重建的 `f.js` 会自动传播到已嵌入的
+  站点。服务端改动（ingest 打分、API、仪表盘、cron）部署后**立即**生效。想让 SDK
+  立刻全量切，在 Cloudflare 面板 purge `/f.js` 即可。
