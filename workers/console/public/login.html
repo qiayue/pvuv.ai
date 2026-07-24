@@ -17,16 +17,22 @@
   .oauth a:hover { background: #1d222c; }
   .err { color: #f87171; font-size: 13px; margin-top: 14px; min-height: 1em; }
   .note { color: #8b93a1; font-size: 13px; margin-top: 14px; }
+  .langrow { margin-top: 18px; text-align: center; }
+  .langrow select { background: #0f1115; color: #8b93a1; border: 1px solid #313847; border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px; }
 </style>
 </head>
 <body>
+<script src="/i18n.js"></script>
 <div class="card">
   <h1>pvuv.ai</h1>
-  <p class="sub">self-hosted analytics · sign in</p>
+  <p class="sub" data-i18n="self-hosted analytics · sign in">self-hosted analytics · sign in</p>
   <div class="oauth" id="oauth"></div>
   <div class="err" id="err"></div>
+  <div class="langrow"><select id="lang" aria-label="Language"></select></div>
 </div>
 <script>
+const t = (s) => window.PVI18N.t(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ERR = {
   not_admin: 'That account is not an admin — login not allowed.',
   bad_state: 'Login session expired — please try again.',
@@ -37,19 +43,31 @@ const ERR = {
   oauth_failed: 'Sign-in failed — please try again.',
 };
 const qerr = new URLSearchParams(location.search).get('error');
-if (qerr) document.getElementById('err').textContent = ERR[qerr] || ('Sign-in failed (' + qerr + ').');
+if (qerr) document.getElementById('err').textContent = ERR[qerr] ? t(ERR[qerr]) : (t('Sign-in failed') + ' (' + qerr + ').');
 
 const LABEL = { google: 'Continue with Google', github: 'Continue with GitHub' };
-fetch('/api/auth/providers').then((r) => r.json()).then((cfg) => {
+let lastProviders = null;
+function renderProviders(providers) {
+  lastProviders = providers;
   const box = document.getElementById('oauth');
-  const providers = cfg.providers || [];
   if (!providers.length) {
-    box.innerHTML = '<p class="note">No login provider is configured. The deployer must set up Google or GitHub OAuth — see DEPLOY.md.</p>';
+    box.innerHTML = `<p class="note">${esc(t('No login provider is configured. The deployer must set up Google or GitHub OAuth — see DEPLOY.md.'))}</p>`;
     return;
   }
-  box.innerHTML = providers.map((p) => `<a href="/api/auth/${p}/start">${LABEL[p] || p}</a>`).join('');
+  box.innerHTML = providers.map((p) => `<a href="/api/auth/${p}/start">${esc(t(LABEL[p]) || p)}</a>`).join('');
+}
+fetch('/api/auth/providers').then((r) => r.json()).then((cfg) => {
+  renderProviders(cfg.providers || []);
 }).catch(() => {
-  document.getElementById('err').textContent = 'Could not reach the server.';
+  document.getElementById('err').textContent = t('Could not reach the server.');
+});
+
+// language switcher (auto-detects the browser language on first visit)
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => {
+  window.PVI18N.applyStatic();
+  if (lastProviders) renderProviders(lastProviders);
 });
 </script>
 </body>

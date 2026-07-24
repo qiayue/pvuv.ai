@@ -52,32 +52,34 @@
 </style>
 </head>
 <body>
+<script src="/i18n.js"></script>
 <header>
-  <a id="back" href="/sites.html">← dashboard</a><b id="title">Visitor journeys</b>
-  <select id="period" aria-label="Date range">
-    <option value="today">Today</option>
-    <option value="7d">Last 7 days</option>
-    <option value="30d" selected>Last 30 days</option>
-    <option value="90d">Last 90 days</option>
+  <a id="back" href="/sites.html" data-i18n="← dashboard">← dashboard</a><b id="title" data-i18n="Visitor journeys">Visitor journeys</b>
+  <select id="lang" aria-label="Language" style="margin-left:auto;background:#171a21;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px"></select>
+  <select id="period" aria-label="Date range" style="margin-left:8px">
+    <option value="today" data-i18n="Today">Today</option>
+    <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+    <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
+    <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
   </select>
 </header>
 <main>
   <!-- finder mode: recent visitors, optionally only those who opened a path -->
   <section id="finder" hidden>
-    <h2>Find visitors</h2>
+    <h2 data-i18n="Find visitors">Find visitors</h2>
     <div class="filter">
-      <input id="path" placeholder="Filter by page path, e.g. /pay — trailing * matches a prefix (/pay*)">
-      <button id="apply">Filter</button>
+      <input id="path" placeholder="Filter by page path, e.g. /pay — trailing * matches a prefix (/pay*)" data-i18n-ph="Filter by page path, e.g. /pay — trailing * matches a prefix (/pay*)">
+      <button id="apply" data-i18n="Filter">Filter</button>
     </div>
-    <p class="hint">Shows visitors with a pageview matching the path in the selected period; leave empty for all visitors. Click a visitor to see the full journey.</p>
-    <div class="panel" id="list"><p class="muted">loading…</p></div>
+    <p class="hint" data-i18n="Shows visitors with a pageview matching the path in the selected period; leave empty for all visitors. Click a visitor to see the full journey.">Shows visitors with a pageview matching the path in the selected period; leave empty for all visitors. Click a visitor to see the full journey.</p>
+    <div class="panel" id="list"><p class="muted" data-i18n="loading…">loading…</p></div>
   </section>
 
   <!-- journey mode: one visitor's trail, grouped by session, chronological -->
   <section id="journey" hidden>
-    <h2 id="vidTitle">Journey</h2>
+    <h2 id="vidTitle" data-i18n="Journey">Journey</h2>
     <div class="cards" id="summary"></div>
-    <h2>Sessions <span class="muted" id="trailNote"></span></h2>
+    <h2><span data-i18n="Sessions">Sessions</span> <span class="muted" id="trailNote"></span></h2>
     <div id="sessions"></div>
   </section>
 </main>
@@ -89,11 +91,13 @@ if (!site) location.href = '/sites.html';
 document.getElementById('back').href = `/site.html?id=${encodeURIComponent(site)}`;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const t = (s) => window.PVI18N.t(s);
+const te = (s) => esc(t(s));
 const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
 const dt = (ts) => ts == null ? '–' : new Date(ts).toISOString().slice(0, 16).replace('T', ' ');
 const hms = (ts) => new Date(ts).toISOString().slice(11, 19);
-const badge = (v) => `<span class="badge b-${esc(v)}">${esc(v)}</span>`;
+const badge = (v) => `<span class="badge b-${esc(v)}">${te(v)}</span>`;
 const shortId = (id) => `${String(id).slice(0, 8)}…`;
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 const get = async (p, extra = '') =>
@@ -110,9 +114,9 @@ async function loadList() {
   el.innerHTML = '<p class="muted">loading…</p>';
   const path = document.getElementById('path').value.trim();
   const d = await get('visitors', `&limit=100${path ? `&path=${encodeURIComponent(path)}` : ''}`);
-  const note = path ? ` <span class="muted">(matching ${esc(path)})</span>` : '';
+  const note = path ? ` <span class="muted">(${te('matching')} ${esc(path)})</span>` : '';
   el.innerHTML = d.rows.length
-    ? `<table><tr><th>Visitor</th><th>Last seen</th><th>First seen</th><th class="num">Pageviews${note}</th><th class="num">Sessions</th><th>Where</th><th>Device</th><th>Verdict</th></tr>` +
+    ? `<table><tr><th>${te('Visitor')}</th><th>${te('Last seen')}</th><th>${te('First seen')}</th><th class="num">${te('Pageviews')}${note}</th><th class="num">${te('Sessions')}</th><th>${te('Where')}</th><th>${te('Device')}</th><th>${te('Verdict')}</th></tr>` +
       d.rows.map((r) => `<tr>
         <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}${path ? `&path=${encodeURIComponent(path)}` : ''}">${esc(shortId(r.visitor_id))}</a></td>
         <td>${dt(r.last_ts)}</td><td>${dt(r.first_ts)}</td>
@@ -120,7 +124,7 @@ async function loadList() {
         <td>${esc(r.country ?? '–')}</td><td>${esc(r.device_type ?? '–')}</td>
         <td>${badge(r.verdict)}</td>
       </tr>`).join('') + '</table>'
-    : '<p class="muted">no visitors matched in this period</p>';
+    : `<p class="muted">${te('no visitors matched in this period')}</p>`;
 }
 
 // -------------------------------- journey --------------------------------
@@ -135,15 +139,15 @@ const pathHit = (p) => {
 function eventLine(ev, isSessionFirst) {
   const cls = ev.event === 'page_leave' ? 'ev-leave' : ev.event === 'outbound_click' ? 'ev-out'
     : ev.event !== 'pageview' ? 'ev-custom' : '';
-  const tag = ev.event === 'pageview' ? 'page' : ev.event === 'page_leave' ? 'leave'
-    : ev.event === 'outbound_click' ? 'out' : esc(ev.event);
+  const tag = ev.event === 'pageview' ? te('page') : ev.event === 'page_leave' ? te('leave')
+    : ev.event === 'outbound_click' ? te('out') : esc(ev.event);
   let props = null;
   try { props = ev.props ? JSON.parse(ev.props) : null; } catch { /* display raw-less */ }
 
   const meta = [];
   if (ev.event === 'page_leave') {
-    if (ev.duration_ms != null) meta.push(`stayed ${dur(ev.duration_ms)}`);
-    if (ev.scroll_depth != null) meta.push(`scrolled ${ev.scroll_depth}%`);
+    if (ev.duration_ms != null) meta.push(`${t('stayed')} ${dur(ev.duration_ms)}`);
+    if (ev.scroll_depth != null) meta.push(`${t('scrolled')} ${ev.scroll_depth}%`);
   }
   if (ev.event === 'outbound_click' && props?.href) meta.push(`→ ${esc(String(props.href))}`);
   if (ev.event !== 'pageview' && ev.event !== 'page_leave' && ev.event !== 'outbound_click' && props) {
@@ -152,7 +156,7 @@ function eventLine(ev, isSessionFirst) {
   // annotate where the session came from, on its first pageview only
   if (isSessionFirst && ev.referrer) {
     const h = refHost(ev.referrer);
-    if (h && h !== ev.hostname) meta.push(`from ${esc(h)}`);
+    if (h && h !== ev.hostname) meta.push(`${t('from')} ${esc(h)}`);
   }
   if (ev.verdict && ev.verdict !== 'clean') meta.push(badge(ev.verdict));
 
@@ -169,10 +173,10 @@ function sessionBlock(sid, events, info) {
   const day = new Date(first.ts).toISOString().slice(0, 10);
   const head = [`<b>${day}</b>`, `<span class="muted">${hms(first.ts)}–${hms(events[events.length - 1].ts)}</span>`];
   if (info) {
-    head.push(`source: <b>${esc(info.source ?? '(direct)')}</b>${info.medium ? ` / ${esc(info.medium)}` : ''}`);
-    head.push(`${fmt(info.pageviews)} pages`);
+    head.push(`${te('source:')} <b>${esc(info.source ?? '(direct)')}</b>${info.medium ? ` / ${esc(info.medium)}` : ''}`);
+    head.push(`${fmt(info.pageviews)} ${te('pages')}`);
     if (info.duration_ms != null) head.push(dur(info.duration_ms));
-    if (info.is_bounce) head.push('<span class="muted">bounced</span>');
+    if (info.is_bounce) head.push(`<span class="muted">${te('bounced')}</span>`);
     head.push(badge(info.verdict ?? 'clean'));
   }
   return `<div class="session">
@@ -182,7 +186,7 @@ function sessionBlock(sid, events, info) {
 }
 
 async function loadJourney() {
-  document.getElementById('vidTitle').textContent = `Journey — visitor ${vid}`;
+  document.getElementById('vidTitle').textContent = `${t('Journey')} — ${vid}`;
   const d = await get(`visitors/${encodeURIComponent(vid)}/profile`);
   const p = d.profile || {};
   const events = (d.events || []).slice();
@@ -195,7 +199,7 @@ async function loadJourney() {
     ['Sessions shown', fmt((d.sessions || []).length)],
     ['Worst verdict', p.verdict ? badge(p.verdict) : '–'],
     ['Bot score', p.bot_score ?? '–'],
-  ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+  ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${te(k)}</div></div>`).join('');
 
   // group the trail by session; blocks newest-first, events chronological inside
   const groups = new Map();
@@ -208,10 +212,10 @@ async function loadJourney() {
     .sort((a, b) => b[1][b[1].length - 1].ts - a[1][a[1].length - 1].ts);
 
   document.getElementById('trailNote').textContent =
-    events.length ? `— ${events.length} events in the selected period${events.length >= 300 ? ' (capped at 300, narrow the period for more)' : ''}` : '';
+    events.length ? `— ${events.length} ${t('events in this period')}${events.length >= 300 ? ' ' + t('(capped at 300 — narrow the period for more)') : ''}` : '';
   document.getElementById('sessions').innerHTML = ordered.length
     ? ordered.map(([sid, list]) => sessionBlock(sid, list, sessionInfo.get(sid))).join('')
-    : '<p class="muted">no events in the selected period — try a longer range</p>';
+    : `<p class="muted">${te('no events in the selected period — try a longer range')}</p>`;
 }
 
 // -------------------------------- boot ------------------------------------
@@ -226,6 +230,12 @@ if (mode === 'finder') {
   document.getElementById('apply').addEventListener('click', loadList);
   document.getElementById('path').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadList(); });
 }
+
+// language switcher
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => { window.PVI18N.applyStatic(); reload(); });
+
 reload();
 </script>
 </body>
