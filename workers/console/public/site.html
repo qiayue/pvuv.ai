@@ -14,6 +14,9 @@
   header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
   header select.langsel { margin-left: auto; }
   header select#period { margin-left: 8px; }
+  header .dl-btn { margin-left: 8px; background: #171a21; color: #cdd3dc; border: 1px solid #313847; border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  header .dl-btn:hover { background: #1d222c; border-color: #3b4457; color: #e6e8eb; }
+  header .dl-btn:disabled { opacity: .6; cursor: default; }
   main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
   h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -172,6 +175,7 @@
       <option value="this_year" data-i18n="This year">This year</option>
     </optgroup>
   </select>
+  <button id="dlBtn" class="dl-btn" title="Download all data for the selected range as JSON">⬇ <span data-i18n="Download data">Download data</span></button>
 </header>
 <main>
   <div class="rt" id="realtime"></div>
@@ -808,6 +812,63 @@ async function loadAdguard() {
     } catch { msg.textContent = t('save failed'); }
   });
 }
+
+// ── Data export ─────────────────────────────────────────────────────────────
+// Bundle every endpoint the dashboard reads — for the CURRENTLY selected period
+// AND active filters — into one JSON file. Limits are generous (not the on-screen
+// top-N) so the export is the full data for the range, easy to audit offline.
+const DL_DIMS = ['source', 'page', 'entry_page', 'exit_page', 'country', 'region', 'city',
+  'browser', 'os', 'device', 'size', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'ft_source', 'ft_medium', 'ft_campaign', 'goal'];
+async function downloadData() {
+  const btn = document.getElementById('dlBtn');
+  const label = btn.querySelector('span');
+  const orig = label.textContent;
+  btn.disabled = true; label.textContent = t('Preparing…');
+  // each fetch is isolated so one failure doesn't abort the whole export
+  const safe = async (p, extra = '') => { try { return await get(p, extra); } catch (e) { return { error: String((e && e.message) || e) }; } };
+  try {
+    const period = document.getElementById('period').value;
+    const metric = document.getElementById('metric').value;
+    const interval = document.getElementById('interval').value;
+    const bundle = {
+      meta: {
+        app: 'pvuv.ai', schema: 1, generated_at: new Date().toISOString(),
+        site_id: site, site_name: siteName, period, filters, metric, interval,
+        note: 'Values reflect the selected period and any active filters. Breakdowns/traffic use generous limits, so this is the full data for the range, not the on-screen top-N.',
+      },
+      overview: await safe('overview'),
+      realtime: await safe('realtime'),
+      quality: await safe('quality'),
+      timeseries: await (async () => {
+        const out = {}; // every metric at the current interval, so any chart can be cross-checked
+        for (const [mv] of METRICS) out[mv] = await safe('timeseries', `&metric=${mv}&interval=${interval}`);
+        return { interval, selected_metric: metric, metrics: out };
+      })(),
+      alerts: await safe('alerts'),
+      adguard: await safe('adguard'),
+      traffic: await safe('traffic', '&min_score=0&limit=1000'),
+      breakdowns: {},
+    };
+    // anomalies is not period-scoped (matches the dashboard's own direct fetch)
+    try { bundle.anomalies = await (await guard(await fetch(`/api/sites/${site}/anomalies`))).json(); }
+    catch (e) { bundle.anomalies = { error: String(e) }; }
+    for (const d of DL_DIMS) bundle.breakdowns[d] = await safe('breakdown', `&dim=${d}&limit=1000`);
+    const validFunnel = (typeof funnelSteps !== 'undefined' ? funnelSteps : []).filter((s) => s && s.value);
+    if (validFunnel.length >= 2) bundle.funnel = await safe('funnel', `&steps=${encodeURIComponent(JSON.stringify(validFunnel))}`);
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `pvuv-${site}-${period}-${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  } finally {
+    btn.disabled = false; label.textContent = orig;
+  }
+}
+document.getElementById('dlBtn').addEventListener('click', downloadData);
 
 async function load() {
   const ov = await get('overview');
