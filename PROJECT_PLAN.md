@@ -225,6 +225,8 @@ Body: JSON (single or array; SDK batches ≤10 events or every 3s)
 
 Stitch events into sessions; compute session-level features (inter-page interval, path pattern, zero-interaction/no-leave); correct the verdict (`score_stage='session'`).
 
+The zero-interaction/no-leave tell (0x0040) is set here rather than at realtime because "no page_leave in the *whole* session" is only final once the session is idle-closed. The hourly rollup marks the pageviews of closed sessions with `had_interaction = 0 AND duration_ms = 0` (past the session-idle window), giving the drill-down evidence and the "no-interaction visits" alert real data. It is an evidence/reporting marker only — the *score* separation for these visits already comes from the withheld has_interaction / has_page_leave trust credits (§6.2), so the flag's weight is not added a second time.
+
 ### 6.4 Population layer batch analysis (daily Cron) — find "the same hand"
 
 Single hits look real; batch fraud reveals itself in group statistics.

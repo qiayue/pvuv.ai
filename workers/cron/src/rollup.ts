@@ -19,11 +19,16 @@
 
 import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
+import { SESSION_IDLE_MS } from '../../../shared/ids';
+import { FLAG } from '../../../shared/flags';
 import { monthSuffix, eventsTableName, RESERVED_EVENTS_SQL } from '../../../shared/events';
 
 export async function runHourlyRollup(env: Env): Promise<void> {
   const now = Date.now();
   const existing = await existingEventTables(env.DB);
+  // A session is "closed" (no further interaction/leave can arrive) once it has
+  // been idle past the session window — only then is "no page_leave" final.
+  const idleCutoff = now - SESSION_IDLE_MS;
 
   const sites = await env.DB
     .prepare("SELECT site_id, COALESCE(timezone, 'UTC') AS timezone FROM sites WHERE status = 'active'")
@@ -35,7 +40,7 @@ export async function runHourlyRollup(env: Env): Promise<void> {
     const yday = addDays(t.y, t.m0, t.d, -1);
     for (const ymd of [t, yday]) {
       const span = localDaySpan(tz, ymd.y, ymd.m0, ymd.d);
-      await rollupSiteDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing);
+      await rollupSiteDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing, idleCutoff);
     }
   }
 }
@@ -63,11 +68,35 @@ function eventSpan(tables: string[], cols: string, siteId: string, startTs: numb
 
 export async function rollupSiteDay(
   db: D1Database, siteId: string, day: string, startTs: number, endTs: number, existing: Set<string>,
+  idleCutoff = 0,
 ): Promise<void> {
   const tables = tablesForSpan(startTs, endTs, existing);
   if (tables.length === 0) return; // no events partition for this day yet
 
   const stmts: D1PreparedStatement[] = [];
+
+  // --- session-layer behavioral flag (§6.2 0x0040, §6.3) -------------------
+  // Mark the pageviews of CLOSED sessions that had zero interaction AND never
+  // sent page_leave (duration stays 0) — the most basic "pulled the page but
+  // behaved like nothing" bot tell, only knowable once the session is over.
+  // Evidence/reporting only: the realtime scorer already separates these via
+  // the WITHHELD has_interaction / has_page_leave trust credits (§6.2), so we
+  // deliberately do NOT touch bot_score or verdict here (no double penalty).
+  // Idempotent — the (bot_flags & FLAG) = 0 guard writes each event at most once.
+  for (const tbl of tables) {
+    stmts.push(db.prepare(`
+      UPDATE ${tbl} SET bot_flags = bot_flags | ${FLAG.ZERO_INTERACTION_NO_LEAVE}
+      WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?
+        AND (bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE}) = 0
+        AND verdict != 'crawler'
+        AND session_id IN (
+          SELECT session_id FROM sessions s
+          WHERE s.site_id = ? AND s.had_interaction = 0
+            AND COALESCE(s.duration_ms, 0) = 0
+            AND COALESCE(s.last_pageview_at, s.started_at) < ?
+        )
+    `).bind(siteId, startTs, endTs, siteId, idleCutoff));
+  }
 
   // --- rollup_page_daily ---------------------------------------------------
   const pageEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict, hostname, path, duration_ms', siteId, startTs, endTs);
