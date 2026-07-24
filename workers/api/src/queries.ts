@@ -1164,18 +1164,22 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
 // ---------------------------------------------------------------------------
 
 export async function adguardImpact(db: D1Database, siteId: string, period: Period) {
-  const ZERO = FLAG.ZERO_INTERACTION_NO_LEAVE;
   const acc: Record<'clean' | 'suspect' | 'bot' | 'crawler', { n: number; eng: number }> = {
     clean: { n: 0, eng: 0 }, suspect: { n: 0, eng: 0 }, bot: { n: 0, eng: 0 }, crawler: { n: 0, eng: 0 },
   };
   const flags: Record<string, number> = {};
   const fcols = ALL_FLAGS.map((n) => `SUM(CASE WHEN bot_flags & ${FLAG[n]} THEN 1 ELSE 0 END) AS ${n}`).join(', ');
   for (const t of await eventTables(db, period.startTs, period.endTs)) {
+    // "engaged" = the pageview's session showed human interaction (click / scroll
+    // / keypress / custom event), read from sessions.had_interaction — the actual
+    // engagement signal, not the rarely-set zero-interaction flag. This is what
+    // balanced/strict gate on and what the false-positive estimate measures.
     const rows = await db.prepare(`
-      SELECT verdict, COUNT(*) AS n,
-        SUM(CASE WHEN bot_flags & ${ZERO} THEN 0 ELSE 1 END) AS eng
-      FROM ${t} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?
-      GROUP BY verdict
+      SELECT e.verdict AS verdict, COUNT(*) AS n,
+        SUM(CASE WHEN s.had_interaction = 1 THEN 1 ELSE 0 END) AS eng
+      FROM ${t} e LEFT JOIN sessions s ON s.site_id = e.site_id AND s.session_id = e.session_id
+      WHERE e.site_id = ? AND e.event = 'pageview' AND e.ts >= ? AND e.ts < ?
+      GROUP BY e.verdict
     `).bind(siteId, period.startTs, period.endTs).all<{ verdict: string; n: number; eng: number }>();
     for (const r of rows.results) {
       const a = acc[r.verdict as keyof typeof acc];
