@@ -873,33 +873,36 @@ async function downloadData() {
 document.getElementById('dlBtn').addEventListener('click', downloadData);
 
 async function load() {
-  const ov = await get('overview');
-  const al = await loadAlerts();
-  renderCards(ov, al);
-  renderShadowBanner(ov);
-  await loadChart();
+  // Independent sections load CONCURRENTLY (Cloudflare serves over HTTP/2, so
+  // these multiplex on one connection) and each renders the moment its own
+  // request lands — instead of a serial await-waterfall where the whole page
+  // stays blank until the slowest query at the end of the chain resolves.
+  const cards = (async () => {
+    const ov = await get('overview');
+    renderCards(ov, null);     // paint 11/12 cards the instant overview lands
+    renderShadowBanner(ov);
+    const al = await loadAlerts(); // alerts scans more — refine the Forged-search card when it arrives
+    renderCards(ov, al);
+  })();
 
-  await Promise.all(Object.keys(PANELS).map(loadPanel));
+  const panels = Promise.all(Object.keys(PANELS).map(loadPanel));
 
-  await loadUtm();
-  await loadGoals();
-  runFunnel(); // re-run the saved funnel for the current period (no-op if <2 valid steps)
-
-  const qy = await get('quality');
-  donut(qy.totals);
-  const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
-  document.getElementById('flags').innerHTML = firedFlags.length
-    ? '<p class="muted" style="margin:0 0 10px;font-size:12px">Bot-detection checks that fired on suspicious traffic — one visit can trip several.</p>'
-      + `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>` +
-      firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
-    : `<p class="muted">${te('no signals fired — traffic looks clean')}</p>`;
-
-  await loadAdguard();
+  const quality = (async () => {
+    const qy = await get('quality');
+    donut(qy.totals);
+    const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    document.getElementById('flags').innerHTML = firedFlags.length
+      ? '<p class="muted" style="margin:0 0 10px;font-size:12px">Bot-detection checks that fired on suspicious traffic — one visit can trip several.</p>'
+        + `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>` +
+        firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
+      : `<p class="muted">${te('no signals fired — traffic looks clean')}</p>`;
+  })();
 
   // high-score drill-down, aggregated by VISITOR (one row per suspicious visitor,
   // not per event): event/session counts, worst score/verdict, union of evidence.
-  const tr = await get('traffic', '&min_score=30&limit=50');
-  document.getElementById('traffic').innerHTML = tr.rows.length
+  const traffic = (async () => {
+    const tr = await get('traffic', '&min_score=30&limit=50');
+    document.getElementById('traffic').innerHTML = tr.rows.length
     ? `<table><tr><th>${te('Visitor')}</th><th class="num">${te('Events')}</th><th class="num">${te('Sessions')}</th><th>${te('Last seen')}</th><th>${te('Where')}</th><th>${te('Agent')}</th><th class="num">${te('Max score')}</th><th>${te('Verdict')}</th><th>${te('Evidence')}</th></tr>` +
       tr.rows.map((r) => `<tr>
         <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="Journey timeline">${esc(String(r.visitor_id).slice(0, 10))}…</a></td>
@@ -913,6 +916,13 @@ async function load() {
         <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
       </tr>`).join('') + '</table>'
     : `<p class="muted">${te('nothing above the threshold — looking clean')}</p>`;
+  })();
+
+  // UTM breakdown, then re-run the saved funnel for the period (needs UTM done
+  // only for layout order; funnel is a no-op if <2 valid steps).
+  const utm = (async () => { await loadUtm(); runFunnel(); })();
+
+  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadAdguard()]);
 }
 
 // live "online now" — polls independently of the selected period (always the
