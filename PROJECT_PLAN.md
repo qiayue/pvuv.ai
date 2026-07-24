@@ -216,6 +216,7 @@ Body: JSON (single or array; SDK batches ≤10 events or every 3s)
 | 0x10000 | UA advertises a headless engine ("HeadlessChrome") | +70 |
 | 0x20000 | headless window geometry (outerWidth/Height === 0, desktop) | +30 |
 | 0x40000 | navigator.platform contradicts UA OS (Win/Mac/iOS on Linux) | +30 |
+| 0x80000 | synthetic render env (monochrome color emoji / no real system fonts) | +20 each |
 | — | residential/mobile ASN + interaction + page_leave | trust credit −10 each |
 
 **Example bands:** 0–29 clean │ 30–69 suspect │ 70+ bot. Verified crawlers are classified separately. `score_stage` records which pass assigned the score, so the UI can show the "first-pass → batch re-verdict" change.

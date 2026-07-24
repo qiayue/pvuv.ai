@@ -368,6 +368,7 @@ const FLAG_LABELS = {
   0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
   0x4000: 'search referrer from datacenter', 0x8000: 'forged search referrer',
   0x10000: 'headless UA', 0x20000: 'headless window', 0x40000: 'platform/UA mismatch',
+  0x80000: 'synthetic render env',
 };
 const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
 
@@ -394,6 +395,7 @@ const SIGNAL_INFO = {
   HEADLESS_UA: ['Headless browser', 'The browser identifies itself as a headless automation engine (HeadlessChrome)'],
   HEADLESS_WINDOW: ['Windowless browser', 'The browser window reports zero outer size — typical of a headless / windowless runtime'],
   UA_PLATFORM_MISMATCH: ['OS spoofing', "The claimed operating system (Windows/macOS/iOS) contradicts the browser's actual platform"],
+  SYNTHETIC_ENV: ['Synthetic environment', 'Renders color emoji in monochrome and has no real system fonts — a bare headless/container browser, not a real device'],
 };
 const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
 const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];

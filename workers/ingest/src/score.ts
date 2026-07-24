@@ -21,6 +21,10 @@ import type { AsnType } from '../../../shared/asn';
  *  800x600, colorDepth 0, mobile-no-touch, cores 0, low deviceMemory. */
 const MAX_SCREEN_CONTRADICTIONS = 6;
 
+/** Distinct synthetic-render tells the SDK checks (§4.4): monochrome color
+ *  emoji, and an empty system-font stack. */
+const MAX_SYNTHETIC_TELLS = 2;
+
 export interface ScoreInput {
   x: XPayload | undefined;
   asnType: AsnType;
@@ -91,6 +95,9 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
   if (CONFIG.detection.honeypot_enabled && x.x8 === 1) fire('HONEYPOT');
   if (x.x11 === 1) fire('HEADLESS_WINDOW');
   if (x.x12 === 1) fire('UA_PLATFORM_MISMATCH');
+  // x13 is a spoofable count from the client; clamp to the tells the SDK checks
+  // (per-tell weight itself comes from CONFIG, §21)
+  if (typeof x.x13 === 'number' && x.x13 > 0) fire('SYNTHETIC_ENV', Math.min(x.x13, MAX_SYNTHETIC_TELLS));
 
   // --- mobile sensor signals, Android-only (§4.6) ---
   if (CONFIG.detection.mobile_sensors_enabled && input.os === 'Android' && input.deviceType === 'mobile') {

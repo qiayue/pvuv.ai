@@ -56,6 +56,10 @@ export const FLAG = {
   /** navigator.platform contradicts the UA's OS family (e.g. a Windows/macOS/iOS
    *  UA on a Linux platform) — a common OS-spoofing tell for cloud automation */
   UA_PLATFORM_MISMATCH: 0x40000,
+  /** synthetic rendering environment: a bare headless/container runtime renders
+   *  color emoji as a monochrome glyph and collapses every system-font family to
+   *  one fallback metric (no real fonts installed). Count of such tells (§4.4). */
+  SYNTHETIC_ENV: 0x80000,
 } as const;
 
 export type FlagName = keyof typeof FLAG;
@@ -85,6 +89,7 @@ export const FLAG_CONFIG_KEY: Record<FlagName, string> = {
   HEADLESS_UA: 'headless_ua',
   HEADLESS_WINDOW: 'headless_window',
   UA_PLATFORM_MISMATCH: 'ua_platform_mismatch',
+  SYNTHETIC_ENV: 'synthetic_env',
 } as const;
 
 /** All flag names, in ascending bit order. */
@@ -132,6 +137,9 @@ export const XF = {
   HEADLESS_WINDOW: 'x11',
   /** 0/1 — navigator.platform contradicts the UA OS family (Win/Mac/iOS) */
   UA_PLATFORM_MISMATCH: 'x12',
+  /** count — synthetic-render tells: color emoji rendered monochrome, and/or
+   *  no real system fonts installed (every family collapses to one metric) */
+  SYNTHETIC_ENV: 'x13',
 } as const;
 
 /** Shape of the event `x` payload as sent by f.js. */
@@ -148,6 +156,7 @@ export interface XPayload {
   x10?: 0 | 1;
   x11?: 0 | 1;
   x12?: 0 | 1;
+  x13?: number;
 }
 
 /** Persisted verdict values (§6.2). Verified crawlers classified separately. */

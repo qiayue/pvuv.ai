@@ -52,6 +52,52 @@ import type { XPayload } from '../../shared/flags';
     return new RegExp('^' + glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
   }
 
+  // Count synthetic-render tells (0–2) via two small 2D-canvas probes. A real
+  // OS renders 😀 as a multi-colour glyph and has several distinct system-font
+  // families; a bare headless/container browser renders emoji monochrome and
+  // collapses every family to one fallback metric. Cheap (a few measureText +
+  // one 24×24 readback) and privacy-safe — only the tell-count leaves the page.
+  function synthEnvTells(): number {
+    let tells = 0;
+    try {
+      const c = doc.createElement('canvas');
+      const g = c.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings);
+      if (!g) return 0;
+
+      // ① colour-emoji test: quantise the rendered pixels and count distinct
+      //    colours. A colour-emoji font produces several; a monochrome glyph or
+      //    tofu box produces ~1. Skip if nothing was drawn (font stack refused).
+      c.width = 24; c.height = 24;
+      g.textBaseline = 'top';
+      g.font = '18px sans-serif';
+      g.fillText('😀', 0, 0); // 😀
+      const px = g.getImageData(0, 0, 24, 24).data;
+      const colours: Record<string, 1> = {};
+      let ink = false;
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] < 16) continue; // transparent
+        ink = true;
+        colours[(px[i] >> 5) + '|' + (px[i + 1] >> 5) + '|' + (px[i + 2] >> 5)] = 1;
+      }
+      if (ink && Object.keys(colours).length <= 2) tells++;
+
+      // ② font-stack test: measure a probe string across several distinct
+      //    families, each falling back to monospace. If a family is installed
+      //    its width differs from the bare monospace width; on a fontless
+      //    headless environment every family collapses to the same metric.
+      const probe = 'mmMMwwWW00ooOOiill';
+      const measure = (family: string): number => { g.font = '16px ' + family; return g.measureText(probe).width; };
+      const base = measure('monospace');
+      let distinct = 0;
+      const fams = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana'];
+      for (let i = 0; i < fams.length; i++) {
+        if (Math.abs(measure('"' + fams[i] + '", monospace') - base) > 0.5) distinct++;
+      }
+      if (distinct === 0) tells++;
+    } catch { /* check simply not run */ }
+    return tells;
+  }
+
   function uuid(): string {
     if (crypto.randomUUID) return crypto.randomUUID();
     const b = crypto.getRandomValues(new Uint8Array(16));
@@ -222,6 +268,13 @@ import type { XPayload } from '../../shared/flags';
           || (macUA && plat.indexOf('mac') < 0)
           || (iosUA && !/iphone|ipad|ipod|mac/.test(plat))) out.x12 = 1;
       }
+
+      // synthetic render environment (§4.4): a real OS ships a color-emoji font
+      // and many system fonts; a bare headless/container runtime has neither.
+      // Store only the coarse tell-count (0–2), never the raw pixels/metrics
+      // (§16). Two cheap 2D-canvas probes, wrapped so any failure = check skipped.
+      const tells = synthEnvTells();
+      if (tells > 0) out.x13 = tells;
     } catch { /* never break the host page */ }
     return out;
   })();

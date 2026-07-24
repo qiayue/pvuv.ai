@@ -44,6 +44,7 @@ forged_search_referrer = 40       # 0x8000 implausible search-engine referrer (h
 headless_ua            = 70       # 0x10000 UA advertises a headless engine ("HeadlessChrome") — self-declared automation
 headless_window        = 30       # 0x20000 desktop headless window tell (outerWidth/outerHeight === 0)
 ua_platform_mismatch   = 30       # 0x40000 navigator.platform contradicts the UA OS family (Win/Mac/iOS on Linux)
+synthetic_env          = 20       # 0x80000 per tell: color emoji rendered monochrome and/or no real system fonts (bare headless/container render env)
 
 [trust_credits]
 # Subtracted from bot_score (make legit traffic look cleaner).
