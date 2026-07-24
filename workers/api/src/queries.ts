@@ -591,7 +591,7 @@ function subDayLabel(instant: number, tz: string, interval: string, withDate: bo
 // ---------------------------------------------------------------------------
 
 export async function breakdown(db: D1Database, siteId: string, dim: string, period: Period, limit: number, key: string | null = null, filters: Filter[] = []) {
-  limit = Math.min(Math.max(Number.isFinite(limit) ? limit : 20, 1), 100); // NaN → default, not a 500
+  limit = Math.min(Math.max(Number.isFinite(limit) ? limit : 20, 1), 1000); // NaN → default; cap high so full-data exports aren't truncated
   // active filters narrow every row; the grouped dim itself is excluded so the
   // list still shows all of its values within the other filters.
   const ef = evFilter(filters, dim);
@@ -997,7 +997,7 @@ export async function traffic(
   opts: { verdict?: string | null; minScore?: number; limit?: number },
   filters: Filter[] = [],
 ) {
-  const limit = Math.min(Math.max(Number.isFinite(opts.limit) ? opts.limit! : 50, 1), 200);
+  const limit = Math.min(Math.max(Number.isFinite(opts.limit) ? opts.limit! : 50, 1), 1000);
   const conds = ['site_id = ?', 'ts >= ?', 'ts < ?'];
   const binds: unknown[] = [siteId, period.startTs, period.endTs];
   if (opts.verdict && ['clean', 'suspect', 'bot', 'crawler'].includes(opts.verdict)) {
