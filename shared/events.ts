@@ -197,6 +197,8 @@ export function eventsTableDDL(suffix: string): string[] {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_ev${suffix}_eid ON ${t}(eid)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_site_ts ON ${t}(site_id, ts)`,
+    // covers the ubiquitous site_id + event='pageview' + ts-range scans
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_site_ev_ts ON ${t}(site_id, event, ts)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_visitor ON ${t}(site_id, visitor_id)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_session ON ${t}(session_id)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_verdict ON ${t}(site_id, verdict, ts)`,

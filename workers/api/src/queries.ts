@@ -13,7 +13,7 @@
  * make historical chart reads cheap, never to gate current numbers.
  */
 
-import { FLAG, ALL_FLAGS, type FlagName } from '../../../shared/flags';
+import { FLAG, ALL_FLAGS, FAKE_SEARCH_MASK, searchRefDomainSql, type FlagName } from '../../../shared/flags';
 import { localYMD, localMidnightUtc, localDaySpan, addDays, weekdayMon0, dayStr, tzOffsetMs } from '../../../shared/tz';
 import { monthSuffix, RESERVED_EVENTS_SQL } from '../../../shared/events';
 import { CONFIG } from '../../../shared/config.gen';
@@ -210,13 +210,19 @@ interface SiteAgg {
   pv: number; uv: number; sessions: number;
   clean_count: number; suspect_count: number; bot_count: number; crawler_count: number;
   conversions: number; revenue: number;
+  // hot flag tallies (mirror rollup_site_daily columns) — computed in the same
+  // scan so the live/filtered path matches the pre-aggregated one exactly.
+  dc: number; zero: number; fake: number; search_ref: number;
 }
+const zeroAgg = (): SiteAgg => ({
+  pv: 0, uv: 0, sessions: 0, clean_count: 0, suspect_count: 0, bot_count: 0, crawler_count: 0,
+  conversions: 0, revenue: 0, dc: 0, zero: 0, fake: 0, search_ref: 0,
+});
 async function eventsSiteAgg(db: D1Database, siteId: string, startTs: number, endTs: number, filters: Filter[] = []): Promise<SiteAgg> {
-  const zero: SiteAgg = { pv: 0, uv: 0, sessions: 0, clean_count: 0, suspect_count: 0, bot_count: 0, crawler_count: 0, conversions: 0, revenue: 0 };
   const tables = await eventTables(db, startTs, endTs);
-  if (tables.length === 0) return zero;
+  if (tables.length === 0) return zeroAgg();
   const ef = evFilter(filters);
-  const u = unionOver(tables, 'event, visitor_id, session_id, verdict, revenue_usd', siteId, startTs, endTs, ef.sql, ef.binds);
+  const u = unionOver(tables, 'event, visitor_id, session_id, verdict, revenue_usd, bot_flags, ref_domain', siteId, startTs, endTs, ef.sql, ef.binds);
   const row = await db.prepare(`
     SELECT
       COALESCE(SUM(event = 'pageview'), 0) AS pv,
@@ -228,10 +234,55 @@ async function eventsSiteAgg(db: D1Database, siteId: string, startTs: number, en
       COALESCE(SUM(event = 'pageview' AND verdict = 'crawler'), 0) AS crawler_count,
       -- conversions/revenue: custom (goal) events from non-bot/crawler traffic
       COALESCE(SUM(CASE WHEN event NOT IN (${RESERVED_EVENTS_SQL}) AND verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END), 0) AS conversions,
-      COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN revenue_usd ELSE 0 END), 0) AS revenue
+      COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN revenue_usd ELSE 0 END), 0) AS revenue,
+      COALESCE(SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.DATACENTER_ASN}) != 0 THEN 1 ELSE 0 END), 0) AS dc,
+      COALESCE(SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE}) != 0 THEN 1 ELSE 0 END), 0) AS zero,
+      COALESCE(SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FAKE_SEARCH_MASK}) != 0 THEN 1 ELSE 0 END), 0) AS fake,
+      COALESCE(SUM(CASE WHEN event = 'pageview' AND ${searchRefDomainSql('ref_domain')} THEN 1 ELSE 0 END), 0) AS search_ref
     FROM (${u.sql})
   `).bind(...u.binds).first<SiteAgg>();
-  return row ?? zero;
+  return row ?? zeroAgg();
+}
+
+/** Site pageview aggregate + hot flag tallies over the period, but served from
+ *  rollup_site_daily for completed days and live raw only for the current day
+ *  (no filters) — avoiding a whole-period raw scan. Every field is SUMMABLE, so
+ *  summing across days is exact; the lone exception is UV (distinct visitors),
+ *  which sums to an upper bound across days — fine for its only consumer, the
+ *  "pages / visitor" alert, where a larger UV can only make it MORE conservative
+ *  (lower pages/visitor), never falsely fire. With any filter active there is no
+ *  matching rollup, so fall back to a fully-live scan. */
+async function siteAggHybrid(db: D1Database, siteId: string, period: Period, filters: Filter[] = []): Promise<SiteAgg> {
+  if (filters.length) return eventsSiteAgg(db, siteId, period.startTs, period.endTs, filters);
+  const split = hybridSplit(period);
+  const acc = zeroAgg();
+  if (split.hasPast) {
+    const rows = await db.prepare(`
+      SELECT pv, uv, sessions, clean_count, suspect_count, bot_count, crawler_count,
+             conversions, revenue_usd, dc_pv, zero_pv, fake_pv, search_ref_pv
+      FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?
+    `).bind(siteId, split.pastStart, split.pastEnd).all<{
+      pv: number; uv: number; sessions: number; clean_count: number; suspect_count: number;
+      bot_count: number; crawler_count: number; conversions: number; revenue_usd: number;
+      dc_pv: number; zero_pv: number; fake_pv: number; search_ref_pv: number;
+    }>();
+    for (const r of rows.results) {
+      acc.pv += r.pv; acc.uv += r.uv; acc.sessions += r.sessions;
+      acc.clean_count += r.clean_count; acc.suspect_count += r.suspect_count;
+      acc.bot_count += r.bot_count; acc.crawler_count += r.crawler_count;
+      acc.conversions += r.conversions; acc.revenue += r.revenue_usd;
+      acc.dc += r.dc_pv; acc.zero += r.zero_pv; acc.fake += r.fake_pv; acc.search_ref += r.search_ref_pv;
+    }
+  }
+  if (split.today) {
+    const ev = await eventsSiteAgg(db, siteId, split.today.startTs, split.today.endTs);
+    acc.pv += ev.pv; acc.uv += ev.uv; acc.sessions += ev.sessions;
+    acc.clean_count += ev.clean_count; acc.suspect_count += ev.suspect_count;
+    acc.bot_count += ev.bot_count; acc.crawler_count += ev.crawler_count;
+    acc.conversions += ev.conversions; acc.revenue += ev.revenue;
+    acc.dc += ev.dc; acc.zero += ev.zero; acc.fake += ev.fake; acc.search_ref += ev.search_ref;
+  }
+  return acc;
 }
 
 /** Session-derived metrics over a UTC span (live sessions table): both bounce
@@ -837,31 +888,13 @@ export interface Alert { id: string; severity: 'warning' | 'critical'; title: st
 
 export async function alerts(db: D1Database, siteId: string, period: Period, filters: Filter[] = []) {
   const A = { ...ALERT_DEFAULTS, ...(CONFIG.alerts ?? {}) };
-  const ev = await eventsSiteAgg(db, siteId, period.startTs, period.endTs, filters);
+  // pv/verdicts + the flag tallies (datacenter / no-interaction / forged-search
+  // + search-referred pageviews) all come from one hybrid read: completed days
+  // from rollup_site_daily, only the current day live. Previously this scanned
+  // every raw event partition twice (aggregate + flag tallies) per load.
+  const ev = await siteAggHybrid(db, siteId, period, filters);
   const pv = ev.pv;
-
-  // pageview-level flag tallies (datacenter / no-interaction / forged-search),
-  // plus a count of search-engine-referred pageviews (the denominator for the
-  // "forged share of search traffic" card). The search predicate mirrors the
-  // scorer's classifier: google.<tld> / bing / duckduckgo / yahoo / baidu /
-  // yandex, but NOT google SUBDOMAINS like accounts./mail. (login, not search).
-  const FAKE = FLAG.SEARCH_REF_DATACENTER | FLAG.FORGED_SEARCH_REFERRER;
-  const SEARCH_REF = `(ref_domain LIKE 'google.%' OR ref_domain LIKE 'www.google.%'
-    OR ref_domain LIKE '%bing.com' OR ref_domain LIKE '%duckduckgo.com'
-    OR ref_domain LIKE '%yahoo.com' OR ref_domain LIKE '%baidu.com'
-    OR ref_domain LIKE 'yandex.%' OR ref_domain LIKE 'www.yandex.%')`;
-  const ef = evFilter(filters);
-  let dc = 0, zero = 0, fake = 0, searchPv = 0;
-  for (const table of await eventTables(db, period.startTs, period.endTs)) {
-    const r = await db.prepare(
-      `SELECT COALESCE(SUM(CASE WHEN bot_flags & ${FLAG.DATACENTER_ASN} THEN 1 ELSE 0 END), 0) AS dc,
-              COALESCE(SUM(CASE WHEN bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE} THEN 1 ELSE 0 END), 0) AS zero,
-              COALESCE(SUM(CASE WHEN bot_flags & ${FAKE} THEN 1 ELSE 0 END), 0) AS fake,
-              COALESCE(SUM(CASE WHEN ${SEARCH_REF} THEN 1 ELSE 0 END), 0) AS search_pv
-       FROM ${table} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?${ef.sql ? ` AND ${ef.sql}` : ''}`,
-    ).bind(siteId, period.startTs, period.endTs, ...ef.binds).first<{ dc: number; zero: number; fake: number; search_pv: number }>();
-    dc += r?.dc ?? 0; zero += r?.zero ?? 0; fake += r?.fake ?? 0; searchPv += r?.search_pv ?? 0;
-  }
+  const dc = ev.dc, zero = ev.zero, fake = ev.fake, searchPv = ev.search_ref;
 
   const stats = {
     pv, search_pv: searchPv, fake_search: fake, datacenter: dc,
@@ -1167,25 +1200,53 @@ export async function adguardImpact(db: D1Database, siteId: string, period: Peri
   const acc: Record<'clean' | 'suspect' | 'bot' | 'crawler', { n: number; eng: number }> = {
     clean: { n: 0, eng: 0 }, suspect: { n: 0, eng: 0 }, bot: { n: 0, eng: 0 }, crawler: { n: 0, eng: 0 },
   };
+
+  // Verdict counts + "engaged" pageviews (session showed human interaction —
+  // click/scroll/keypress, read from sessions.had_interaction; what balanced/
+  // strict gate on and what the fp estimate measures). Completed days come from
+  // rollup_site_daily's pre-aggregated columns; only the current day runs the
+  // events↔sessions JOIN live. Previously this JOIN scanned the WHOLE period on
+  // every dashboard load — the single heaviest query on the page.
+  const split = hybridSplit(period);
+  if (split.hasPast) {
+    const r = await db.prepare(`
+      SELECT COALESCE(SUM(clean_count),0) AS cn, COALESCE(SUM(suspect_count),0) AS sn,
+             COALESCE(SUM(bot_count),0) AS bn, COALESCE(SUM(crawler_count),0) AS crn,
+             COALESCE(SUM(clean_eng_pv),0) AS ce, COALESCE(SUM(suspect_eng_pv),0) AS se,
+             COALESCE(SUM(bot_eng_pv),0) AS be, COALESCE(SUM(crawler_eng_pv),0) AS cre
+      FROM rollup_site_daily WHERE site_id = ? AND day BETWEEN ? AND ?
+    `).bind(siteId, split.pastStart, split.pastEnd).first<{
+      cn: number; sn: number; bn: number; crn: number; ce: number; se: number; be: number; cre: number;
+    }>();
+    if (r) {
+      acc.clean.n += r.cn; acc.clean.eng += r.ce;
+      acc.suspect.n += r.sn; acc.suspect.eng += r.se;
+      acc.bot.n += r.bn; acc.bot.eng += r.be;
+      acc.crawler.n += r.crn; acc.crawler.eng += r.cre;
+    }
+  }
+  if (split.today) {
+    for (const t of await eventTables(db, split.today.startTs, split.today.endTs)) {
+      const rows = await db.prepare(`
+        SELECT e.verdict AS verdict, COUNT(*) AS n,
+          SUM(CASE WHEN s.had_interaction = 1 THEN 1 ELSE 0 END) AS eng
+        FROM ${t} e LEFT JOIN sessions s ON s.site_id = e.site_id AND s.session_id = e.session_id
+        WHERE e.site_id = ? AND e.event = 'pageview' AND e.ts >= ? AND e.ts < ?
+        GROUP BY e.verdict
+      `).bind(siteId, split.today.startTs, split.today.endTs).all<{ verdict: string; n: number; eng: number }>();
+      for (const r of rows.results) {
+        const a = acc[r.verdict as keyof typeof acc];
+        if (a) { a.n += r.n; a.eng += r.eng; }
+      }
+    }
+  }
+
+  // block-reason flag histogram over would-be-blocked (non-clean) pageviews —
+  // kept as a scan (the non-clean subset is small and served by the verdict
+  // index); rolling up all flag bits per day isn't worth the storage.
   const flags: Record<string, number> = {};
   const fcols = ALL_FLAGS.map((n) => `SUM(CASE WHEN bot_flags & ${FLAG[n]} THEN 1 ELSE 0 END) AS ${n}`).join(', ');
   for (const t of await eventTables(db, period.startTs, period.endTs)) {
-    // "engaged" = the pageview's session showed human interaction (click / scroll
-    // / keypress / custom event), read from sessions.had_interaction — the actual
-    // engagement signal, not the rarely-set zero-interaction flag. This is what
-    // balanced/strict gate on and what the false-positive estimate measures.
-    const rows = await db.prepare(`
-      SELECT e.verdict AS verdict, COUNT(*) AS n,
-        SUM(CASE WHEN s.had_interaction = 1 THEN 1 ELSE 0 END) AS eng
-      FROM ${t} e LEFT JOIN sessions s ON s.site_id = e.site_id AND s.session_id = e.session_id
-      WHERE e.site_id = ? AND e.event = 'pageview' AND e.ts >= ? AND e.ts < ?
-      GROUP BY e.verdict
-    `).bind(siteId, period.startTs, period.endTs).all<{ verdict: string; n: number; eng: number }>();
-    for (const r of rows.results) {
-      const a = acc[r.verdict as keyof typeof acc];
-      if (a) { a.n += r.n; a.eng += r.eng; }
-    }
-    // block-reason flags over would-be-blocked (non-clean) pageviews
     const fr = await db.prepare(
       `SELECT ${fcols} FROM ${t} WHERE site_id = ? AND event = 'pageview' AND verdict != 'clean' AND ts >= ? AND ts < ?`,
     ).bind(siteId, period.startTs, period.endTs).first<Record<FlagName, number>>();

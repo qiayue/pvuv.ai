@@ -20,11 +20,12 @@
 import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
 import { SESSION_IDLE_MS } from '../../../shared/ids';
-import { FLAG } from '../../../shared/flags';
+import { FLAG, FAKE_SEARCH_MASK, searchRefDomainSql } from '../../../shared/flags';
 import { monthSuffix, eventsTableName, RESERVED_EVENTS_SQL } from '../../../shared/events';
 
 export async function runHourlyRollup(env: Env): Promise<void> {
   const now = Date.now();
+  await backfillHotColumnsOnce(env); // one-time; no-op after the first run
   const existing = await existingEventTables(env.DB);
   // A session is "closed" (no further interaction/leave can arrive) once it has
   // been idle past the session window — only then is "no page_leave" final.
@@ -43,6 +44,55 @@ export async function runHourlyRollup(env: Env): Promise<void> {
       await rollupSiteDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing, idleCutoff);
     }
   }
+}
+
+const BACKFILL_FLAG = 'rollup_hotcols_backfilled_v12';
+
+/** One-time, guarded backfill for migration 0012's hot-aggregate columns.
+ *  ALTER TABLE ADD COLUMN defaults them to 0 on existing rollup rows, and the
+ *  hourly job only revisits today+yesterday — so without this, alerts/adguard
+ *  over multi-day periods would undercount every older day. Recomputes ONLY the
+ *  eight new columns (never pv/uv/bounce/sources), from whatever raw partitions
+ *  still exist, then sets a flag so it never runs again. Retention-safe: a day
+ *  whose partition was already dropped is skipped and stays 0 — exactly what the
+ *  old raw scan produced for a missing partition. */
+async function backfillHotColumnsOnce(env: Env): Promise<void> {
+  try {
+    const r = await env.DB.prepare('SELECT value FROM instance_settings WHERE key = ?')
+      .bind(BACKFILL_FLAG).first<{ value: string }>();
+    if (r?.value === '1') return;
+  } catch { return; } // instance_settings not present → skip quietly
+
+  const existing = await existingEventTables(env.DB);
+  const sites = await env.DB.prepare("SELECT site_id, COALESCE(timezone, 'UTC') AS timezone FROM sites")
+    .all<{ site_id: string; timezone: string }>();
+  for (const site of sites.results) {
+    const tz = site.timezone || 'UTC';
+    const days = await env.DB.prepare('SELECT day FROM rollup_site_daily WHERE site_id = ? ORDER BY day')
+      .bind(site.site_id).all<{ day: string }>();
+    for (const { day } of days.results) {
+      const [y, m, d] = day.split('-').map(Number);
+      if (!y || !m || !d) continue;
+      const span = localDaySpan(tz, y, m - 1, d);
+      const tables = tablesForSpan(span.startTs, span.endTs, existing);
+      if (tables.length === 0) continue; // raw dropped by retention → leave 0
+      const tallyParts = tables.map((tb) =>
+        `SELECT event, bot_flags, ref_domain FROM ${tb} WHERE site_id = ? AND ts >= ? AND ts < ?`);
+      const tallyBinds = tables.flatMap(() => [site.site_id, span.startTs, span.endTs]);
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE rollup_site_daily SET (dc_pv, zero_pv, fake_pv, search_ref_pv) = (
+            SELECT ${HOT_TALLY_SQL} FROM (${tallyParts.join(' UNION ALL ')})
+          ) WHERE site_id = ? AND day = ?
+        `).bind(...tallyBinds, site.site_id, span.day),
+        engagedUpdate(env.DB, tables, site.site_id, span.startTs, span.endTs, span.day),
+      ]);
+    }
+  }
+  await env.DB.prepare(`
+    INSERT INTO instance_settings (key, value, updated_at) VALUES (?, '1', ?)
+    ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = excluded.updated_at
+  `).bind(BACKFILL_FLAG, Date.now()).run();
 }
 
 /** All existing events_YYYYMM partitions. */
@@ -64,6 +114,38 @@ function eventSpan(tables: string[], cols: string, siteId: string, startTs: numb
   { sql: string; binds: unknown[] } {
   const parts = tables.map((t) => `SELECT ${cols} FROM ${t} WHERE site_id = ? AND ts >= ? AND ts < ?`);
   return { sql: `(${parts.join(' UNION ALL ')})`, binds: tables.flatMap(() => [siteId, startTs, endTs]) };
+}
+
+// Hot flag-tally SUM expressions over pageview rows (dc_pv, zero_pv, fake_pv,
+// search_ref_pv, in column order) — shared by the rollup INSERT and the one-time
+// backfill so the two can never drift. Must mirror the alerts scan exactly.
+const HOT_TALLY_SQL =
+  `SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.DATACENTER_ASN}) != 0 THEN 1 ELSE 0 END),
+   SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE}) != 0 THEN 1 ELSE 0 END),
+   SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FAKE_SEARCH_MASK}) != 0 THEN 1 ELSE 0 END),
+   SUM(CASE WHEN event = 'pageview' AND ${searchRefDomainSql('ref_domain')} THEN 1 ELSE 0 END)`;
+
+/** Row-value UPDATE that fills rollup_site_daily's four per-verdict engaged-
+ *  pageview columns for one (site, day) in a single events↔sessions scan. Used
+ *  by the hourly rollup and the one-time backfill. */
+function engagedUpdate(db: D1Database, tables: string[], siteId: string, startTs: number, endTs: number, day: string): D1PreparedStatement {
+  const parts = tables.map((tb) =>
+    `SELECT site_id, session_id, verdict FROM ${tb} WHERE site_id = ? AND event = 'pageview' AND ts >= ? AND ts < ?`);
+  const binds = tables.flatMap(() => [siteId, startTs, endTs]);
+  return db.prepare(`
+    UPDATE rollup_site_daily SET
+      (clean_eng_pv, suspect_eng_pv, bot_eng_pv, crawler_eng_pv) = (
+        SELECT
+          COALESCE(SUM(CASE WHEN e.verdict = 'clean'   THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN e.verdict = 'suspect' THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN e.verdict = 'bot'     THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN e.verdict = 'crawler' THEN 1 ELSE 0 END), 0)
+        FROM (${parts.join(' UNION ALL ')}) e
+        JOIN sessions s ON s.site_id = e.site_id AND s.session_id = e.session_id
+        WHERE s.had_interaction = 1
+      )
+    WHERE site_id = ? AND day = ?
+  `).bind(...binds, siteId, day);
 }
 
 export async function rollupSiteDay(
@@ -149,11 +231,12 @@ export async function rollupSiteDay(
   `).bind(day, siteId, startTs, endTs));
 
   // --- rollup_site_daily ---------------------------------------------------
-  const siteEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict, revenue_usd', siteId, startTs, endTs);
+  const siteEv = eventSpan(tables, 'site_id, event, visitor_id, session_id, verdict, revenue_usd, bot_flags, ref_domain', siteId, startTs, endTs);
   stmts.push(db.prepare(`
     INSERT OR REPLACE INTO rollup_site_daily
       (site_id, day, pv, uv, sessions, bounce_rate, avg_duration_ms, visit_duration_ms,
-       bot_count, suspect_count, crawler_count, clean_count, conversions, revenue_usd)
+       bot_count, suspect_count, crawler_count, clean_count, conversions, revenue_usd,
+       dc_pv, zero_pv, fake_pv, search_ref_pv)
     SELECT site_id, ?,
       SUM(event = 'pageview'),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END),
@@ -165,10 +248,19 @@ export async function rollupSiteDay(
       SUM(event = 'pageview' AND verdict = 'clean'),
       -- conversions/revenue: custom (goal) events from non-bot/crawler traffic
       SUM(CASE WHEN event NOT IN (${RESERVED_EVENTS_SQL}) AND verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END),
-      COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN revenue_usd ELSE 0 END), 0)
+      COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN revenue_usd ELSE 0 END), 0),
+      -- hot flag tallies (shared HOT_TALLY_SQL — mirrors the alerts scan). bot_flags
+      -- already carries the zero-interaction bit set earlier in this same batch.
+      ${HOT_TALLY_SQL}
     FROM ${siteEv.sql}
     GROUP BY site_id
   `).bind(day, ...siteEv.binds));
+
+  // per-verdict engaged pageviews (session had a real interaction) — powers the
+  // adguard fp_rate without the per-period events↔sessions JOIN on dashboard
+  // load. INSERT OR REPLACE above reset these to 0; recompute them here (runs
+  // after, in the same ordered batch).
+  stmts.push(engagedUpdate(db, tables, siteId, startTs, endTs, day));
 
   // session-derived metrics (bounce rate §9.3, avg dwell). Two bounce rates:
   // GA4 engagement-based (is_bounce) and single-page (UA/Plausible style).

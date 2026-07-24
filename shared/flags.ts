@@ -95,6 +95,21 @@ export const FLAG_CONFIG_KEY: Record<FlagName, string> = {
 /** All flag names, in ascending bit order. */
 export const ALL_FLAGS = Object.keys(FLAG) as FlagName[];
 
+/** Bitmask of the two forged-organic-search flags (the alert's "fake search"
+ *  tally and the rollup's fake_pv column share this). */
+export const FAKE_SEARCH_MASK = FLAG.SEARCH_REF_DATACENTER | FLAG.FORGED_SEARCH_REFERRER;
+
+/** SQLite predicate matching a search-engine referrer host over a ref_domain
+ *  column — the majors organic-traffic forgers imitate. Used by BOTH the daily
+ *  rollup (search_ref_pv) and the alerts "share of search traffic" denominator;
+ *  they must stay byte-identical, so the fragment lives here, not inline. */
+export function searchRefDomainSql(col: string): string {
+  return `(${col} LIKE 'google.%' OR ${col} LIKE 'www.google.%'
+    OR ${col} LIKE '%bing.com' OR ${col} LIKE '%duckduckgo.com'
+    OR ${col} LIKE '%yahoo.com' OR ${col} LIKE '%baidu.com'
+    OR ${col} LIKE 'yandex.%' OR ${col} LIKE 'www.yandex.%')`;
+}
+
 /** Decode a bot_flags bitmap into the list of fired signal names. */
 export function flagNames(bitmap: number): FlagName[] {
   return ALL_FLAGS.filter((name) => (bitmap & FLAG[name]) !== 0);

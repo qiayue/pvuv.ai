@@ -82,6 +82,7 @@ CREATE TABLE events_202607 (
 );
 CREATE UNIQUE INDEX idx_ev202607_eid ON events_202607(eid);
 CREATE INDEX idx_ev202607_site_ts ON events_202607(site_id, ts);
+CREATE INDEX idx_ev202607_site_ev_ts ON events_202607(site_id, event, ts);
 CREATE INDEX idx_ev202607_visitor ON events_202607(site_id, visitor_id);
 CREATE INDEX idx_ev202607_session ON events_202607(session_id);
 CREATE INDEX idx_ev202607_verdict ON events_202607(site_id, verdict, ts);
@@ -156,6 +157,13 @@ CREATE TABLE rollup_site_daily (
   bot_count INTEGER DEFAULT 0, suspect_count INTEGER DEFAULT 0,
   crawler_count INTEGER DEFAULT 0, clean_count INTEGER DEFAULT 0,
   conversions INTEGER DEFAULT 0, revenue_usd REAL DEFAULT 0,
+  -- hot flag tallies + per-verdict engaged pageviews, denormalized so the
+  -- alerts/adguard endpoints read completed days here instead of scanning raw
+  -- events (added by 0012). All SUMMABLE (never DISTINCT) → exact across days.
+  dc_pv INTEGER DEFAULT 0, zero_pv INTEGER DEFAULT 0,
+  fake_pv INTEGER DEFAULT 0, search_ref_pv INTEGER DEFAULT 0,
+  clean_eng_pv INTEGER DEFAULT 0, suspect_eng_pv INTEGER DEFAULT 0,
+  bot_eng_pv INTEGER DEFAULT 0, crawler_eng_pv INTEGER DEFAULT 0,
   PRIMARY KEY (site_id, day)
 );
 
