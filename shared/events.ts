@@ -158,6 +158,27 @@ export function eventsTableName(suffix: string): string {
  * (which creates the initial month via migrations). IF NOT EXISTS makes it
  * safe to run on every consumer batch for an unseen month.
  */
+/**
+ * Index DDL for one month partition. Split out from eventsTableDDL so existing
+ * partitions can be brought up to date with newly-added indexes without
+ * re-issuing the CREATE TABLE (the consumer only ensures months it is actively
+ * writing, so back-months would otherwise never gain a new index).
+ * All IF NOT EXISTS → safe to re-run.
+ */
+export function eventsIndexDDL(suffix: string): string[] {
+  const t = eventsTableName(suffix);
+  return [
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_ev${suffix}_eid ON ${t}(eid)`,
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_site_ts ON ${t}(site_id, ts)`,
+    // covers the ubiquitous site_id + event='pageview' + ts-range scans
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_site_ev_ts ON ${t}(site_id, event, ts)`,
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_visitor ON ${t}(site_id, visitor_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_session ON ${t}(session_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_verdict ON ${t}(site_id, verdict, ts)`,
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_path    ON ${t}(site_id, path)`,
+  ];
+}
+
 export function eventsTableDDL(suffix: string): string[] {
   const t = eventsTableName(suffix);
   return [
@@ -195,14 +216,7 @@ export function eventsTableDDL(suffix: string): string[] {
       ts INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_ev${suffix}_eid ON ${t}(eid)`,
-    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_site_ts ON ${t}(site_id, ts)`,
-    // covers the ubiquitous site_id + event='pageview' + ts-range scans
-    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_site_ev_ts ON ${t}(site_id, event, ts)`,
-    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_visitor ON ${t}(site_id, visitor_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_session ON ${t}(session_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_verdict ON ${t}(site_id, verdict, ts)`,
-    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_path    ON ${t}(site_id, path)`,
+    ...eventsIndexDDL(suffix),
   ];
 }
 

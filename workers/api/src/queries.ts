@@ -244,14 +244,20 @@ async function eventsSiteAgg(db: D1Database, siteId: string, startTs: number, en
   return row ?? zeroAgg();
 }
 
-/** Site pageview aggregate + hot flag tallies over the period, but served from
- *  rollup_site_daily for completed days and live raw only for the current day
- *  (no filters) — avoiding a whole-period raw scan. Every field is SUMMABLE, so
- *  summing across days is exact; the lone exception is UV (distinct visitors),
- *  which sums to an upper bound across days — fine for its only consumer, the
- *  "pages / visitor" alert, where a larger UV can only make it MORE conservative
- *  (lower pages/visitor), never falsely fire. With any filter active there is no
- *  matching rollup, so fall back to a fully-live scan. */
+/** Site pageview aggregate + hot flag tallies over the period, served from
+ *  rollup_site_daily for completed days with live raw only for the current day
+ *  (no filters) — avoiding a whole-period raw scan. With any filter active there
+ *  is no matching rollup, so it falls back to a fully-live scan.
+ *
+ *  Every COUNT-style field is SUMMABLE and therefore exact across days. The two
+ *  DISTINCT fields — `uv` (visitors) and `sessions` — are NOT: a visitor or a
+ *  midnight-straddling session counted on two days sums to an upper bound. So
+ *  callers must not use them where exactness matters:
+ *    - alerts' "pages / visitor" divides BY uv, where an over-count only lowers
+ *      the ratio → more conservative, never a false alarm;
+ *    - alerts' session-share checks deliberately use sessionAgg's exact
+ *      sessions-table count instead of this field.
+ *  `overview` still computes both live, so the headline numbers stay exact. */
 async function siteAggHybrid(db: D1Database, siteId: string, period: Period, filters: Filter[] = []): Promise<SiteAgg> {
   if (filters.length) return eventsSiteAgg(db, siteId, period.startTs, period.endTs, filters);
   const split = hybridSplit(period);
@@ -288,10 +294,11 @@ async function siteAggHybrid(db: D1Database, siteId: string, period: Period, fil
 /** Session-derived metrics over a UTC span (live sessions table): both bounce
  *  definitions (GA4 engagement-based + single-page) and avg dwell. */
 async function sessionAgg(db: D1Database, siteId: string, startTs: number, endTs: number, filters: Filter[] = []):
-  Promise<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null; visit_duration_ms: number | null }> {
+  Promise<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null; visit_duration_ms: number | null; sessions: number }> {
   const sf = seFilter(filters);
   const row = await db.prepare(`
     SELECT
+      COUNT(*) AS sessions,
       ROUND(AVG(CASE WHEN is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4) AS bounce_rate,
       ROUND(AVG(CASE WHEN pageviews <= 1 THEN 1.0 ELSE 0.0 END), 4) AS bounce_rate_single,
       CAST(AVG(duration_ms) AS INTEGER) AS avg_duration_ms,
@@ -301,8 +308,8 @@ async function sessionAgg(db: D1Database, siteId: string, startTs: number, endTs
       -- dilute the average toward zero while old data dominates the window.
       CAST(AVG(CASE WHEN last_pageview_at IS NOT NULL THEN last_pageview_at - started_at END) AS INTEGER) AS visit_duration_ms
     FROM sessions WHERE site_id = ? AND started_at >= ? AND started_at < ?${sf.sql ? ` AND ${sf.sql}` : ''}
-  `).bind(siteId, startTs, endTs, ...sf.binds).first<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null; visit_duration_ms: number | null }>();
-  return row ?? { bounce_rate: null, bounce_rate_single: null, avg_duration_ms: null, visit_duration_ms: null };
+  `).bind(siteId, startTs, endTs, ...sf.binds).first<{ bounce_rate: number | null; bounce_rate_single: number | null; avg_duration_ms: number | null; visit_duration_ms: number | null; sessions: number }>();
+  return row ?? { bounce_rate: null, bounce_rate_single: null, avg_duration_ms: null, visit_duration_ms: null, sessions: 0 };
 }
 
 /** Split a period into [past days → rollup] and [today → live], in site tz.
@@ -931,7 +938,7 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
   if (zeroShare > A.zero_interaction_share) add('zero_interaction', zeroShare / A.zero_interaction_share,
     'Many no-interaction visits', `${pct(zeroShare)} of pageviews had no click / scroll / leave (alert above ${pct(A.zero_interaction_share)}).`);
 
-  if (s.bounce_rate_single != null && ev.sessions >= 30 && s.bounce_rate_single < A.bounce_low)
+  if (s.bounce_rate_single != null && s.sessions >= 30 && s.bounce_rate_single < A.bounce_low)
     out.push({ id: 'bounce_low', severity: 'warning', title: 'Implausibly low bounce rate',
       detail: `Single-page bounce is only ${pct(s.bounce_rate_single)} — real audiences rarely fall below ${pct(A.bounce_low)}; often automated multi-hit traffic.` });
 
@@ -939,8 +946,10 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
   if (ppv > A.pages_per_visitor_high) add('pages_per_visitor', ppv / A.pages_per_visitor_high,
     'Very high pages per visitor', `${ppv.toFixed(1)} pages/visitor (alert above ${A.pages_per_visitor_high}) — can indicate scraping.`);
 
-  if (topSrc && ev.sessions >= 30) {
-    const share = topSrc.n / ev.sessions;
+  if (topSrc && s.sessions >= 30) {
+    // denominator from the SAME table+predicate as topSrc.n, so the share stays
+    // exact — ev.sessions is a per-day sum and would inflate the denominator
+    const share = topSrc.n / s.sessions;
     if (share > A.source_concentration) add('source_concentration', share / A.source_concentration,
       'One source dominates', `“${topSrc.key}” is ${pct(share)} of sessions (alert above ${pct(A.source_concentration)}) — check for referral spam or forged referrers.`);
   }

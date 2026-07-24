@@ -21,7 +21,7 @@ import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
 import { SESSION_IDLE_MS } from '../../../shared/ids';
 import { FLAG, FAKE_SEARCH_MASK, searchRefDomainSql } from '../../../shared/flags';
-import { monthSuffix, eventsTableName, RESERVED_EVENTS_SQL } from '../../../shared/events';
+import { monthSuffix, eventsTableName, eventsIndexDDL, RESERVED_EVENTS_SQL } from '../../../shared/events';
 
 export async function runHourlyRollup(env: Env): Promise<void> {
   const now = Date.now();
@@ -47,52 +47,96 @@ export async function runHourlyRollup(env: Env): Promise<void> {
 }
 
 const BACKFILL_FLAG = 'rollup_hotcols_backfilled_v12';
+const BACKFILL_CURSOR = 'rollup_hotcols_cursor_v12';
+/** Max (site, day) rows rebuilt per hourly run — keeps the one-time backfill
+ *  well inside a cron invocation's budget on deployments with many site-days.
+ *  Progress is checkpointed, so it resumes on the next run instead of redoing
+ *  the whole sweep (and never finishing). */
+const BACKFILL_DAYS_PER_RUN = 60;
 
-/** One-time, guarded backfill for migration 0012's hot-aggregate columns.
- *  ALTER TABLE ADD COLUMN defaults them to 0 on existing rollup rows, and the
- *  hourly job only revisits today+yesterday — so without this, alerts/adguard
- *  over multi-day periods would undercount every older day. Recomputes ONLY the
- *  eight new columns (never pv/uv/bounce/sources), from whatever raw partitions
- *  still exist, then sets a flag so it never runs again. Retention-safe: a day
- *  whose partition was already dropped is skipped and stays 0 — exactly what the
- *  old raw scan produced for a missing partition. */
+const readSetting = async (db: D1Database, key: string): Promise<string | null> => {
+  const r = await db.prepare('SELECT value FROM instance_settings WHERE key = ?').bind(key).first<{ value: string }>();
+  return r?.value ?? null;
+};
+const writeSetting = (db: D1Database, key: string, value: string): Promise<unknown> => db.prepare(`
+  INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+`).bind(key, value, Date.now()).run();
+
+/** One-time, guarded maintenance for migration 0012:
+ *
+ *  1. Create the new (site_id, event, ts) index on EVERY existing month
+ *     partition. The migration can only name the initial month, and the
+ *     consumer only issues DDL for months it is actively writing — so
+ *     back-months would otherwise never gain the index and keep full-scanning.
+ *  2. Backfill the eight new rollup_site_daily columns. ALTER TABLE ADD COLUMN
+ *     defaults them to 0 on existing rows and the hourly job only revisits
+ *     today+yesterday, so without this alerts/adguard would undercount every
+ *     older day. Rewrites ONLY those eight columns (never pv/uv/bounce/sources).
+ *
+ *  Retention-safe: a day whose raw partition was already dropped is skipped and
+ *  stays 0 — exactly what the old raw scan produced for a missing partition.
+ *  Resumable: work is capped per run and the cursor is checkpointed; the done
+ *  flag is set only once a run finds nothing left to do. */
 async function backfillHotColumnsOnce(env: Env): Promise<void> {
+  let cursor: string;
   try {
-    const r = await env.DB.prepare('SELECT value FROM instance_settings WHERE key = ?')
-      .bind(BACKFILL_FLAG).first<{ value: string }>();
-    if (r?.value === '1') return;
+    if (await readSetting(env.DB, BACKFILL_FLAG) === '1') return;
+    cursor = await readSetting(env.DB, BACKFILL_CURSOR) ?? '';
   } catch { return; } // instance_settings not present → skip quietly
 
   const existing = await existingEventTables(env.DB);
-  const sites = await env.DB.prepare("SELECT site_id, COALESCE(timezone, 'UTC') AS timezone FROM sites")
-    .all<{ site_id: string; timezone: string }>();
-  for (const site of sites.results) {
-    const tz = site.timezone || 'UTC';
-    const days = await env.DB.prepare('SELECT day FROM rollup_site_daily WHERE site_id = ? ORDER BY day')
-      .bind(site.site_id).all<{ day: string }>();
-    for (const { day } of days.results) {
-      const [y, m, d] = day.split('-').map(Number);
-      if (!y || !m || !d) continue;
-      const span = localDaySpan(tz, y, m - 1, d);
-      const tables = tablesForSpan(span.startTs, span.endTs, existing);
-      if (tables.length === 0) continue; // raw dropped by retention → leave 0
-      const tallyParts = tables.map((tb) =>
-        `SELECT event, bot_flags, ref_domain FROM ${tb} WHERE site_id = ? AND ts >= ? AND ts < ?`);
-      const tallyBinds = tables.flatMap(() => [site.site_id, span.startTs, span.endTs]);
-      await env.DB.batch([
-        env.DB.prepare(`
-          UPDATE rollup_site_daily SET (dc_pv, zero_pv, fake_pv, search_ref_pv) = (
-            SELECT ${HOT_TALLY_SQL} FROM (${tallyParts.join(' UNION ALL ')})
-          ) WHERE site_id = ? AND day = ?
-        `).bind(...tallyBinds, site.site_id, span.day),
-        engagedUpdate(env.DB, tables, site.site_id, span.startTs, span.endTs, span.day),
-      ]);
+
+  // 1. bring every existing partition's indexes up to date (idempotent)
+  if (!cursor) {
+    for (const table of existing) {
+      const suffix = table.slice('events_'.length);
+      try {
+        await env.DB.batch(eventsIndexDDL(suffix).map((sql) => env.DB.prepare(sql)));
+      } catch (err) {
+        console.error(`rollup: index ensure failed for ${table}`, err);
+      }
     }
   }
-  await env.DB.prepare(`
-    INSERT INTO instance_settings (key, value, updated_at) VALUES (?, '1', ?)
-    ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = excluded.updated_at
-  `).bind(BACKFILL_FLAG, Date.now()).run();
+
+  // 2. backfill the new columns, resuming after the cursor, capped per run.
+  //    Ordering by (site_id, day) makes "> cursor" a stable resume point.
+  const rows = await env.DB.prepare(`
+    SELECT r.site_id AS site_id, r.day AS day, COALESCE(s.timezone, 'UTC') AS timezone
+    FROM rollup_site_daily r LEFT JOIN sites s ON s.site_id = r.site_id
+    WHERE r.site_id || '|' || r.day > ?
+    ORDER BY r.site_id, r.day LIMIT ?
+  `).bind(cursor, BACKFILL_DAYS_PER_RUN).all<{ site_id: string; day: string; timezone: string }>();
+
+  for (const row of rows.results) {
+    const [y, m, d] = row.day.split('-').map(Number);
+    if (y && m && d) {
+      const span = localDaySpan(row.timezone || 'UTC', y, m - 1, d);
+      const tables = tablesForSpan(span.startTs, span.endTs, existing);
+      if (tables.length > 0) { // else raw dropped by retention → leave 0
+        const tallyParts = tables.map((tb) =>
+          `SELECT event, bot_flags, ref_domain FROM ${tb} WHERE site_id = ? AND ts >= ? AND ts < ?`);
+        const tallyBinds = tables.flatMap(() => [row.site_id, span.startTs, span.endTs]);
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE rollup_site_daily SET (dc_pv, zero_pv, fake_pv, search_ref_pv) = (
+              SELECT ${HOT_TALLY_SQL} FROM (${tallyParts.join(' UNION ALL ')})
+            ) WHERE site_id = ? AND day = ?
+          `).bind(...tallyBinds, row.site_id, row.day),
+          engagedUpdate(env.DB, tables, row.site_id, span.startTs, span.endTs, row.day),
+        ]);
+      }
+    }
+    cursor = `${row.site_id}|${row.day}`;
+  }
+
+  if (rows.results.length < BACKFILL_DAYS_PER_RUN) {
+    await writeSetting(env.DB, BACKFILL_FLAG, '1'); // caught up — never run again
+    console.log('rollup: 0012 hot-column backfill complete');
+  } else {
+    await writeSetting(env.DB, BACKFILL_CURSOR, cursor);
+    console.log(`rollup: 0012 backfill progress → ${cursor}`);
+  }
 }
 
 /** All existing events_YYYYMM partitions. */
@@ -119,11 +163,13 @@ function eventSpan(tables: string[], cols: string, siteId: string, startTs: numb
 // Hot flag-tally SUM expressions over pageview rows (dc_pv, zero_pv, fake_pv,
 // search_ref_pv, in column order) — shared by the rollup INSERT and the one-time
 // backfill so the two can never drift. Must mirror the alerts scan exactly.
+// COALESCE so a day with no matching rows stores 0 rather than NULL (the
+// backfill's subquery yields a single all-NULL row when a site had no traffic).
 const HOT_TALLY_SQL =
-  `SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.DATACENTER_ASN}) != 0 THEN 1 ELSE 0 END),
-   SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE}) != 0 THEN 1 ELSE 0 END),
-   SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FAKE_SEARCH_MASK}) != 0 THEN 1 ELSE 0 END),
-   SUM(CASE WHEN event = 'pageview' AND ${searchRefDomainSql('ref_domain')} THEN 1 ELSE 0 END)`;
+  `COALESCE(SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.DATACENTER_ASN}) != 0 THEN 1 ELSE 0 END), 0),
+   COALESCE(SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FLAG.ZERO_INTERACTION_NO_LEAVE}) != 0 THEN 1 ELSE 0 END), 0),
+   COALESCE(SUM(CASE WHEN event = 'pageview' AND (bot_flags & ${FAKE_SEARCH_MASK}) != 0 THEN 1 ELSE 0 END), 0),
+   COALESCE(SUM(CASE WHEN event = 'pageview' AND ${searchRefDomainSql('ref_domain')} THEN 1 ELSE 0 END), 0)`;
 
 /** Row-value UPDATE that fills rollup_site_daily's four per-verdict engaged-
  *  pageview columns for one (site, day) in a single events↔sessions scan. Used

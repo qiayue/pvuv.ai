@@ -892,7 +892,7 @@ async function load() {
     donut(qy.totals);
     const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
     document.getElementById('flags').innerHTML = firedFlags.length
-      ? '<p class="muted" style="margin:0 0 10px;font-size:12px">Bot-detection checks that fired on suspicious traffic — one visit can trip several.</p>'
+      ? `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Bot-detection checks that fired on suspicious traffic — one visit can trip several.')}</p>`
         + `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>` +
         firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
       : `<p class="muted">${te('no signals fired — traffic looks clean')}</p>`;
