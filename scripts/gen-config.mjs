@@ -53,6 +53,8 @@ export interface ScoringConfig {
     expensive_checks_sample: number;
     mobile_sensors_enabled: boolean;
     honeypot_enabled: boolean;
+    /** environment-only evidence can't leave the clean band (see ENV_ONLY_FLAGS) */
+    env_signals_need_corroboration: boolean;
   };
   population: Record<string, number>;
   /** dashboard "unreasonable data" alert thresholds (optional; code has defaults) */

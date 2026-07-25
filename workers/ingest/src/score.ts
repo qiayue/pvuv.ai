@@ -12,7 +12,7 @@
 
 import { CONFIG } from '../../../shared/config.gen';
 import {
-  FLAG, FLAG_CONFIG_KEY, verdictForScore,
+  FLAG, FLAG_CONFIG_KEY, ALL_FLAGS, ENV_ONLY_FLAGS, verdictForScore,
   type FlagName, type Verdict, type XPayload,
 } from '../../../shared/flags';
 import type { AsnType } from '../../../shared/asn';
@@ -161,6 +161,20 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
 
   // --- verdict ---
   if (hard) score = 100;
+
+  // Corroboration guard (§6.2): environment signals are inferred from client-
+  // reported, locale/device-sensitive properties, so on a global audience each
+  // one eventually fires on a whole region of real people. If NOTHING but
+  // environment evidence is against this visitor, keep them in the clean band —
+  // reaching 'suspect' requires at least one network, behavioural or
+  // self-declared-automation signal to agree. Never raises a score, only caps.
+  if (!hard && CONFIG.detection.env_signals_need_corroboration && flags !== 0) {
+    let corroborated = false;
+    for (const name of ALL_FLAGS) {
+      if ((flags & FLAG[name]) !== 0 && !ENV_ONLY_FLAGS.has(name)) { corroborated = true; break; }
+    }
+    if (!corroborated) score = Math.min(score, CONFIG.bands.clean_max);
+  }
 
   if (!hard) {
     // trust credits (§6.2) — legit traffic looks cleaner

@@ -99,6 +99,33 @@ export const ALL_FLAGS = Object.keys(FLAG) as FlagName[];
  *  tally and the rollup's fake_pv column share this). */
 export const FAKE_SEARCH_MASK = FLAG.SEARCH_REF_DATACENTER | FLAG.FORGED_SEARCH_REFERRER;
 
+/**
+ * "Environment" signals — inferred purely from client-reported, locale- and
+ * device-sensitive properties (fonts, emoji rendering, window geometry, screen
+ * metrics, UA/platform strings, browser timezone). They are useful CORROBORATION
+ * but are the ones that misfire on real people, because a legitimate visitor's
+ * environment varies enormously by country, language, device and privacy setup.
+ *
+ * Measured on live traffic, each of these has fired on whole regions of real
+ * users while being absent from confirmed bots — e.g. a browser-timezone/IP
+ * mismatch on 96% of Japanese visitors, and a font/emoji probe on 34% of
+ * Chinese visitors but 0 of 209 headless-flagged ones.
+ *
+ * So when the ONLY thing against a visitor is environment evidence, the scorer
+ * keeps them in the clean band (see detection.env_signals_need_corroboration).
+ * Network, behavioral and self-declared-automation signals are deliberately NOT
+ * in this set — those are what corroboration means.
+ */
+export const ENV_ONLY_FLAGS: ReadonlySet<FlagName> = new Set<FlagName>([
+  'UA_CH_MISMATCH',
+  'TZ_IP_MISMATCH',
+  'SCREEN_DEVICE_MISMATCH',
+  'SOFTWARE_WEBGL',
+  'HEADLESS_WINDOW',
+  'UA_PLATFORM_MISMATCH',
+  'SYNTHETIC_ENV',
+]);
+
 /** SQLite predicate matching a search-engine referrer host over a ref_domain
  *  column — the majors organic-traffic forgers imitate. Used by BOTH the daily
  *  rollup (search_ref_pv) and the alerts "share of search traffic" denominator;

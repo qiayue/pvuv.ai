@@ -219,6 +219,21 @@ Body: JSON (single or array; SDK batches ≤10 events or every 3s)
 | 0x80000 | synthetic render env (monochrome color emoji / no real system fonts) | 0 — recorded only, see note |
 | — | residential/mobile ASN + interaction + page_leave | trust credit −10 each |
 
+> **Corroboration guard (global-audience safety).** Signals inferred from
+> client-reported, locale/device-sensitive properties — fonts/emoji rendering,
+> window geometry, screen metrics, UA & platform strings, browser timezone
+> (`ENV_ONLY_FLAGS` in `shared/flags.ts`) — are corroboration, never proof. On a
+> worldwide audience each eventually fires on an entire region of real people:
+> measured on live traffic, the browser-timezone/IP check fired on **96% of
+> Japanese** visitors and the font/emoji probe on **34% of Chinese** visitors,
+> while both were essentially absent from confirmed bots. So when a visitor's
+> ONLY evidence is environmental, the scorer caps them at `bands.clean_max`;
+> reaching `suspect` requires a network, behavioural or self-declared-automation
+> signal to agree. It only ever caps a score, never raises one, and hard signals
+> bypass it — on the validation sample it moved 79 visitors back to clean and
+> changed **zero** of the 162 bot / 71 crawler verdicts. Toggle:
+> `detection.env_signals_need_corroboration`.
+>
 > **0x80000 is weighted 0 pending a fix.** Its first production sample showed it
 > tracks geography, not synthetic environments: **0 of 209** headless/webdriver-
 > flagged visitors and 2 of 209 datacenter visitors tripped it, while **34% of CN
