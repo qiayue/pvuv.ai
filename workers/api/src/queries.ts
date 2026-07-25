@@ -907,7 +907,9 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
     pv, search_pv: searchPv, fake_search: fake, datacenter: dc,
     zero_interaction: zero, invalid: ev.suspect_count + ev.bot_count,
   };
-  if (pv < A.min_pageviews) return { alerts: [] as Alert[], pv, stats };
+  // thresholds ride along so the dashboard can show every monitored ratio
+  // ALWAYS — with how far it is from its line — not only once it trips (§11).
+  if (pv < A.min_pageviews) return { alerts: [] as Alert[], pv, stats, thresholds: A, muted: true };
 
   const s = await sessionAgg(db, siteId, period.startTs, period.endTs, filters);
   const sf = seFilter(filters);
@@ -954,7 +956,7 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
       'One source dominates', `“${topSrc.key}” is ${pct(share)} of sessions (alert above ${pct(A.source_concentration)}) — check for referral spam or forged referrers.`);
   }
 
-  return { alerts: out, pv, stats };
+  return { alerts: out, pv, stats, thresholds: A, muted: false };
 }
 
 // ---------------------------------------------------------------------------

@@ -116,6 +116,20 @@
   .alert-critical { border-color: #5a2020; background: #241010; color: #f3b0b0; }
   .anomalies { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
   .anomalies:empty { display: none; }
+  /* traffic-health strip: every monitored ratio stays visible with its distance
+     to the alert line, so nothing is invisible just because it isn't tripping */
+  .health { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .hm { border: 1px solid #262b36; border-radius: 8px; padding: 10px 12px; }
+  .hm .hl { font-size: 12px; color: #8b93a1; display: flex; justify-content: space-between; gap: 8px; }
+  .hm .hv { font-size: 20px; font-weight: 600; margin: 3px 0 6px; }
+  .hm .sub { font-size: 11px; color: #8b93a1; }
+  .hbar { height: 4px; border-radius: 3px; background: #21262f; overflow: hidden; position: relative; }
+  .hbar i { display: block; height: 100%; border-radius: 3px; }
+  .hbar .lim { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #6b7280; }
+  .hm.ok   .hv { color: #6ee7a0; } .hm.ok   .hbar i { background: #34d399; }
+  .hm.near .hv { color: #fbbf24; } .hm.near .hbar i { background: #fbbf24; }
+  .hm.over .hv { color: #f87171; } .hm.over .hbar i { background: #f87171; }
+  .hm.over { border-color: #5a2020; }
   .anomaly-hd { font-size: 12px; color: #8b93a1; }
   .anomaly { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 7px; border: 1px solid #2a3550; background: #141a26; color: #cdd6e2; font-size: 12.5px; }
   .anomaly .ico { flex: 0 0 auto; }
@@ -237,6 +251,7 @@
   </div>
 
   <h2 data-i18n="Traffic quality">Traffic quality</h2>
+  <div class="panel" id="health"></div>
   <div class="grid2">
     <div class="panel" id="quality"></div>
     <div class="panel" id="flags"></div>
@@ -354,6 +369,7 @@ function sourceIcon(src) {
   if (!domain) return '<span class="favi-generic">🔗</span>';
   return `<img class="favi" loading="lazy" alt="" src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico" onerror="${GENERIC_ICON}">`;
 }
+const pctf = (x) => (x * 100).toFixed(1) + '%';
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 const get = async (p, qs = '') =>
@@ -666,16 +682,66 @@ function donut(t) {
 }
 
 // "Unreasonable data" alerts — self-contained plausibility checks (server-side).
+// Traffic-health strip — every ratio the alert rules watch, shown ALWAYS with
+// its distance to the threshold. Alerts only appear once a line is crossed, so
+// without this a site owner can't see where they actually stand (or that a
+// number is climbing) until it is already a problem.
+function renderHealth(res) {
+  const el = document.getElementById('health');
+  if (!el) return;
+  const st = (res && res.stats) || {};
+  const th = (res && res.thresholds) || {};
+  const pv = st.pv || 0;
+  if (!pv) { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
+
+  // value/limit are fractions; `of` names the denominator so the number is unambiguous
+  const metrics = [
+    { k: 'Invalid traffic', v: (st.invalid || 0) / pv, lim: th.invalid_share,
+      n: st.invalid || 0, of: 'of pageviews', help: 'Pageviews judged bot or suspect' },
+    { k: 'Datacenter traffic', v: (st.datacenter || 0) / pv, lim: th.datacenter_share,
+      n: st.datacenter || 0, of: 'of pageviews', help: 'From cloud/hosting networks rather than home or mobile ISPs' },
+    { k: 'No-interaction visits', v: (st.zero_interaction || 0) / pv, lim: th.zero_interaction_share,
+      n: st.zero_interaction || 0, of: 'of pageviews', help: 'No click, scroll or page-leave in the whole session' },
+    // MUST use the same ratio the alert rule uses (forged / all pageviews), or
+    // the strip would show "over the line" while no alert fires. The share of
+    // search visits is context only — it rides in the sub-line, not the bar.
+    { k: 'Forged search referrals', v: (st.fake_search || 0) / pv, lim: th.fake_search_share,
+      n: st.fake_search || 0, of: 'of pageviews', help: 'Claim a search-engine referral that looks forged',
+      extra: st.search_pv
+        ? t('{n} of {m} search visits').replace('{n}', fmt(st.fake_search || 0)).replace('{m}', fmt(st.search_pv))
+        : t('no search traffic in this period') },
+  ];
+
+  el.innerHTML = `<div class="health">` + metrics.map((m) => {
+    const lim = typeof m.lim === 'number' && m.lim > 0 ? m.lim : null;
+    const ratio = lim ? m.v / lim : 0;                       // 1.0 = exactly at the line
+    const cls = !lim ? 'ok' : ratio >= 1 ? 'over' : ratio >= 0.75 ? 'near' : 'ok';
+    // scale so the threshold marker sits at 75% of the bar; clamp the fill
+    const fill = Math.max(2, Math.min(100, (lim ? ratio * 75 : m.v * 100)));
+    const note = !lim ? ''
+      : cls === 'over' ? t('over the {x} alert line').replace('{x}', pctf(lim))
+      : t('alert line {x}').replace('{x}', pctf(lim));
+    return `<div class="hm ${cls}" title="${esc(t(m.help))}">
+      <div class="hl"><span>${te(m.k)}</span><span>${fmt(m.n)}</span></div>
+      <div class="hv">${pctf(m.v)}</div>
+      <div class="hbar"><i style="width:${fill.toFixed(1)}%"></i>${lim ? '<span class="lim" style="left:75%"></span>' : ''}</div>
+      <div class="sub">${te(m.of)}${note ? ' · ' + esc(note) : ''}${m.extra ? '<br>' + esc(m.extra) : ''}</div>
+    </div>`;
+  }).join('') + `</div>`
+    + (res && res.muted ? `<p class="muted" style="margin:10px 0 0;font-size:12px">${te('Sample too small for alerts — shown for reference only.')}</p>` : '');
+}
+
 // Returns the full payload so renderCards can reuse its stats (forged-search etc.).
 async function loadAlerts() {
   const el = document.getElementById('alerts');
   let res = { alerts: [], stats: {} };
-  try { res = await get('alerts'); } catch { el.innerHTML = ''; return res; }
+  try { res = await get('alerts'); } catch { el.innerHTML = ''; renderHealth(null); return res; }
   el.innerHTML = (res.alerts || []).map((x) => {
     const crit = x.severity === 'critical';
     return `<div class="alert alert-${crit ? 'critical' : 'warning'}"><span class="ico">${crit ? '⛔' : '⚠️'}</span>`
       + `<span class="body"><b>${esc(x.title)}</b><span>${esc(x.detail)}</span></span></div>`;
   }).join('');
+  renderHealth(res); // the strip shows the same ratios even when nothing trips
   return res;
 }
 
@@ -766,7 +832,6 @@ async function loadAdguard() {
   const el = document.getElementById('adguard');
   let d;
   try { d = await get('adguard'); } catch { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
-  const pctf = (x) => (x * 100).toFixed(1) + '%';
   const MODES = ['off', 'loose', 'balanced', 'strict'];
   const tierRow = (name) => {
     const t = d.tiers[name]; if (!t) return '';
