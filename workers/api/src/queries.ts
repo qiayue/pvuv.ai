@@ -560,7 +560,12 @@ async function calendarSeries(db: D1Database, siteId: string, period: Period, in
   // live per-day computation (rollups are pre-aggregated and can't be filtered).
   if (interval === 'day' && filters.length === 0) {
     const daily = await dailyAccs(db, siteId, period);
-    return order.map((b) => ({ label: b.label, value: metricOf(daily.get(b.min) ?? emptyAcc(), metric), status: statusOf(b) }));
+    return order.map((b) => {
+      const a = daily.get(b.min) ?? emptyAcc();
+      // pv/invalid must ride along here too — this fast path returns early, and
+      // omitting them made the chart's invalid strip vanish on the day interval
+      return { label: b.label, value: metricOf(a, metric), status: statusOf(b), pv: a.pv, invalid: a.suspect + a.bot };
+    });
   }
 
   // week/month (or filtered day): exact from raw events (+ sessions for rate

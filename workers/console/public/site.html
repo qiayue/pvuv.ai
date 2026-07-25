@@ -116,6 +116,18 @@
   .alert-critical { border-color: #5a2020; background: #241010; color: #f3b0b0; }
   .anomalies { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
   .anomalies:empty { display: none; }
+  /* chart hover readout: a crosshair + tooltip that follows the pointer, so any
+     x-position reveals that bucket's numbers (the 2.5px dots were unhittable) */
+  #chart { position: relative; }
+  .tt { position: absolute; z-index: 5; pointer-events: none; white-space: nowrap;
+        background: #0f1115; border: 1px solid #313847; border-radius: 6px;
+        padding: 7px 9px; font-size: 12px; line-height: 1.45;
+        box-shadow: 0 6px 18px rgba(0,0,0,.55); transform: translate(-50%, -100%); }
+  .tt[hidden] { display: none; }
+  .tt .tl { color: #8b93a1; margin-bottom: 2px; }
+  .tt .tv { font-weight: 600; }
+  .tt .ti { color: #f87171; }
+  .tt .tp { color: #8b93a1; font-style: italic; }
   /* traffic-health strip: every monitored ratio stays visible with its distance
      to the alert line, so nothing is invisible just because it isn't tripping */
   .health { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
@@ -589,8 +601,10 @@ function lineChart(points, metric) {
     dashed = `${xs(prev).toFixed(1)},${ys(points[prev].value).toFixed(1)} ${xs(partialIdx).toFixed(1)},${ys(points[partialIdx].value).toFixed(1)}`;
   }
 
+  // no <title> here — the crosshair readout below covers every x-position, and a
+  // native tooltip would pop up alongside it
   const dot = (p, i) => p.status === 'future' ? '' :
-    `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.value).toFixed(1)}" r="2.5" fill="${p.status === 'partial' ? '#0f1115' : '#3b82f6'}" stroke="#3b82f6" stroke-width="${p.status === 'partial' ? 1.5 : 0}"><title>${esc(p.label)}: ${fmtMetric(metric, p.value)}${p.status === 'partial' ? ' (in progress)' : ''}</title></circle>`;
+    `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.value).toFixed(1)}" r="2.5" fill="${p.status === 'partial' ? '#0f1115' : '#3b82f6'}" stroke="#3b82f6" stroke-width="${p.status === 'partial' ? 1.5 : 0}"/>`;
   const lstep = Math.ceil(points.length / 8);
   const labels = points.filter((_, i) => i % lstep === 0);
 
@@ -612,20 +626,90 @@ function lineChart(points, metric) {
       const x = P + i * cw;
       // floor the opacity so a small but real share is still visible
       const op = (0.18 + 0.82 * Math.min(share, 1)).toFixed(2);
-      return `<rect x="${x.toFixed(1)}" y="${SY}" width="${Math.max(cw - 1, 1).toFixed(1)}" height="${SH}" rx="1.5" fill="#f87171" opacity="${op}">`
-        + `<title>${esc(p.label)}: ${pctf(share)} ${esc(t('invalid'))} (${fmt(p.invalid)}/${fmt(p.pv)} ${esc(t('pageviews'))})</title></rect>`;
+      return `<rect x="${x.toFixed(1)}" y="${SY}" width="${Math.max(cw - 1, 1).toFixed(1)}" height="${SH}" rx="1.5" fill="#f87171" opacity="${op}"/>`;
     }).join('');
   }
 
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H + (hasInvalid ? 20 : 0)}" style="width:100%">
+  const VH = H + (hasInvalid ? 20 : 0);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${VH}" style="width:100%;display:block">
     ${grid.join('')}
     ${solid ? `<polyline points="${solid}" fill="none" stroke="#3b82f6" stroke-width="2"/>` : ''}
     ${dashed ? `<polyline points="${dashed}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 3" opacity="0.75"/>` : ''}
     ${points.map(dot).join('')}
     ${strip}
     ${hasInvalid ? `<text x="${P - 8}" y="${SY + SH - 1}" text-anchor="end" opacity="0.75">${esc(t('invalid'))}</text>` : ''}
-    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H + (hasInvalid ? 18 : 0) - 6}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
-  </svg>`;
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${VH - 6}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
+    <g id="chairG" opacity="0">
+      <line id="chairL" y1="${PT}" y2="${H - P}" stroke="#5b6472" stroke-width="1" stroke-dasharray="3 3"/>
+      <circle id="chairD" r="4" fill="#3b82f6" stroke="#0f1115" stroke-width="2"/>
+    </g>
+    <rect id="chairHit" x="${P}" y="0" width="${W - P - 12}" height="${VH}" fill="transparent" style="cursor:crosshair"/>
+  </svg>
+  <div class="tt" id="chartTip" hidden></div>`;
+
+  attachChartHover(el, points, metric, { W, VH, P, xs, ys });
+}
+
+// Crosshair readout: hovering anywhere along the plot snaps to the nearest
+// bucket and shows its numbers — the metric value plus, when present, that
+// bucket's invalid-traffic share. Bound per render; replacing el.innerHTML
+// discards the previous listeners with their nodes, so nothing accumulates.
+function attachChartHover(el, points, metric, geo) {
+  const svg = el.querySelector('svg');
+  const hit = el.querySelector('#chairHit');
+  const g = el.querySelector('#chairG');
+  const line = el.querySelector('#chairL');
+  const dotEl = el.querySelector('#chairD');
+  const tip = el.querySelector('#chartTip');
+  if (!svg || !hit || !tip) return;
+  // buckets that can actually be read (a 'future' one has no data yet)
+  const readable = points.map((p, i) => i).filter((i) => points[i].status !== 'future');
+  if (!readable.length) return;
+
+  const pt = svg.createSVGPoint();
+  const toViewX = (evt) => {
+    const m = svg.getScreenCTM();
+    if (!m) return null;
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    return pt.matrixTransform(m.inverse()).x;
+  };
+
+  const show = (evt) => {
+    const vx = toViewX(evt);
+    if (vx == null) return;
+    // nearest readable bucket to the pointer's x
+    let idx = readable[0], best = Infinity;
+    for (const i of readable) {
+      const d = Math.abs(geo.xs(i) - vx);
+      if (d < best) { best = d; idx = i; }
+    }
+    const p = points[idx];
+    const x = geo.xs(idx), y = geo.ys(p.value);
+    line.setAttribute('x1', x.toFixed(1)); line.setAttribute('x2', x.toFixed(1));
+    dotEl.setAttribute('cx', x.toFixed(1)); dotEl.setAttribute('cy', y.toFixed(1));
+    g.setAttribute('opacity', '1');
+
+    const rows = [`<div class="tl">${esc(p.label)}${p.status === 'partial' ? ` <span class="tp">${esc(t('in progress'))}</span>` : ''}</div>`,
+      `<div class="tv">${esc(t(METRIC_LABEL[metric] || metric))}: ${esc(fmtMetric(metric, p.value))}</div>`];
+    if (p.pv) {
+      const share = (p.invalid || 0) / p.pv;
+      rows.push(`<div class="${share > 0 ? 'ti' : 'tl'}">${esc(t('invalid'))}: ${pctf(share)}`
+        + ` <span class="tl">(${fmt(p.invalid || 0)}/${fmt(p.pv)} ${esc(t('pageviews'))})</span></div>`);
+    }
+    tip.innerHTML = rows.join('');
+    tip.hidden = false;
+    // position in CSS pixels: the viewBox is scaled to the element's width
+    const rect = svg.getBoundingClientRect();
+    const sx = rect.width / geo.W;
+    tip.style.left = Math.max(60, Math.min(rect.width - 60, x * sx)) + 'px';
+    tip.style.top = Math.max(tip.offsetHeight, y * (rect.height / geo.VH) - 10) + 'px';
+  };
+  const hide = () => { g.setAttribute('opacity', '0'); tip.hidden = true; };
+
+  hit.addEventListener('pointermove', show);
+  hit.addEventListener('pointerdown', show);   // tap-to-read on touch devices
+  hit.addEventListener('pointerleave', hide);
+  el.addEventListener('pointerleave', hide);
 }
 
 function populateControls() {
