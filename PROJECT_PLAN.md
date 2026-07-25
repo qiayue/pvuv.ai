@@ -216,8 +216,17 @@ Body: JSON (single or array; SDK batches ≤10 events or every 3s)
 | 0x10000 | UA advertises a headless engine ("HeadlessChrome") | +70 |
 | 0x20000 | headless window geometry (outerWidth/Height === 0, desktop) | +30 |
 | 0x40000 | navigator.platform contradicts UA OS (Win/Mac/iOS on Linux) | +30 |
-| 0x80000 | synthetic render env (monochrome color emoji / no real system fonts) | +20 each |
+| 0x80000 | synthetic render env (monochrome color emoji / no real system fonts) | 0 — recorded only, see note |
 | — | residential/mobile ASN + interaction + page_leave | trust credit −10 each |
+
+> **0x80000 is weighted 0 pending a fix.** Its first production sample showed it
+> tracks geography, not synthetic environments: **0 of 209** headless/webdriver-
+> flagged visitors and 2 of 209 datacenter visitors tripped it, while **34% of CN
+> visitors** and ~0% of every other country did (US 0/113, SG 0/84, JP 0/15, HK
+> 0/14). Two tells scored 40 on their own, so it was moving real users into
+> `suspect` with no corroborating signal. The flag is still recorded as evidence;
+> re-enable only after the canvas probe is diagnosed on a real CN Windows/Chrome
+> profile and the geographic skew is gone.
 
 **Example bands:** 0–29 clean │ 30–69 suspect │ 70+ bot. Verified crawlers are classified separately. `score_stage` records which pass assigned the score, so the UI can show the "first-pass → batch re-verdict" change.
 
