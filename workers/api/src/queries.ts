@@ -527,7 +527,13 @@ async function subDaySeries(db: D1Database, siteId: string, period: Period, inte
     // 'future' = bucket hasn't begun; 'partial' = in progress (contains now);
     // 'complete' = fully elapsed. Lets the chart dash/omit non-final buckets.
     const status = start >= period.now ? 'future' : (start + step > period.now ? 'partial' : 'complete');
-    return { label: subDayLabel(start, period.tz, interval, multiDay), value: metricOf(a, metric), status };
+    // pv/invalid ride along on every point (already in the accumulator, no extra
+    // query) so the chart can show WHEN bad traffic happened — a short burst vs
+    // spread across the day — independently of the selected metric's unit.
+    return {
+      label: subDayLabel(start, period.tz, interval, multiDay), value: metricOf(a, metric), status,
+      pv: a.pv, invalid: a.suspect + a.bot,
+    };
   });
 }
 
@@ -561,7 +567,7 @@ async function calendarSeries(db: D1Database, siteId: string, period: Period, in
   // metrics) per bucket, because distinct visitor counts don't decompose.
   const needSess = metric === 'bounce_rate' || metric === 'bounce_rate_single'
     || metric === 'avg_duration_ms' || metric === 'visit_duration_ms';
-  const out: Array<{ label: string; value: number | null; status: string }> = [];
+  const out: Array<{ label: string; value: number | null; status: string; pv: number; invalid: number }> = [];
   for (const b of order) {
     const [y1, m1, d1] = b.min.split('-').map(Number);
     const [y2, m2, d2] = b.max.split('-').map(Number);
@@ -579,7 +585,10 @@ async function calendarSeries(db: D1Database, siteId: string, period: Period, in
       a.dur_num = sr.duration_sum; a.dur_den = sr.sessions;
       a.vdur_num = sr.visit_duration_sum; a.vdur_den = sr.visit_duration_n;
     }
-    out.push({ label: b.label, value: metricOf(a, metric), status: statusOf(b) });
+    out.push({
+      label: b.label, value: metricOf(a, metric), status: statusOf(b),
+      pv: a.pv, invalid: a.suspect + a.bot,
+    });
   }
   return out;
 }

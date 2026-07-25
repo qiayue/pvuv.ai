@@ -593,12 +593,38 @@ function lineChart(points, metric) {
     `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.value).toFixed(1)}" r="2.5" fill="${p.status === 'partial' ? '#0f1115' : '#3b82f6'}" stroke="#3b82f6" stroke-width="${p.status === 'partial' ? 1.5 : 0}"><title>${esc(p.label)}: ${fmtMetric(metric, p.value)}${p.status === 'partial' ? ' (in progress)' : ''}</title></circle>`;
   const lstep = Math.ceil(points.length / 8);
   const labels = points.filter((_, i) => i % lstep === 0);
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
+
+  // Invalid-traffic strip: one cell per bucket, opacity = that bucket's share of
+  // bot/suspect pageviews. Deliberately NOT a second line on the main axis — the
+  // selected metric may be visitors / sessions / a rate, while invalid traffic is
+  // counted in pageviews, so overlaying them would compare different units. As a
+  // share it stays readable under any metric and answers the real question:
+  // was the bad traffic one short burst, or spread across the whole period?
+  const hasInvalid = drawn.some((p) => (p.invalid ?? 0) > 0);
+  const SY = H - P + 12, SH = 9;               // strip sits just under the x-axis
+  let strip = '';
+  if (hasInvalid) {
+    const cw = (W - P - 12) / Math.max(points.length, 1);
+    strip = points.map((p, i) => {
+      if (p.status === 'future' || !p.pv) return '';
+      const share = (p.invalid ?? 0) / p.pv;
+      if (share <= 0) return '';
+      const x = P + i * cw;
+      // floor the opacity so a small but real share is still visible
+      const op = (0.18 + 0.82 * Math.min(share, 1)).toFixed(2);
+      return `<rect x="${x.toFixed(1)}" y="${SY}" width="${Math.max(cw - 1, 1).toFixed(1)}" height="${SH}" rx="1.5" fill="#f87171" opacity="${op}">`
+        + `<title>${esc(p.label)}: ${pctf(share)} ${esc(t('invalid'))} (${fmt(p.invalid)}/${fmt(p.pv)} ${esc(t('pageviews'))})</title></rect>`;
+    }).join('');
+  }
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H + (hasInvalid ? 20 : 0)}" style="width:100%">
     ${grid.join('')}
     ${solid ? `<polyline points="${solid}" fill="none" stroke="#3b82f6" stroke-width="2"/>` : ''}
     ${dashed ? `<polyline points="${dashed}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 3" opacity="0.75"/>` : ''}
     ${points.map(dot).join('')}
-    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H - 6}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
+    ${strip}
+    ${hasInvalid ? `<text x="${P - 8}" y="${SY + SH - 1}" text-anchor="end" opacity="0.75">${esc(t('invalid'))}</text>` : ''}
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${H + (hasInvalid ? 18 : 0) - 6}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
   </svg>`;
 }
 
