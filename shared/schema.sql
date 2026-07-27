@@ -77,6 +77,7 @@ CREATE TABLE events_202607 (
   verdict TEXT DEFAULT 'clean',
   bot_flags INTEGER DEFAULT 0,
   score_stage TEXT DEFAULT 'realtime',
+  bot_category TEXT,             -- crawler category from the imported bot directory (0013); descriptive only
   ts INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );

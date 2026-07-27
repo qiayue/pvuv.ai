@@ -245,6 +245,35 @@ Body: JSON (single or array; SDK batches ≤10 events or every 3s)
 
 **Example bands:** 0–29 clean │ 30–69 suspect │ 70+ bot. Verified crawlers are classified separately. `score_stage` records which pass assigned the score, so the UI can show the "first-pass → batch re-verdict" change.
 
+### 6.6 Crawler categorisation (optional, classification only)
+
+Crawlers are not interchangeable: a search engine that sends visitors, an AI
+training scraper, an SEO competitor tool and an ad-verification bot all look
+like `verdict='crawler'` today, but a site owner wants to tell them apart.
+
+Cloudflare's BotBase is Enterprise Bot Management only, so a self-hosted
+deployment cannot read it at runtime. The same catalogue is published publicly
+(Cloudflare Radar's bots-and-agents directory and community mirrors), so the
+deployer downloads it once and imports it in the console
+(`/api/settings/botdir`). It is stored in `instance_settings` and mirrored to KV;
+ingest matches each request's User-Agent and records `events.bot_category`.
+
+Deliberate constraints:
+
+* **Classification only.** The category is never passed to the scorer and never
+  reaches the ad-guard decision — importing a directory cannot change anyone's
+  verdict. Policy built on categories is a separate, later decision.
+* **Optional.** With nothing imported the column stays NULL and the dashboard
+  panel hides itself; no account, token or third-party request is involved.
+* **Substring matching, never imported regexes** — an untrusted file must not be
+  able to run catastrophic backtracking on every event. Regex-looking patterns
+  are reduced to their longest literal run.
+* **Format-tolerant import with a preview.** The published shapes differ between
+  sources and versions, so the parser accepts a bare array or a wrapper object
+  and reads conventional field-name variants; the console reports what it
+  actually understood (count, skipped, category histogram) so a mis-parsed file
+  is obvious instead of silently classifying nothing.
+
 ### 6.3 Session layer (hourly Cron)
 
 Stitch events into sessions; compute session-level features (inter-page interval, path pattern, zero-interaction/no-leave); correct the verdict (`score_stage='session'`).

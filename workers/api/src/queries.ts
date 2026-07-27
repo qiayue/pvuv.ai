@@ -741,6 +741,10 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
   const EVENT_DIMS: Record<string, string> = {
     utm_medium: 'utm_medium', utm_term: 'utm_term', utm_content: 'utm_content',
     ft_source: 'ft_source', ft_medium: 'ft_medium', ft_campaign: 'ft_campaign',
+    // crawler category from the imported directory (§6.6). NULL/'' is excluded
+    // by the shared predicate below, so this lists only identified crawlers —
+    // human traffic never appears here.
+    bot_category: 'bot_category',
   };
   if (Object.prototype.hasOwnProperty.call(EVENT_DIMS, dim)) {
     const col = EVENT_DIMS[dim];

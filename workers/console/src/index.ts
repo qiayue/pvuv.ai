@@ -20,6 +20,7 @@
  */
 
 import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parseBotDirectory } from '../../../shared/botdir';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -31,6 +32,9 @@ import { isValidTimezone } from '../../../shared/tz';
 import { CONFIG } from '../../../shared/config.gen';
 import { LlmError } from './llm';
 import { generateReport, type ReportLang } from './report';
+
+/** KV key the ingest worker reads the compiled directory from (§6.6). */
+const BOTDIR_KV_KEY = 'botdir:v1';
 
 export interface Env {
   DB: D1Database;
@@ -334,6 +338,59 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
       `).bind(k, v, now)));
       return json({ ok: true });
+    }
+  }
+
+  // Crawler directory (§6.6): the deployer downloads a public bots-and-agents
+  // catalogue and pastes it here. Parsed into a compact pattern list, stored in
+  // D1 (source of truth, survives KV eviction) and mirrored to KV for the
+  // ingest hot path. GET returns only summary stats, never the whole blob.
+  //
+  // CLASSIFICATION ONLY — an imported directory labels crawler traffic by kind;
+  // it never affects scoring, verdicts, or the ad-guard decision.
+  if (path === '/api/settings/botdir') {
+    if (request.method === 'GET') {
+      const row = await env.DB.prepare('SELECT value, updated_at FROM instance_settings WHERE key = ?')
+        .bind('bot_directory_meta').first<{ value: string; updated_at: number }>();
+      if (!row) return json({ imported: false });
+      try {
+        return json({ imported: true, updated_at: row.updated_at, ...JSON.parse(row.value) });
+      } catch { return json({ imported: false }); }
+    }
+    if (request.method === 'DELETE') {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind('bot_directory'),
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind('bot_directory_meta'),
+      ]);
+      await env.SITE_CONFIG.put(BOTDIR_KV_KEY, '[]');
+      return json({ ok: true, imported: false });
+    }
+    if (request.method === 'POST') {
+      let raw: unknown;
+      try { raw = await request.json(); } catch { return json({ error: 'not valid JSON' }, 400); }
+      const parsed = parseBotDirectory(raw);
+      if (parsed.entries.length === 0) {
+        // the file loaded but nothing was recognisable — say so plainly rather
+        // than storing an empty directory and silently classifying nothing
+        return json({ error: 'no bot entries recognised in that file', skipped: parsed.skipped }, 400);
+      }
+      const meta = {
+        count: parsed.entries.length,
+        skipped: parsed.skipped,
+        categories: parsed.categories,
+        sample: parsed.entries.slice(0, 8).map((e) => ({ name: e.name, category: e.category })),
+      };
+      const now = Date.now();
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+          .bind('bot_directory', JSON.stringify(parsed.entries), now),
+        env.DB.prepare(`INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+          .bind('bot_directory_meta', JSON.stringify(meta), now),
+      ]);
+      await env.SITE_CONFIG.put(BOTDIR_KV_KEY, JSON.stringify(parsed.entries));
+      return json({ ok: true, imported: true, updated_at: now, ...meta });
     }
   }
 

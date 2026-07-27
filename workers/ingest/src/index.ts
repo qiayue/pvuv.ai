@@ -10,11 +10,38 @@
 import { enrichEvent, parseUA, isChromiumUA, isHeadlessUA, hashIP, fingerprintHash, type RequestContext } from './enrich';
 import { scoreRealtime } from './score';
 import { classifyAsn } from '../../../shared/asn';
+import { matchBot, type BotEntry } from '../../../shared/botdir';
 import { signVerdictState, verifyVerdictState, type VerdictState } from '../../../shared/ids';
 import type { XPayload, Verdict } from '../../../shared/flags';
 import {
   MAX_REQUEST_EVENTS, type IncomingEvent, type EventRow,
 } from '../../../shared/events';
+
+/**
+ * Owner-imported crawler directory (§6.6), cached per isolate. Stored in KV by
+ * the console on import; a miss just means "no directory imported", in which
+ * case events carry no category and nothing else changes.
+ *
+ * Cached in module scope so the common case costs no I/O at all: one KV read
+ * per isolate per TTL, not one per request. A failure is cached as an empty
+ * list for the same TTL so a KV outage can't turn into a read storm.
+ */
+const BOTDIR_KV_KEY = 'botdir:v1';
+const BOTDIR_TTL_MS = 10 * 60 * 1000;
+let botDirCache: { entries: BotEntry[]; at: number } | null = null;
+
+async function botDirectory(env: Env): Promise<BotEntry[]> {
+  const now = Date.now();
+  if (botDirCache && now - botDirCache.at < BOTDIR_TTL_MS) return botDirCache.entries;
+  let entries: BotEntry[] = [];
+  try {
+    entries = (await env.SITE_CONFIG.get<BotEntry[]>(BOTDIR_KV_KEY, 'json')) ?? [];
+  } catch (err) {
+    console.error('botdir load failed', err);
+  }
+  botDirCache = { entries, at: now };
+  return entries;
+}
 
 export interface Env {
   DB: D1Database;
@@ -153,6 +180,10 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
   };
   const uaInfo = parseUA(reqCtx.ua);
   const chromiumUA = isChromiumUA(reqCtx.ua);
+  // crawler category from the owner-imported directory (§6.6). Descriptive
+  // only — deliberately NOT passed to scoreRealtime, so importing a directory
+  // can never change anyone's verdict or ad-guard outcome.
+  const botCategory = matchBot(reqCtx.ua, await botDirectory(env))?.category ?? null;
   const asnType = classifyAsn(typeof cf?.asn === 'number' ? cf.asn : undefined, cf?.asOrganization);
 
   // --- KV blocklist check (§6.2 0x0200): once per request, by ip24 + fp ---
@@ -185,7 +216,7 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
       blocklisted,
       referrer: typeof ev.r === 'string' ? ev.r : undefined,
     });
-    rows.push({ ...row, ...scored });
+    rows.push({ ...row, ...scored, bot_category: botCategory });
   }
   if (rows.length === 0) return respond(204);
 

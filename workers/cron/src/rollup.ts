@@ -25,8 +25,9 @@ import { monthSuffix, eventsTableName, eventsIndexDDL, RESERVED_EVENTS_SQL } fro
 
 export async function runHourlyRollup(env: Env): Promise<void> {
   const now = Date.now();
-  await backfillHotColumnsOnce(env); // one-time; no-op after the first run
   const existing = await existingEventTables(env.DB);
+  await ensurePartitionSchema(env, existing); // cheap + idempotent, every run
+  await backfillHotColumnsOnce(env);          // one-time; no-op after the first run
   // A session is "closed" (no further interaction/leave can arrive) once it has
   // been idle past the session window — only then is "no page_leave" final.
   const idleCutoff = now - SESSION_IDLE_MS;
@@ -42,6 +43,42 @@ export async function runHourlyRollup(env: Env): Promise<void> {
     for (const ymd of [t, yday]) {
       const span = localDaySpan(tz, ymd.y, ymd.m0, ymd.d);
       await rollupSiteDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing, idleCutoff);
+    }
+  }
+}
+
+/**
+ * Keep every existing month partition structurally current — add columns and
+ * indexes that later migrations introduced.
+ *
+ * A migration can only name the partitions that existed when it was written,
+ * and the consumer issues DDL only for the month it is actively writing, so
+ * back-months would otherwise never gain anything added later (migration 0012's
+ * index, 0013's bot_category column, and whatever comes next). Runs every hour
+ * because it is cheap and fully idempotent: CREATE INDEX IF NOT EXISTS is a
+ * no-op once present, and each ADD COLUMN is guarded by a PRAGMA check (SQLite
+ * has no ADD COLUMN IF NOT EXISTS). Failures are logged, never fatal — a broken
+ * partition must not stop the rollup for every site.
+ */
+const PARTITION_COLUMNS: Array<{ name: string; ddl: string }> = [
+  { name: 'bot_category', ddl: 'TEXT' }, // 0013
+];
+
+async function ensurePartitionSchema(env: Env, existing: Set<string>): Promise<void> {
+  for (const table of existing) {
+    const suffix = table.slice('events_'.length);
+    try {
+      const cols = await env.DB.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+      const have = new Set(cols.results.map((c) => c.name));
+      for (const col of PARTITION_COLUMNS) {
+        if (!have.has(col.name)) {
+          await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.ddl}`).run();
+          console.log(`rollup: added ${table}.${col.name}`);
+        }
+      }
+      await env.DB.batch(eventsIndexDDL(suffix).map((sql) => env.DB.prepare(sql)));
+    } catch (err) {
+      console.error(`rollup: schema ensure failed for ${table}`, err);
     }
   }
 }
@@ -87,19 +124,7 @@ async function backfillHotColumnsOnce(env: Env): Promise<void> {
 
   const existing = await existingEventTables(env.DB);
 
-  // 1. bring every existing partition's indexes up to date (idempotent)
-  if (!cursor) {
-    for (const table of existing) {
-      const suffix = table.slice('events_'.length);
-      try {
-        await env.DB.batch(eventsIndexDDL(suffix).map((sql) => env.DB.prepare(sql)));
-      } catch (err) {
-        console.error(`rollup: index ensure failed for ${table}`, err);
-      }
-    }
-  }
-
-  // 2. backfill the new columns, resuming after the cursor, capped per run.
+  // backfill the new columns, resuming after the cursor, capped per run.
   //    Ordering by (site_id, day) makes "> cursor" a stable resume point.
   const rows = await env.DB.prepare(`
     SELECT r.site_id AS site_id, r.day AS day, COALESCE(s.timezone, 'UTC') AS timezone

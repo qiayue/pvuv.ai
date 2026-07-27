@@ -268,6 +268,7 @@
     <div class="panel" id="quality"></div>
     <div class="panel" id="flags"></div>
   </div>
+  <div id="crawlerSec" hidden><div class="sec-head"><h2 data-i18n="Crawlers by category">Crawlers by category</h2></div><div class="panel" id="crawlers"></div></div>
 
   <h2 data-i18n="Ad protection">Ad protection</h2>
   <div class="panel" id="adguard"></div>
@@ -792,6 +793,35 @@ function donut(t) {
 }
 
 // "Unreasonable data" alerts — self-contained plausibility checks (server-side).
+// Crawler categories (§6.6) — only rendered when the deployer has imported a
+// bot directory AND some traffic matched it. Descriptive: it says which KINDS
+// of crawlers visited, and changes nothing about how they were scored.
+async function loadCrawlers() {
+  const sec = document.getElementById('crawlerSec');
+  const el = document.getElementById('crawlers');
+  let rows = [];
+  try { rows = (await get('breakdown', '&dim=bot_category&limit=50')).rows || []; }
+  catch { sec.hidden = true; return; }
+  if (!rows.length) { sec.hidden = true; return; }   // no directory, or no match
+  sec.hidden = false;
+  const total = rows.reduce((a, r) => a + (r.pv || 0), 0) || 1;
+  el.innerHTML = `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Identified crawler traffic grouped by what the crawler is for. Classification only — these visits are scored exactly as before.')}</p>`
+    + `<table><tr><th>${te('Category')}</th><th class="num">${te('PV')}</th><th class="num">${te('Visitors')}</th><th class="num">${te('Share')}</th></tr>`
+    + rows.map((r) => `<tr><td>${esc(t(CRAWLER_CAT[r.key] || r.key))}</td>`
+        + `<td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td>`
+        + `<td class="num">${pctf((r.pv || 0) / total)}</td></tr>`).join('')
+    + '</table>';
+}
+// friendly names for the categories the public directories use; unknown keys
+// fall through to the raw value so a new category is never hidden
+const CRAWLER_CAT = {
+  search: 'Search engine', ai_training: 'AI training', ai: 'AI', ai_assistant: 'AI assistant',
+  ai_search: 'AI search', seo: 'SEO tool', advertising: 'Ad verification', ads: 'Ad verification',
+  monitoring: 'Monitoring', security: 'Security scanner', archive: 'Archiving',
+  social: 'Social preview', academic: 'Academic', accessibility: 'Accessibility',
+  aggregator: 'Aggregator', page_preview: 'Link preview', uncategorized: 'Uncategorised',
+};
+
 // Traffic-health strip — every ratio the alert rules watch, shown ALWAYS with
 // its distance to the threshold. Alerts only appear once a line is crossed, so
 // without this a site owner can't see where they actually stand (or that a
@@ -1097,7 +1127,7 @@ async function load() {
   // only for layout order; funnel is a no-op if <2 valid steps).
   const utm = (async () => { await loadUtm(); runFunnel(); })();
 
-  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadAdguard()]);
+  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadAdguard(), loadCrawlers()]);
 }
 
 // live "online now" — polls independently of the selected period (always the

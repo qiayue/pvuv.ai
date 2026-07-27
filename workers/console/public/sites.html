@@ -175,6 +175,18 @@
       <p class="err" id="aiMsg"></p>
       <button type="submit" data-i18n="Save AI settings">Save AI settings</button>
     </form>
+    <form class="create" id="botdirSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Crawler directory">Crawler directory</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="botdir-help"> — optional. Import a public bots-and-agents catalogue to label crawler traffic by kind (search / AI training / SEO / ads). Classification only: it never changes scoring, verdicts or ad protection.</span></div>
+      <div class="full"><label><span data-i18n="Directory JSON file">Directory JSON file</span>
+        <input id="botdirFile" type="file" accept=".json,application/json"></label></div>
+      <div class="full"><label><span data-i18n="…or paste the JSON">…or paste the JSON</span>
+        <textarea id="botdirText" rows="4" style="width:100%;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:8px;font:12px/1.4 ui-monospace,monospace" placeholder='[{"name":"Googlebot","category":"Search"}, …]'></textarea></label></div>
+      <p class="err" id="botdirMsg"></p>
+      <div class="full" id="botdirState" style="font-size:12px;color:#8b93a1"></div>
+      <button type="submit" data-i18n="Import directory">Import directory</button>
+      <button type="button" id="botdirClear" style="margin-left:8px;background:#241010;border-color:#5a2020" data-i18n="Remove">Remove</button>
+    </form>
   </section>
 </main>
 <script>
@@ -392,6 +404,50 @@ document.getElementById('homeSettings').addEventListener('submit', async (e) => 
   el.style.color = r.ok ? '#6ee7a0' : '';
   el.textContent = r.ok ? t('saved') : t('save failed');
   if (r.ok) loadHomeSettings(); // re-apply header/favicon immediately
+});
+
+// Crawler directory (§6.6): import a public bots-and-agents catalogue so
+// crawler traffic can be labelled by kind. Purely descriptive — the UI says so
+// explicitly, because an import that silently changed verdicts would be a trap.
+async function loadBotdir() {
+  const box = document.getElementById('botdirState');
+  try {
+    const d = await (await guard(await fetch('/api/settings/botdir'))).json();
+    if (!d.imported) { box.textContent = t('No directory imported — crawler traffic is not categorised.'); return; }
+    const cats = Object.entries(d.categories || {}).sort((a, b) => b[1] - a[1]);
+    box.innerHTML = `<b>${esc(String(d.count))}</b> ${te('bots imported')}`
+      + (d.skipped ? ` · ${esc(String(d.skipped))} ${te('skipped')}` : '')
+      + ` · ${te('updated')} ${esc(new Date(d.updated_at).toISOString().slice(0, 16).replace('T', ' '))}<br>`
+      + cats.map(([c, n]) => `${esc(c)} <span style="color:#c7cdd8">${esc(String(n))}</span>`).join(' · ');
+  } catch { box.textContent = ''; }
+}
+document.getElementById('botdirSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('botdirMsg');
+  const file = document.getElementById('botdirFile').files[0];
+  const pasted = document.getElementById('botdirText').value.trim();
+  msg.style.color = ''; msg.textContent = '';
+  let text = pasted;
+  if (file) { try { text = await file.text(); } catch { msg.textContent = t('Could not read that file.'); return; } }
+  if (!text) { msg.textContent = t('Choose a file or paste the JSON first.'); return; }
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { msg.textContent = t('That is not valid JSON.'); return; }
+  const r = await guard(await fetch('/api/settings/botdir', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(parsed),
+  }));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { msg.textContent = d.error ? t(d.error) : t('Import failed.'); return; }
+  msg.style.color = '#6ee7a0';
+  msg.textContent = t('Imported {n} bots.').replace('{n}', d.count);
+  document.getElementById('botdirText').value = '';
+  document.getElementById('botdirFile').value = '';
+  loadBotdir();
+});
+document.getElementById('botdirClear').addEventListener('click', async () => {
+  const msg = document.getElementById('botdirMsg');
+  await guard(await fetch('/api/settings/botdir', { method: 'DELETE' }));
+  msg.style.color = ''; msg.textContent = t('Directory removed.');
+  loadBotdir();
 });
 
 async function loadAiSettings() {

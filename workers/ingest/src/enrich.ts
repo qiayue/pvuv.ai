@@ -315,6 +315,7 @@ export async function enrichEvent(
     verdict: 'clean',
     bot_flags: 0,
     score_stage: 'realtime',
+    bot_category: null, // stamped by the caller after directory lookup (§6.6)
     ts,
     created_at: ctx.now,
   };

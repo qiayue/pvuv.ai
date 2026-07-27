@@ -106,6 +106,9 @@ export interface EventRow {
   verdict: Verdict;
   bot_flags: number;
   score_stage: ScoreStage;
+  /** crawler category from the owner-imported bot directory (§6.6) — purely
+   *  descriptive, never feeds scoring or the ad-guard decision */
+  bot_category: string | null;
   ts: number;
   created_at: number;
 }
@@ -123,7 +126,7 @@ export const EVENT_COLUMNS = [
   'duration_ms', 'scroll_depth', 'had_interaction',
   'revenue', 'revenue_usd', 'currency', 'props',
   'ft_source', 'ft_medium', 'ft_campaign', 'ft_referrer',
-  'bot_score', 'verdict', 'bot_flags', 'score_stage',
+  'bot_score', 'verdict', 'bot_flags', 'score_stage', 'bot_category',
   'ts', 'created_at',
 ] as const satisfies readonly (keyof EventRow)[];
 
@@ -176,6 +179,8 @@ export function eventsIndexDDL(suffix: string): string[] {
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_session ON ${t}(session_id)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_verdict ON ${t}(site_id, verdict, ts)`,
     `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_path    ON ${t}(site_id, path)`,
+    // crawler-category breakdown (0013)
+    `CREATE INDEX IF NOT EXISTS idx_ev${suffix}_botcat ON ${t}(site_id, bot_category, ts)`,
   ];
 }
 
@@ -213,6 +218,7 @@ export function eventsTableDDL(suffix: string): string[] {
       verdict TEXT DEFAULT 'clean',
       bot_flags INTEGER DEFAULT 0,
       score_stage TEXT DEFAULT 'realtime',
+      bot_category TEXT,
       ts INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`,
