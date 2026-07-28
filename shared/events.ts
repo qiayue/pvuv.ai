@@ -184,6 +184,42 @@ export function eventsIndexDDL(suffix: string): string[] {
   ];
 }
 
+/**
+ * Columns added to the partition template AFTER the initial release.
+ *
+ * A migration can only ALTER the partitions that existed when it was written,
+ * and the consumer reuses an existing month table as-is — so a deployer whose
+ * current month table predates the migration would have every insert into it
+ * fail with "no such column" and silently lose those events. Both the consumer
+ * (before writing) and the hourly cron (for back-months) repair partitions from
+ * this list, so a partition is never written to while structurally stale.
+ *
+ * Append here whenever a column is added to eventsTableDDL below.
+ */
+export const EVENT_LATE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'bot_category', ddl: 'TEXT' }, // migration 0013
+];
+
+/** Minimal structural shape of what this helper needs from D1, so shared/ does
+ *  not depend on the Workers global types. */
+interface ColumnQueryable {
+  prepare(sql: string): { all(): Promise<{ results: Array<{ name?: unknown }> }>; run(): Promise<unknown> };
+}
+
+/** Add any missing late columns to one partition. Idempotent: SQLite has no
+ *  ADD COLUMN IF NOT EXISTS, so existing columns are detected first. */
+export async function ensureEventColumns(db: ColumnQueryable, suffix: string): Promise<void> {
+  const t = eventsTableName(suffix);
+  const cols = await db.prepare(`PRAGMA table_info(${t})`).all();
+  const have = new Set(cols.results.map((c) => String(c.name)));
+  for (const col of EVENT_LATE_COLUMNS) {
+    if (!have.has(col.name)) {
+      await db.prepare(`ALTER TABLE ${t} ADD COLUMN ${col.name} ${col.ddl}`).run();
+      console.log(`schema: added ${t}.${col.name}`);
+    }
+  }
+}
+
 export function eventsTableDDL(suffix: string): string[] {
   const t = eventsTableName(suffix);
   return [

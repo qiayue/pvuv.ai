@@ -21,7 +21,7 @@
  */
 
 import {
-  monthSuffix, eventsTableDDL, eventInsertSQL, eventRowValues, isConversion,
+  monthSuffix, eventsTableDDL, ensureEventColumns, eventInsertSQL, eventRowValues, isConversion,
   type EventRow,
 } from '../../../shared/events';
 
@@ -70,6 +70,12 @@ export default {
       for (const suffix of months) {
         if (ensuredMonths.has(suffix)) continue;
         await env.DB.batch(eventsTableDDL(suffix).map((sql) => env.DB.prepare(sql)));
+        // A table that already existed is NOT recreated by the IF NOT EXISTS
+        // above, so a month created before a later migration would still be
+        // missing that migration's columns and every insert would fail. Repair
+        // before writing — this runs once per isolate per month, so a deploy
+        // self-heals on its first batch instead of waiting for the hourly cron.
+        await ensureEventColumns(env.DB, suffix);
         ensuredMonths.add(suffix);
       }
 

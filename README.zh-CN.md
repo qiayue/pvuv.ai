@@ -125,6 +125,22 @@ cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
 
 评分权重、判定阈值、黑名单都是**可调且部署私有**的。`config.example.toml` 提供示例默认值；复制为 `config.local.toml`（已 gitignore）自行私有调优。引擎从 config 读取权重、代码不硬编码，因此可以在不暴露给刷手的前提下调整检测。详见 [`PROJECT_PLAN.zh-CN.md` §21](./PROJECT_PLAN.zh-CN.md)。
 
+## API、MCP 服务器与 CLI
+
+随处读取你的数据:面向集成的 REST API、让你自己的 Chatbot 回答流量问题的 **MCP 服务器**,以及适合终端和定时任务的 **CLI**。三者均为只读,共用同一套凭证。
+
+在控制台(⚙ → API 令牌)创建个人 API 令牌——可限定到单个站点或全部站点,可单独吊销,仅以 HMAC 形式存储。
+
+```bash
+export PVUV_API_URL=https://api.pvuv.ai
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+MCP 服务器和 CLI 都是零依赖单文件,不会在持有令牌的地方引入额外依赖。完整说明见 [`docs/API.md`](./docs/API.md)。
+
 ## 外部排名 API（可选）
 
 外部排名/评分系统可以用服务端 API token 一次拉取跨站点、基于清洗流量的榜单：

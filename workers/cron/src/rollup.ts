@@ -21,7 +21,7 @@ import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
 import { SESSION_IDLE_MS } from '../../../shared/ids';
 import { FLAG, FAKE_SEARCH_MASK, searchRefDomainSql } from '../../../shared/flags';
-import { monthSuffix, eventsTableName, eventsIndexDDL, RESERVED_EVENTS_SQL } from '../../../shared/events';
+import { monthSuffix, eventsTableName, eventsIndexDDL, ensureEventColumns, RESERVED_EVENTS_SQL } from '../../../shared/events';
 
 export async function runHourlyRollup(env: Env): Promise<void> {
   const now = Date.now();
@@ -60,22 +60,13 @@ export async function runHourlyRollup(env: Env): Promise<void> {
  * has no ADD COLUMN IF NOT EXISTS). Failures are logged, never fatal — a broken
  * partition must not stop the rollup for every site.
  */
-const PARTITION_COLUMNS: Array<{ name: string; ddl: string }> = [
-  { name: 'bot_category', ddl: 'TEXT' }, // 0013
-];
-
 async function ensurePartitionSchema(env: Env, existing: Set<string>): Promise<void> {
   for (const table of existing) {
     const suffix = table.slice('events_'.length);
     try {
-      const cols = await env.DB.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
-      const have = new Set(cols.results.map((c) => c.name));
-      for (const col of PARTITION_COLUMNS) {
-        if (!have.has(col.name)) {
-          await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.ddl}`).run();
-          console.log(`rollup: added ${table}.${col.name}`);
-        }
-      }
+      // same repair the consumer applies before writing (shared EVENT_LATE_COLUMNS),
+      // so back-months nobody is currently writing to also stay current
+      await ensureEventColumns(env.DB, suffix);
       await env.DB.batch(eventsIndexDDL(suffix).map((sql) => env.DB.prepare(sql)));
     } catch (err) {
       console.error(`rollup: schema ensure failed for ${table}`, err);

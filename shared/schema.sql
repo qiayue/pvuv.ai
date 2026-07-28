@@ -18,6 +18,23 @@ CREATE TABLE instance_settings (
   updated_at INTEGER
 );
 
+-- personal API tokens (added by migrations/0014_api_tokens.sql) — the credential
+-- the CLI, the MCP server and third-party integrations authenticate with.
+-- Only an HMAC of each token is stored; the plaintext is shown once at creation.
+CREATE TABLE api_tokens (
+  token_id    TEXT PRIMARY KEY,          -- public identifier (safe to display/log)
+  owner_id    TEXT NOT NULL,             -- users.user_id; the token acts as this owner
+  name        TEXT NOT NULL,             -- human label, e.g. "Claude Desktop"
+  token_hash  TEXT NOT NULL,             -- HMAC(HMAC_KEY, plaintext); never the token itself
+  prefix      TEXT NOT NULL,             -- leading chars of the plaintext, for identification
+  site_id     TEXT,                      -- NULL = all of this owner's sites; else one site
+  created_at  INTEGER NOT NULL,
+  last_used_at INTEGER,
+  revoked_at  INTEGER                    -- non-NULL = permanently unusable
+);
+CREATE UNIQUE INDEX idx_api_tokens_hash ON api_tokens(token_hash);
+CREATE INDEX idx_api_tokens_owner ON api_tokens(owner_id, created_at);
+
 -- users
 CREATE TABLE users (
   user_id     TEXT PRIMARY KEY,
@@ -88,6 +105,7 @@ CREATE INDEX idx_ev202607_visitor ON events_202607(site_id, visitor_id);
 CREATE INDEX idx_ev202607_session ON events_202607(session_id);
 CREATE INDEX idx_ev202607_verdict ON events_202607(site_id, verdict, ts);
 CREATE INDEX idx_ev202607_path    ON events_202607(site_id, path);
+CREATE INDEX idx_ev202607_botcat ON events_202607(site_id, bot_category, ts);
 
 -- sessions
 CREATE TABLE sessions (

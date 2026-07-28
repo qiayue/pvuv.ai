@@ -125,6 +125,22 @@ Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (ingest 
 
 Scoring weights, verdict thresholds, and the blocklist are **tunable and deployment-private**. `config.example.toml` ships example defaults; copy it to `config.local.toml` (gitignored) and tune privately. The engine reads weights from config — nothing is hardcoded — so you can adjust detection without exposing it to fraudsters. See [`PROJECT_PLAN.md` §21](./PROJECT_PLAN.md).
 
+## API, MCP server & CLI
+
+Read your data from anywhere: a REST API for integrations, an **MCP server** so your own chatbot can answer questions about your traffic, and a **CLI** for terminals and cron jobs. All read-only, all sharing one credential.
+
+Create a personal API token in the console (⚙ → API tokens) — scoped to one site or all of yours, individually revocable, stored only as an HMAC.
+
+```bash
+export PVUV_API_URL=https://api.pvuv.ai
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+The MCP server and CLI are dependency-free single files, so nothing extra is installed around a token. Full reference: [`docs/API.md`](./docs/API.md).
+
 ## External ranking API (optional)
 
 An external ranking/scoring system can pull a cross-site, clean-traffic leaderboard in one call, authorized with the server-side API token:

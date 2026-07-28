@@ -428,12 +428,18 @@ document.getElementById('homeSettings').addEventListener('submit', async (e) => 
 async function loadTokens() {
   const box = document.getElementById('tokList');
   const sel = document.getElementById('tokSite');
-  while (sel.options.length > 1) sel.remove(1);   // keep the scope picker in step
-  for (const s of allSites) {
-    const o = document.createElement('option');
-    o.value = s.site_id; o.textContent = s.name;
-    sel.appendChild(o);
-  }
+  // fetch the site list here rather than reusing the one loadSites() renders:
+  // that one is a local, and depending on load order would leave the scope
+  // picker empty whenever the panel opens first
+  while (sel.options.length > 1) sel.remove(1);
+  try {
+    const { sites } = await (await guard(await fetch('/api/sites'))).json();
+    for (const s of sites || []) {
+      const o = document.createElement('option');
+      o.value = s.site_id; o.textContent = s.name;
+      sel.appendChild(o);
+    }
+  } catch { /* scope picker just stays at "All my sites" */ }
   let d;
   try { d = await (await guard(await fetch('/api/tokens'))).json(); } catch { box.textContent = ''; return; }
   const live = (d.tokens || []).filter((x) => !x.revoked_at);
