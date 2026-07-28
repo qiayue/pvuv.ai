@@ -175,6 +175,20 @@
       <p class="err" id="aiMsg"></p>
       <button type="submit" data-i18n="Save AI settings">Save AI settings</button>
     </form>
+    <form class="create" id="tokenSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="API tokens">API tokens</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="token-help"> — read-only credentials for the CLI, the MCP server (so your own chatbot can query this data) and other integrations. Shown once at creation.</span></div>
+      <div><label><span data-i18n="Token name">Token name</span><input id="tokName" maxlength="60" placeholder="Claude Desktop"></label></div>
+      <div><label><span data-i18n="Scope">Scope</span>
+        <select id="tokSite"><option value="" data-i18n="All my sites">All my sites</option></select></label></div>
+      <p class="err" id="tokMsg"></p>
+      <div class="full" id="tokNew" hidden style="background:#0c1117;border:1px solid #2b3a2e;border-radius:8px;padding:12px;margin-bottom:4px">
+        <div style="font-size:12px;color:#9ece9e;margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
+        <code id="tokValue" style="font-size:12.5px;word-break:break-all;color:#e6e8eb"></code>
+      </div>
+      <div class="full" id="tokList" style="font-size:12px;color:#8b93a1"></div>
+      <button type="submit" data-i18n="Create token">Create token</button>
+    </form>
     <form class="create" id="botdirSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Crawler directory">Crawler directory</strong>
         <span style="font-size:12px;color:#8b93a1" data-i18n="botdir-help"> — optional. Import a public bots-and-agents catalogue to label crawler traffic by kind (search / AI training / SEO / ads). Classification only: it never changes scoring, verdicts or ad protection.</span></div>
@@ -206,7 +220,7 @@ function togglePanel(id) {
   if (!opened.hidden) opened.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 document.getElementById('btnAdd').addEventListener('click', () => togglePanel('addPanel'));
-document.getElementById('btnSettings').addEventListener('click', () => togglePanel('homePanel'));
+document.getElementById('btnSettings').addEventListener('click', () => { togglePanel('homePanel'); loadTokens(); });
 document.querySelectorAll('.panel .close').forEach((b) =>
   b.addEventListener('click', () => { document.getElementById(b.dataset.close).hidden = true; }));
 
@@ -409,6 +423,55 @@ document.getElementById('homeSettings').addEventListener('submit', async (e) => 
 // Crawler directory (§6.6): import a public bots-and-agents catalogue so
 // crawler traffic can be labelled by kind. Purely descriptive — the UI says so
 // explicitly, because an import that silently changed verdicts would be a trap.
+// API tokens (§10) — credentials for the CLI / MCP server / integrations.
+// The plaintext exists only in this one response; the server stores an HMAC.
+async function loadTokens() {
+  const box = document.getElementById('tokList');
+  const sel = document.getElementById('tokSite');
+  while (sel.options.length > 1) sel.remove(1);   // keep the scope picker in step
+  for (const s of allSites) {
+    const o = document.createElement('option');
+    o.value = s.site_id; o.textContent = s.name;
+    sel.appendChild(o);
+  }
+  let d;
+  try { d = await (await guard(await fetch('/api/tokens'))).json(); } catch { box.textContent = ''; return; }
+  const live = (d.tokens || []).filter((x) => !x.revoked_at);
+  if (!live.length) { box.textContent = t('No tokens yet.'); return; }
+  box.innerHTML = '<table style="width:100%;border-collapse:collapse;margin-top:4px">'
+    + live.map((x) => `<tr style="border-top:1px solid #1e2530">
+        <td style="padding:5px 0">${esc(x.name)}</td>
+        <td style="color:#c7cdd8"><code>${esc(x.prefix)}…</code></td>
+        <td>${x.site_id ? esc(x.site_id) : te('all sites')}</td>
+        <td style="color:#8b93a1">${x.last_used_at ? te('used') + ' ' + esc(new Date(x.last_used_at).toISOString().slice(0, 10)) : te('never used')}</td>
+        <td style="text-align:right"><button type="button" data-revoke="${esc(x.token_id)}"
+          style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Revoke')}</button></td>
+      </tr>`).join('') + '</table>';
+  box.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('Revoke this token? Anything using it stops working immediately.'))) return;
+    await guard(await fetch('/api/tokens?id=' + encodeURIComponent(b.dataset.revoke), { method: 'DELETE' }));
+    loadTokens();
+  }));
+}
+document.getElementById('tokenSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('tokMsg');
+  msg.style.color = ''; msg.textContent = '';
+  const r = await guard(await fetch('/api/tokens', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: document.getElementById('tokName').value.trim(),
+      site_id: document.getElementById('tokSite').value || undefined,
+    }),
+  }));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { msg.textContent = d.error ? t(d.error) : t('Could not create the token.'); return; }
+  document.getElementById('tokValue').textContent = d.token;
+  document.getElementById('tokNew').hidden = false;
+  document.getElementById('tokName').value = '';
+  loadTokens();
+});
+
 async function loadBotdir() {
   const box = document.getElementById('botdirState');
   try {

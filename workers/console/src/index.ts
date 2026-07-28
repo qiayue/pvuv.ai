@@ -21,6 +21,7 @@
 
 import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { parseBotDirectory } from '../../../shared/botdir';
+import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
@@ -252,6 +253,49 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (request.method === 'GET' && path === '/api/me') {
     return json({ user, timezone: await userTimezone(env, user) });
+  }
+
+  // Personal API tokens (§10) — the credential for MCP clients, the CLI and
+  // third-party integrations. The plaintext is returned exactly once, at
+  // creation; afterwards only the prefix is ever shown, because only an HMAC of
+  // it is stored and the original cannot be recovered.
+  if (path === '/api/tokens') {
+    if (request.method === 'GET') {
+      const rows = await env.DB.prepare(`
+        SELECT token_id, name, prefix, site_id, created_at, last_used_at, revoked_at
+        FROM api_tokens WHERE owner_id = ? ORDER BY created_at DESC LIMIT 100
+      `).bind(user).all();
+      return json({ tokens: rows.results });
+    }
+    if (request.method === 'POST') {
+      let body: Record<string, unknown> = {};
+      try { body = await request.json(); } catch { /* name/scope are optional */ }
+      const name = String(body.name ?? '').trim().slice(0, 60) || 'API token';
+      // a site-scoped token must name a site this owner actually holds, so a
+      // scope can never be widened by guessing an id
+      let siteId: string | null = null;
+      if (body.site_id) {
+        siteId = String(body.site_id);
+        const own = await env.DB.prepare('SELECT 1 AS ok FROM sites WHERE site_id = ? AND owner_id = ?')
+          .bind(siteId, user).first<{ ok: number }>();
+        if (!own) return json({ error: 'not your site' }, 403);
+      }
+      const { plaintext, row } = await createToken(env.HMAC_KEY, user, name, siteId);
+      await env.DB.prepare(`
+        INSERT INTO api_tokens (token_id, owner_id, name, token_hash, prefix, site_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(row.token_id, row.owner_id, row.name, row.token_hash, row.prefix, row.site_id, row.created_at).run();
+      return json({ token: plaintext, token_id: row.token_id, name: row.name, prefix: row.prefix, site_id: row.site_id, created_at: row.created_at });
+    }
+    if (request.method === 'DELETE') {
+      const id = url.searchParams.get('id');
+      if (!id) return json({ error: 'id required' }, 400);
+      // revoke rather than delete: the row stays as an audit trail, and the
+      // UNIQUE hash index keeps the credential permanently unusable
+      const r = await env.DB.prepare('UPDATE api_tokens SET revoked_at = ? WHERE token_id = ? AND owner_id = ? AND revoked_at IS NULL')
+        .bind(Date.now(), id, user).run();
+      return json({ ok: true, revoked: r.meta.changes ?? 0 });
+    }
   }
 
   // cross-site clean-traffic ranking (§14), scoped to this owner's sites.

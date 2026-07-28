@@ -549,6 +549,21 @@ GET /sites/:id/traffic?verdict=bot&min_score=70&period=...
 
 Breakdown supports multi-dimension combined filtering. External ranking systems and AI analysis reuse the same API. Auth: owners query only their own site; external systems/AI use a server-side token.
 
+**Programmatic access (§10).** Three surfaces share one credential — the REST
+API (`/v1/*`), an MCP server so an owner's own chatbot can query their data, and
+a CLI. All are read-only.
+
+Personal API tokens are minted in the console: per-owner, optionally narrowed to
+a single site, individually revocable, stored only as an HMAC (the plaintext is
+shown once and is unrecoverable), and prefixed `pvuv_` so secret scanners
+recognise a leaked one. The deployment-wide `API_TOKEN` secret still works for
+cross-site `/v1/ranking`, but it cannot be scoped, revoked individually or
+attributed, so it is not what a chatbot config or a laptop shell should hold.
+
+The MCP server and CLI are dependency-free single files (`mcp/`, `cli/`) sharing
+one client, so adding chatbot access introduces no supply chain around a token.
+See `docs/API.md`.
+
 ---
 
 ## 11. Console (pvuv.ai)

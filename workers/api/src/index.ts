@@ -17,6 +17,7 @@
 
 import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
+import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
 import { hmacSign } from '../../../shared/ids';
 
 export interface Env {
@@ -51,6 +52,26 @@ async function route(request: Request, env: Env): Promise<Response> {
     const period = parsePeriod(url.searchParams.get('period'), 'UTC');
     const limit = parseInt(url.searchParams.get('limit') ?? '100', 10);
     return json(await ranking(env.DB, period, limit));
+  }
+
+  // site discovery — every programmatic client (MCP, CLI, integrations) needs
+  // this before it can query anything, since site ids aren't guessable.
+  if (url.pathname === '/v1/sites') {
+    const caller = await resolveCaller(request, env);
+    const where: string[] = ["status = 'active'"];
+    const binds: unknown[] = [];
+    if (caller.ownerId) { where.push('owner_id = ?'); binds.push(caller.ownerId); }
+    if (caller.siteId) { where.push('site_id = ?'); binds.push(caller.siteId); }
+    const rows = await env.DB.prepare(
+      `SELECT site_id, name, allowed_domains, timezone, created_at FROM sites WHERE ${where.join(' AND ')} ORDER BY created_at`,
+    ).bind(...binds).all<{ site_id: string; name: string; allowed_domains: string; timezone: string; created_at: number }>();
+    return json({
+      sites: rows.results.map((r) => {
+        let domains: string[] = [];
+        try { domains = JSON.parse(r.allowed_domains); } catch { /* stored malformed → report none */ }
+        return { site_id: r.site_id, name: r.name, domains, timezone: r.timezone, created_at: r.created_at };
+      }),
+    });
   }
 
   const m = url.pathname.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/([a-z_]+)(?:\/([^/]+)\/([a-z_]+))?$/);
@@ -104,31 +125,81 @@ async function route(request: Request, env: Env): Promise<Response> {
 /** Require the server-side API token (external ranking / AI systems, §10, §14).
  *  Owner sessions are per-site and can't authorize a cross-site query. */
 async function authorizeToken(request: Request, env: Env): Promise<void> {
-  const auth = request.headers.get('authorization');
-  if (auth?.startsWith('Bearer ') && env.API_TOKEN) {
-    const token = auth.slice(7);
+  const token = bearerFrom(request);
+  if (token && env.API_TOKEN) {
     const [a, b] = await Promise.all([hmacSign(env.HMAC_KEY, token), hmacSign(env.HMAC_KEY, env.API_TOKEN)]);
     if (a === b) return;
   }
   throw new ApiError(401, 'auth required');
 }
 
+/** Look up a personal API token (§10) by its stored HMAC. Returns the owner and
+ *  the token's site restriction, or null when it is unknown or revoked.
+ *  `last_used_at` is refreshed opportunistically so an owner can spot tokens
+ *  that are no longer in use; a failed refresh never fails the request. */
+async function resolveApiToken(env: Env, plaintext: string): Promise<{ owner_id: string; site_id: string | null } | null> {
+  const hash = await hashToken(env.HMAC_KEY, plaintext);
+  const row = await env.DB
+    .prepare('SELECT token_id, owner_id, site_id, revoked_at FROM api_tokens WHERE token_hash = ?')
+    .bind(hash).first<{ token_id: string; owner_id: string; site_id: string | null; revoked_at: number | null }>();
+  if (!row || row.revoked_at) return null;
+  try {
+    await env.DB.prepare('UPDATE api_tokens SET last_used_at = ? WHERE token_id = ?').bind(Date.now(), row.token_id).run();
+  } catch { /* telemetry only */ }
+  return { owner_id: row.owner_id, site_id: row.site_id };
+}
+
 async function authorize(request: Request, env: Env, siteId: string): Promise<void> {
-  // server-side token (external ranking / AI systems, §10)
-  const auth = request.headers.get('authorization');
-  if (auth?.startsWith('Bearer ') && env.API_TOKEN) {
-    const token = auth.slice(7);
-    // constant-time-ish compare: compare HMACs of both values
-    const [a, b] = await Promise.all([hmacSign(env.HMAC_KEY, token), hmacSign(env.HMAC_KEY, env.API_TOKEN)]);
-    if (a === b) return;
+  const token = bearerFrom(request);
+  if (token) {
+    // personal API token (§10): scoped to its owner's sites, individually
+    // revocable. Checked first — it is the credential MCP/CLI clients use.
+    if (looksLikeApiToken(token)) {
+      const t = await resolveApiToken(env, token);
+      if (!t) throw new ApiError(401, 'bad token');
+      if (t.site_id && t.site_id !== siteId) throw new ApiError(403, 'token not valid for this site');
+      await requireOwner(env, siteId, t.owner_id);
+      return;
+    }
+    // legacy deployment-wide server token (external ranking / AI systems, §14)
+    if (env.API_TOKEN) {
+      const [a, b] = await Promise.all([hmacSign(env.HMAC_KEY, token), hmacSign(env.HMAC_KEY, env.API_TOKEN)]);
+      if (a === b) return;
+    }
     throw new ApiError(401, 'bad token');
   }
 
   // console owner session
   const user = await verifySession(env.HMAC_KEY, request.headers.get('cookie'));
   if (!user) throw new ApiError(401, 'auth required');
+  await requireOwner(env, siteId, user);
+}
+
+/** Identify the caller for non-site-scoped routes. `ownerId` null means the
+ *  deployment-wide server token (sees everything); `siteId` non-null means a
+ *  personal token that was restricted to a single site. */
+async function resolveCaller(request: Request, env: Env): Promise<{ ownerId: string | null; siteId: string | null }> {
+  const token = bearerFrom(request);
+  if (token) {
+    if (looksLikeApiToken(token)) {
+      const t = await resolveApiToken(env, token);
+      if (!t) throw new ApiError(401, 'bad token');
+      return { ownerId: t.owner_id, siteId: t.site_id };
+    }
+    if (env.API_TOKEN) {
+      const [a, b] = await Promise.all([hmacSign(env.HMAC_KEY, token), hmacSign(env.HMAC_KEY, env.API_TOKEN)]);
+      if (a === b) return { ownerId: null, siteId: null };
+    }
+    throw new ApiError(401, 'bad token');
+  }
+  const user = await verifySession(env.HMAC_KEY, request.headers.get('cookie'));
+  if (!user) throw new ApiError(401, 'auth required');
+  return { ownerId: user, siteId: null };
+}
+
+async function requireOwner(env: Env, siteId: string, ownerId: string): Promise<void> {
   const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
-  if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+  if (!site || site.owner_id !== ownerId) throw new ApiError(403, 'not your site');
 }
 
 /** Parse the `filters` query param: a JSON array of {dim,value}, capped and
