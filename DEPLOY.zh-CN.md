@@ -314,6 +314,46 @@ npm run deploy:console
 > （`npx wrangler secret put AI_API_KEY -c workers/console/wrangler.toml`），把
 > 界面里的 key 留空即可；两者都设时以界面值优先。
 
+## API 令牌、MCP 服务器与 CLI（可选）
+
+在控制台之外读取你的数据:REST API、让你自己的 Chatbot 回答流量问题的 **MCP
+服务器**,以及适合终端与定时任务的 **CLI**。三者均为只读。
+
+在控制台创建令牌:**⚙ 设置 → API 令牌**。用持有它的客户端来命名,并选择适用
+范围(单个站点或全部站点)。令牌**仅显示一次**——服务端只存 HMAC,无法找回。
+吊销立即生效。
+
+```bash
+export PVUV_API_URL=https://api.example.com
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+接入 Chatbot(以 Claude Desktop 为例,无需安装,服务器就是一个普通 Node 文件):
+
+```json
+{"mcpServers":{"pvuv":{"command":"node","args":["/path/to/pvuv.ai/mcp/index.mjs"],
+  "env":{"PVUV_API_URL":"https://api.example.com","PVUV_TOKEN":"pvuv_…"}}}}
+```
+
+完整接口与工具说明见 [`docs/API.md`](./docs/API.md)。
+
+## 爬虫分类（可选）
+
+默认情况下所有爬虫都只记为一个笼统的 `crawler` 判定。在 **⚙ 设置 → 爬虫目录**
+里导入公开的爬虫目录(Cloudflare Radar 的 bots-and-agents 目录,或它的 JSON
+镜像)——上传文件或直接粘贴 JSON——爬虫流量就会额外按用途标注:搜索引擎、
+AI 训练、SEO 工具、广告验证、监控等。
+
+导入器兼容这些目录常见的多种格式,并会显示解析结果(条目数、跳过数、各类别
+数量),所以文件没解析对是一眼可见的,而不会默默什么都不分类。之后「流量质量」
+下会出现「爬虫分类」面板。
+
+这是**纯分类**——类别不会影响打分、判定或广告防护。默认不导入任何内容,你的
+部署也不会因此发出任何第三方请求。
+
 ## 外部排名 / 评分 API（可选）
 
 外部排名系统可以用第 7 步设的服务端 `API_TOKEN`，一次拉取跨站点、基于清洗流量的榜单：

@@ -155,6 +155,10 @@ Thumbs.db
 config.local.*
 shared/config.gen.*
 .wrangler/
+# built SDK copied into the console's assets at deploy time (DEPLOY.md step 8).
+# Generated from sdk/src — committing it invites deploying a stale loader.
+workers/console/public/f.js
+
 # custom deployment homepage — replaces the default landing page on deploy,
 # never committed (keep your landing copy out of the public repo).
 # home.html = default (served at /); home.<lang>.html = localized (served at /<lang>)

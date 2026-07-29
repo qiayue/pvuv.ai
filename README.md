@@ -42,6 +42,12 @@ Most self-hosted analytics tools count traffic but treat every request as real. 
 **AI-powered analysis (optional)**
 - Scheduled and on-demand reports: *data anomaly → attribution → actionable recommendations*
 
+**Open by default**
+- Read-only REST API, an **MCP server** so your own chatbot can query your traffic, and a **CLI** — one revocable, scopeable token for all three ([`docs/API.md`](./docs/API.md))
+- Console in 7 languages (English, 中文, 日本語, 한국어, Deutsch, Français, Español), switchable client-side
+- One-click export of everything the dashboard shows, as JSON
+- Optional crawler categorisation (search vs AI-training vs SEO vs ad verification) from an imported public bot directory
+
 ## Architecture
 
 ```

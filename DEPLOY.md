@@ -347,6 +347,52 @@ browser. Then open any site → *AI report* → **Generate**.
 > (`npx wrangler secret put AI_API_KEY -c workers/console/wrangler.toml`) and
 > leave the key field blank; the UI value takes precedence when both are set.
 
+## API tokens, MCP server & CLI (optional)
+
+Read your data from outside the console: a REST API, an **MCP server** so your
+own chatbot can answer questions about your traffic, and a **CLI** for terminals
+and cron jobs. All read-only.
+
+Create a token in the console: **⚙ settings → API tokens**. Name it after the
+client that will hold it, and scope it to one site or all of yours. It is shown
+**once** — only an HMAC is stored, so it cannot be recovered. Revoking takes
+effect immediately.
+
+```bash
+export PVUV_API_URL=https://api.example.com
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+For a chatbot (Claude Desktop shown — no install step, the server is a plain
+Node file):
+
+```json
+{"mcpServers":{"pvuv":{"command":"node","args":["/path/to/pvuv.ai/mcp/index.mjs"],
+  "env":{"PVUV_API_URL":"https://api.example.com","PVUV_TOKEN":"pvuv_…"}}}}
+```
+
+Full endpoint and tool reference: [`docs/API.md`](./docs/API.md).
+
+## Crawler categorisation (optional)
+
+By default every crawler is recorded as one undifferentiated `crawler` verdict.
+Import a public bots-and-agents catalogue (Cloudflare Radar's directory, or a
+JSON mirror of it) in **⚙ settings → Crawler directory** — upload the file or
+paste the JSON — and crawler traffic is additionally labelled by kind: search
+engine, AI training, SEO tool, ad verification, monitoring, …
+
+The importer accepts the several shapes these catalogues ship in and reports
+what it parsed (entries, skipped rows, category histogram), so a mis-parsed file
+is obvious rather than silently classifying nothing. A *Crawlers by category*
+panel then appears under Traffic quality.
+
+This is **classification only** — a category never affects scoring, verdicts or
+ad protection. Nothing is imported by default, and no third-party request is
+ever made from your deployment.
+
 ## External ranking / scoring API (optional)
 
 An external ranking system can pull a cross-site, clean-traffic leaderboard in
