@@ -201,6 +201,23 @@
       <button type="submit" data-i18n="Import directory">Import directory</button>
       <button type="button" id="botdirClear" style="margin-left:8px;background:#241010;border-color:#5a2020" data-i18n="Remove">Remove</button>
     </form>
+    <form class="create" id="cfSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Cloudflare edge requests">Cloudflare edge requests</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="cf-help"> — optional, advanced. The tracking script only sees visitors whose browser ran JavaScript. AI crawlers and scrapers fetch your HTML and leave, so they never appear. Cloudflare saw all of them: add a read-only API token and the daily job pulls those request counts, so your dashboard can show what the script missed. Leave it empty and nothing changes.</span></div>
+      <div class="full" style="font-size:12px;color:#8b93a1;background:#0c1117;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:4px">
+        <span data-i18n="cf-steps">In the Cloudflare dashboard: <b>My Profile → API Tokens → Create Token → Create Custom Token</b>. Give it exactly these two permissions, both read-only:</span>
+        <div style="margin:6px 0 6px 0;font-family:ui-monospace,monospace;color:#c7cdd8">Zone · Zone · Read<br>Zone · Analytics · Read</div>
+        <span data-i18n="cf-steps2">Under <i>Zone Resources</i> choose the zones your sites are on (or all zones in the account), then create the token and paste it below.</span>
+        <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" style="color:#7ab3ff;text-decoration:none;display:inline-block;margin-top:6px" data-i18n="Open Cloudflare API Tokens ↗">Open Cloudflare API Tokens ↗</a>
+      </div>
+      <div class="full"><label><span data-i18n="Cloudflare API token">Cloudflare API token</span> <span id="cfKeyState" style="color:#8b93a1"></span>
+        <input id="cfToken" type="password" maxlength="200" autocomplete="off" placeholder="••••••••••••••••"></label></div>
+      <p class="err" id="cfMsg"></p>
+      <div class="full" id="cfState" style="font-size:12px;color:#8b93a1"></div>
+      <button type="submit" data-i18n="Save & check">Save &amp; check</button>
+      <button type="button" id="cfTest" style="margin-left:8px" data-i18n="Re-check">Re-check</button>
+      <button type="button" id="cfClear" style="margin-left:8px;background:#241010;border-color:#5a2020" data-i18n="Remove">Remove</button>
+    </form>
   </section>
 </main>
 <script>
@@ -552,6 +569,70 @@ document.getElementById('aiSettings').addEventListener('submit', async (e) => {
   if (r.ok) { document.getElementById('aiKey').value = ''; loadAiSettings(); }
 });
 
+// --- Cloudflare edge requests (optional) ------------------------------------
+// The token itself is never returned by the API; GET only reports whether one
+// is saved plus the last pull's outcome, so the field stays blank on reload and
+// a blank submit means "keep the saved token, just re-check it".
+function renderCfState(d) {
+  const box = document.getElementById('cfState');
+  document.getElementById('cfKeyState').textContent = d.token_set
+    ? t('(a token is saved — leave blank to keep it)') : t('(not set)');
+  if (!d.token_set) {
+    box.textContent = t('Not configured — the dashboard shows only what the tracking script recorded.');
+    return;
+  }
+  const s = d.status;
+  if (!s) { box.textContent = t('Saved. The first pull runs with tonight’s daily job.'); return; }
+  const when = esc(new Date(s.checked_at).toISOString().slice(0, 16).replace('T', ' '));
+  if (s.error) {
+    box.innerHTML = `<span style="color:#f0a0a0">${te('Last check failed')} · ${when}</span><br>`
+      + `<span style="font-family:ui-monospace,monospace">${esc(s.error)}</span>`;
+    return;
+  }
+  box.innerHTML = `${te('Last pull')} ${when} · <b>${esc(String(s.days_written ?? 0))}</b> ${te('site-days')}`
+    + ` · ${esc(String(s.sites_matched ?? 0))} ${te('sites matched')} · ${esc(String(s.zones ?? 0))} ${te('zones visible')}`;
+}
+async function loadCfSettings() {
+  try {
+    const d = await (await guard(await fetch('/api/settings/cfedge'))).json();
+    renderCfState(d);
+  } catch { /* leave the panel as-is */ }
+}
+async function saveCf(token) {
+  const msg = document.getElementById('cfMsg');
+  msg.style.color = ''; msg.textContent = t('checking…');
+  const r = await guard(await fetch('/api/settings/cfedge', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }),
+  }));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    // Cloudflare's own message, verbatim — "Authentication error" vs a missing
+    // permission are different fixes and the deployer needs to know which
+    msg.style.color = '#f0a0a0';
+    msg.textContent = d.error || t('Could not verify that token.');
+    return;
+  }
+  msg.style.color = '#6ee7a0';
+  const matched = (d.sites || []).filter((s) => s.zone);
+  msg.textContent = matched.length
+    ? t('Token works. Matched {n} site(s): ').replace('{n}', matched.length)
+      + matched.map((s) => `${s.name} → ${s.zone}`).join(', ')
+    : t('Token works, but none of your sites are on a zone it can see. Check the token’s Zone Resources.');
+  document.getElementById('cfToken').value = '';
+  loadCfSettings();
+}
+document.getElementById('cfSettings').addEventListener('submit', (e) => {
+  e.preventDefault();
+  saveCf(document.getElementById('cfToken').value.trim());
+});
+document.getElementById('cfTest').addEventListener('click', () => saveCf(''));
+document.getElementById('cfClear').addEventListener('click', async () => {
+  const msg = document.getElementById('cfMsg');
+  await guard(await fetch('/api/settings/cfedge', { method: 'DELETE' }));
+  msg.style.color = ''; msg.textContent = t('Token removed.');
+  loadCfSettings();
+});
+
 // language switcher: mount, apply static labels, and re-render dynamic content
 window.PVI18N.mountSelect(document.getElementById('lang'));
 window.PVI18N.applyStatic();
@@ -560,6 +641,7 @@ document.addEventListener('pvuv:lang', () => {
   loadSites();
   loadRanking();
   loadAiSettings(); // refreshes the key-state hint text
+  loadCfSettings();
 });
 
 loadSites();
@@ -567,6 +649,7 @@ loadRanking();
 loadHomeSettings();
 loadUserTz();
 loadAiSettings();
+loadCfSettings();
 </script>
 </body>
 </html>

@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { parseBotDirectory } from '../../../shared/botdir';
 import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
@@ -30,6 +30,8 @@ import {
   clearStateCookie, OAuthError,
 } from './oauth';
 import { isValidTimezone } from '../../../shared/tz';
+import { zoneForDomains } from '../../../shared/cfedge';
+import { readCfToken, verifyCfToken, CF_TOKEN_KEY, CF_STATUS_KEY } from '../../cron/src/edge';
 import { CONFIG } from '../../../shared/config.gen';
 import { LlmError } from './llm';
 import { generateReport, type ReportLang } from './report';
@@ -446,6 +448,70 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
+  // Cloudflare edge requests (§6.7) — OPTIONAL, advanced. A read-only
+  // Cloudflare API token lets the daily cron pull how many requests Cloudflare
+  // actually served, which the JS beacon cannot see: anything that fetches HTML
+  // without running JavaScript (AI crawlers, scrapers, feed readers) never
+  // reaches /in at all. Leave it empty and everything else works unchanged.
+  //
+  // The token is stored in the deployer's own D1 and is NEVER returned to the
+  // browser — GET reports only whether one is set, plus the last pull's outcome.
+  if (path === '/api/settings/cfedge') {
+    if (request.method === 'GET') {
+      const [token, statusRow] = await Promise.all([
+        readCfToken(env.DB),
+        env.DB.prepare('SELECT value FROM instance_settings WHERE key = ?')
+          .bind(CF_STATUS_KEY).first<{ value: string }>().catch(() => null),
+      ]);
+      let status: unknown = null;
+      if (statusRow?.value) { try { status = JSON.parse(statusRow.value); } catch { /* keep null */ } }
+      return json({ token_set: !!token, status });
+    }
+    if (request.method === 'DELETE') {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind(CF_TOKEN_KEY),
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind(CF_STATUS_KEY),
+      ]);
+      return json({ ok: true, token_set: false });
+    }
+    if (request.method === 'POST') {
+      let body: Record<string, unknown>;
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const token = String(body.token ?? '').trim();
+      // a blank field means "re-check the saved token", so there must be one
+      const effective = token || (await readCfToken(env.DB));
+      if (!effective) return json({ error: 'paste a Cloudflare API token first' }, 400);
+      // Verify BEFORE storing. A token that can't list zones will never produce
+      // data, and finding that out days later via an empty panel is a bad trade
+      // for one round trip now.
+      let zones;
+      try {
+        ({ zones } = await verifyCfToken(effective));
+      } catch (err) {
+        return json({ error: err instanceof Error ? err.message : 'token check failed' }, 400);
+      }
+      if (token) {
+        await env.DB.prepare(`
+          INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        `).bind(CF_TOKEN_KEY, token.slice(0, 200), Date.now()).run();
+      }
+      // which of this owner's sites the token can actually cover — the answer
+      // the deployer needs, since a token scoped to the wrong zones looks
+      // identical to a working one until the first pull comes back empty
+      const rows = await env.DB.prepare(
+        "SELECT site_id, name, allowed_domains FROM sites WHERE owner_id = ? AND status = 'active'",
+      ).bind(user).all<{ site_id: string; name: string; allowed_domains: string }>();
+      const matches = rows.results.map((r) => {
+        let domains: string[] = [];
+        try { domains = JSON.parse(r.allowed_domains); } catch { /* malformed → no match */ }
+        const z = zoneForDomains(zones, Array.isArray(domains) ? domains : []);
+        return { site_id: r.site_id, name: r.name, zone: z?.name ?? null };
+      });
+      return json({ ok: true, token_set: true, zones: zones.length, sites: matches });
+    }
+  }
+
   // --- self-check (health.html) ------------------------------------------
   if (request.method === 'GET' && path === '/api/diagnostics') {
     return json({ checks: await runDiagnostics(env) });
@@ -589,6 +655,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
     if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
+    if (resource === 'edge') return json(await edge(env.DB, siteId, period));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
     if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
     if (resource === 'funnel') return json(await funnel(env.DB, siteId, period, parseFunnelSteps(q.get('steps')), filters));

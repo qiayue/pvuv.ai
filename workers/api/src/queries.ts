@@ -1415,6 +1415,98 @@ export async function ranking(db: D1Database, period: Period, limit = 100, owner
 }
 
 // ---------------------------------------------------------------------------
+// Cloudflare edge requests (§6.7) — optional, populated only when the deployer
+// has configured a read-only Cloudflare API token.
+// ---------------------------------------------------------------------------
+
+export interface EdgeDay {
+  day: string;
+  requests: number;       // all edge requests (assets included)
+  html_requests: number;  // HTML responses — the population a pageview belongs to
+  pv: number;             // browser pageviews the beacon recorded that day
+  gap: number;            // html_requests − pv, floored at 0
+}
+
+/**
+ * Edge requests vs browser pageviews for a period.
+ *
+ * The gap is the headline: HTML that Cloudflare served but that never reported
+ * a pageview, i.e. fetched without running JavaScript. Both sides are keyed on
+ * the SITE'S local day, so they are directly comparable.
+ *
+ * Only completed days exist here — the pull runs daily and deliberately skips
+ * today, whose edge counts are still accumulating. `days` is therefore shorter
+ * than the requested period, which is honest rather than padded with zeroes
+ * that would read as "no crawlers today".
+ */
+export async function edge(db: D1Database, siteId: string, period: Period) {
+  const empty = {
+    period: { start: period.start, end: period.end },
+    available: false, zone: null,
+    totals: { requests: 0, html_requests: 0, pv: 0, gap: 0, gap_share: 0 },
+    days: [] as EdgeDay[], agents: [] as Array<{ user_agent: string; requests: number }>,
+  };
+  // migration 0015 not applied yet (an existing deployment upgrading in place)
+  // — an optional panel must not be able to break the dashboard around it
+  try {
+    await db.prepare('SELECT 1 FROM rollup_edge_daily LIMIT 1').first();
+  } catch {
+    return empty;
+  }
+
+  const [edgeRows, pvRows, agentRows] = await Promise.all([
+    db.prepare(`
+      SELECT day, COALESCE(requests, 0) AS requests, COALESCE(html_requests, 0) AS html_requests, zone_tag
+      FROM rollup_edge_daily WHERE site_id = ? AND day BETWEEN ? AND ? ORDER BY day
+    `).bind(siteId, period.start, period.end).all<{ day: string; requests: number; html_requests: number; zone_tag: string | null }>(),
+    db.prepare(`
+      SELECT day, COALESCE(pv, 0) AS pv FROM rollup_site_daily
+      WHERE site_id = ? AND day BETWEEN ? AND ?
+    `).bind(siteId, period.start, period.end).all<{ day: string; pv: number }>(),
+    db.prepare(`
+      SELECT user_agent, COALESCE(SUM(requests), 0) AS requests
+      FROM rollup_edge_agent_daily WHERE site_id = ? AND day BETWEEN ? AND ?
+      GROUP BY user_agent ORDER BY requests DESC LIMIT 40
+    `).bind(siteId, period.start, period.end).all<{ user_agent: string; requests: number }>(),
+  ]);
+
+  const pvByDay = new Map(pvRows.results.map((r) => [r.day, r.pv]));
+  const days: EdgeDay[] = edgeRows.results.map((r) => {
+    const pv = pvByDay.get(r.day) ?? 0;
+    return {
+      day: r.day,
+      requests: r.requests,
+      html_requests: r.html_requests,
+      pv,
+      // floored: a day where the beacon reported MORE pageviews than the edge
+      // served HTML is a measurement artifact (SPA route changes fire a
+      // pageview with no new HTML request), not negative crawler traffic
+      gap: Math.max(0, r.html_requests - pv),
+    };
+  });
+
+  const sum = (k: keyof EdgeDay): number => days.reduce((n, d) => n + (d[k] as number), 0);
+  const html = sum('html_requests');
+  const pv = sum('pv');
+  return {
+    period: { start: period.start, end: period.end },
+    // no configured token, or no completed day pulled yet
+    available: days.length > 0,
+    zone: edgeRows.results[edgeRows.results.length - 1]?.zone_tag ?? null,
+    totals: {
+      requests: sum('requests'),
+      html_requests: html,
+      pv,
+      gap: Math.max(0, html - pv),
+      // share of served HTML that never ran JavaScript
+      gap_share: html ? Math.round(Math.max(0, html - pv) / html * 1000) / 1000 : 0,
+    },
+    days,
+    agents: agentRows.results,
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {

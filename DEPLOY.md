@@ -296,7 +296,7 @@ beyond deploying it:
 | Schedule | Job |
 |---|---|
 | `5 * * * *` (hourly) | Recompute the recent daily rollups from raw events + sessions, so cards/charts stay fresh and the just-closed day settles. |
-| `30 3 * * *` (daily) | Population/batch analysis (fingerprint & IP-segment clusters, cookie-reset farms → KV blocklist + batch re-verdict), baseline **and distribution-shape** anomaly detection → `anomaly_reports`, then retention purge of raw events/sessions older than `[retention].raw_events_days`. |
+| `30 3 * * *` (daily) | Population/batch analysis (fingerprint & IP-segment clusters, cookie-reset farms → KV blocklist + batch re-verdict), baseline **and distribution-shape** anomaly detection → `anomaly_reports`, then retention purge of raw events/sessions older than `[retention].raw_events_days`, and finally — only if you configured one — the Cloudflare edge-request pull (see below). |
 
 All thresholds are read from your config (`[population]`, `[anomaly]`,
 `[distribution]`, `[retention]` in `config.example.toml` / `config.local.toml`),
@@ -457,6 +457,59 @@ panel then appears under Traffic quality.
 This is **classification only** — a category never affects scoring, verdicts or
 ad protection. Nothing is imported by default, and no third-party request is
 ever made from your deployment.
+
+## Cloudflare edge requests (optional, advanced)
+
+Everything else in this product is measured by the tracking script, which means
+it can only ever count visitors whose browser **ran JavaScript**. An AI crawler,
+a scraper or a feed reader fetches your HTML and leaves — it never executes a
+script, so it never reaches `/in`. No amount of detection can recover a request
+that was never reported.
+
+Cloudflare, sitting in front of your origin, saw every one of them. Give the
+console a **read-only** Cloudflare API token and the nightly job pulls those
+request counts, so a *What the script never saw* panel can show the difference:
+
+```
+Edge HTML requests   12,480    ← what Cloudflare served
+Browser pageviews     2,773    ← what the script reported
+Gap                   9,707    ← fetched HTML, never ran JS
+```
+
+with the top user agents behind it (GPTBot, ClaudeBot, CCBot, …).
+
+**Creating the token.** In the Cloudflare dashboard: *My Profile → API Tokens →
+Create Token → Create Custom Token*. Give it exactly these two permissions, both
+read-only:
+
+| Type | Resource | Level |
+|---|---|---|
+| Zone | Zone | Read |
+| Zone | Analytics | Read |
+
+Under *Zone Resources* pick the zones your sites are on (or all zones in the
+account). Then paste the token into **⚙ settings → Cloudflare edge requests** and
+press *Save & check* — it is verified immediately and tells you which of your
+sites it matched to which zone, so a wrongly-scoped token is caught now rather
+than by an empty panel a week later.
+
+Notes:
+
+- **Entirely optional.** Leave it empty and nothing changes: the feature is a
+  no-op, the panel stays hidden, and no request is ever made to Cloudflare.
+- The token is stored in your own D1 and is never returned to the browser.
+- Read-only: nothing here writes to your Cloudflare account.
+- **Descriptive only.** Edge counts never feed scoring, verdicts or ad
+  protection — requests and visitors are different populations, and mixing them
+  would corrupt every rate the product computes.
+- Data uses `httpRequestsAdaptiveGroups`, which is available on **all**
+  Cloudflare plans (Logpush/Logpull are Enterprise-only). Days are your site's
+  local days, so edge counts and pageviews line up without any correction.
+- Only completed days are pulled — today is still accumulating. The first run
+  reaches back 14 days; after that the last 3 days are refreshed each night so
+  late-arriving figures correct themselves.
+- If a pull fails, Cloudflare's own error text is shown verbatim in the settings
+  panel. "Authentication error" and a missing permission need different fixes.
 
 ## External ranking / scoring API (optional)
 

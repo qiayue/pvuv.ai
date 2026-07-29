@@ -112,6 +112,11 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { ...siteArg, ...periodArg }, required: ['site_id'] },
   },
   {
+    name: 'get_edge_requests',
+    description: 'Requests Cloudflare served for the site next to the pageviews the tracking script reported, plus the top user agents. The gap is HTML that was fetched without ever running JavaScript — AI crawlers, scrapers, feed readers — which no other tool here can see. Returns available:false when the deployer has not configured a Cloudflare API token.',
+    inputSchema: { type: 'object', properties: { ...siteArg, ...periodArg }, required: ['site_id'] },
+  },
+  {
     name: 'get_suspicious_visitors',
     description: 'Individual high-scoring visitors with their bot score, verdict and the evidence flags that fired. Use for drill-down after get_traffic_quality.',
     inputSchema: {
@@ -154,6 +159,8 @@ export async function callTool(name, a) {
       return fmt(await api(`/v1/sites/${sid(a)}/alerts`, { period: P(a) }));
     case 'get_ad_protection':
       return fmt(await api(`/v1/sites/${sid(a)}/adguard`, { period: P(a) }));
+    case 'get_edge_requests':
+      return fmt(await api(`/v1/sites/${sid(a)}/edge`, { period: P(a) }));
     case 'get_suspicious_visitors':
       return fmt(await api(`/v1/sites/${sid(a)}/traffic`, {
         period: P(a), min_score: a.min_score ?? 30, limit: a.limit,

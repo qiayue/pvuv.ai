@@ -186,6 +186,28 @@ CREATE TABLE rollup_site_daily (
   PRIMARY KEY (site_id, day)
 );
 
+-- Cloudflare edge request counts (optional; added by 0015_edge_requests.sql).
+-- Populated by the daily cron ONLY when the deployer has supplied a read-only
+-- Cloudflare API token. The gap between html_requests and pageviews is traffic
+-- that fetched HTML but never ran JavaScript — AI crawlers, scrapers, feeds.
+CREATE TABLE rollup_edge_daily (
+  site_id       TEXT NOT NULL,
+  day           TEXT NOT NULL,          -- YYYY-MM-DD in the site's timezone
+  requests      INTEGER DEFAULT 0,      -- all eyeball requests (assets included)
+  html_requests INTEGER DEFAULT 0,      -- HTML responses only — comparable to pageviews
+  zone_tag      TEXT,
+  updated_at    INTEGER,
+  PRIMARY KEY (site_id, day)
+);
+CREATE TABLE rollup_edge_agent_daily (
+  site_id    TEXT NOT NULL,
+  day        TEXT NOT NULL,
+  user_agent TEXT NOT NULL,
+  requests   INTEGER DEFAULT 0,
+  PRIMARY KEY (site_id, day, user_agent)
+);
+CREATE INDEX idx_edge_agent_site_day ON rollup_edge_agent_daily(site_id, day, requests);
+
 -- clusters / anomalies / AI (M2+, created in M1 as placeholders)
 CREATE TABLE cluster_flags (
   cluster_id TEXT PRIMARY KEY, site_id TEXT,

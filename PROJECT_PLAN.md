@@ -274,6 +274,43 @@ Deliberate constraints:
   actually understood (count, skipped, category histogram) so a mis-parsed file
   is obvious instead of silently classifying nothing.
 
+### 6.7 Cloudflare edge requests (optional, observation only)
+
+Every other measurement in this product comes from the JS beacon, which imposes
+a hard limit: it can only report visitors whose browser **executed JavaScript**.
+An AI crawler, a scraper or a feed reader fetches the HTML and leaves — it never
+runs a script, so it never reaches `/in`. This is not a detection weakness that
+better scoring could close; the request was never reported at all.
+
+Cloudflare sat in front of the origin and counted all of them. If the deployer
+supplies a **read-only** Cloudflare API token (console `/api/settings/cfedge`,
+stored in `instance_settings`, never returned to the browser), the daily cron
+queries `httpRequestsAdaptiveGroups` — available on **all** Cloudflare plans,
+unlike Logpush/Logpull — and stores per-day counts in `rollup_edge_daily` plus a
+top-N user-agent breakdown in `rollup_edge_agent_daily`. The dashboard then shows
+the gap: edge HTML requests − reported pageviews.
+
+Deliberate constraints:
+
+* **Observation only.** Edge counts never feed scoring, verdicts or the ad-guard
+  decision. Requests and visitors are different populations; mixing them would
+  corrupt every rate the product computes.
+* **Optional and inert.** With no token configured the pull is a single D1 read
+  that returns immediately, the API answers `available:false`, and the panel
+  hides itself. No Cloudflare request is ever made.
+* **Read-only, and last in the daily chain.** It is the only job that depends on
+  a third-party API, so it runs after rollups, retention and anomaly detection
+  and is wrapped so it can never hold up or break them.
+* **Site-local days.** Windows are the site's own local day (`datetime_geq` /
+  `datetime_lt`), matching `rollup_site_daily`'s key, so the two sides subtract
+  without a timezone correction. Only completed days are pulled; the first run
+  reaches back 14 days and each later run refreshes the last 3, so late-arriving
+  figures self-correct.
+* **Errors surface verbatim.** Cloudflare's GraphQL schema is unversioned and
+  field availability varies by plan, so the upstream message is stored in
+  `instance_settings.cf_edge_status` and shown in the console — a missing
+  permission and a bad token need different fixes.
+
 ### 6.3 Session layer (hourly Cron)
 
 Stitch events into sessions; compute session-level features (inter-page interval, path pattern, zero-interaction/no-leave); correct the verdict (`score_stage='session'`).
@@ -371,6 +408,7 @@ All lookups are edge-local: `cf.asn` for datacenter, request-header completeness
 
 - **Raw layer:** `events_YYYYMM` monthly-partitioned; `sessions`; `identities`; `visitor_profiles`.
 - **Aggregate layer:** `rollup_page_daily`, `rollup_source_daily`, `rollup_site_daily`. Dashboards hit aggregate tables 95% of the time.
+- **External layer (optional):** `rollup_edge_daily`, `rollup_edge_agent_daily` — Cloudflare edge request counts (§6.7). Populated only when a Cloudflare API token is configured; empty otherwise, and never joined into any of the layers above.
 
 ### 9.2 D1 schema (M1 DDL)
 

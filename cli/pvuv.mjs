@@ -42,6 +42,7 @@ const USAGE = `pvuv — read-only client for a self-hosted pvuv.ai deployment
   pvuv quality    <site_id>  [--period 7d]
   pvuv alerts     <site_id>  [--period 7d]
   pvuv adguard    <site_id>  [--period 7d]
+  pvuv edge       <site_id>  [--period 7d]
   pvuv traffic    <site_id>  [--period 7d] [--min-score 30] [--limit 50]
 
   --json    print the raw API response instead of a table
@@ -129,6 +130,12 @@ async function main() {
         }));
         return `mode: ${d.current_mode}   pageviews: ${format(d.pv)}\n\n${table(tiers)}`
           + `\n\nblock reasons\n${table((d.reasons || []).map((r) => ({ signal: r.flag, events: r.n })))}`;
+      });
+    case 'edge':
+      return out(await api(`/v1/sites/${needSite()}/edge`, { period }), (d) => {
+        if (!d.available) return 'no edge data — a Cloudflare API token has not been configured for this deployment';
+        return `${pairs(d.totals || {})}\n\ntop user agents\n`
+          + table((d.agents || []).slice(0, 15).map((a) => ({ user_agent: a.user_agent, requests: a.requests })));
       });
     case 'traffic':
       return out(await api(`/v1/sites/${needSite()}/traffic`, {

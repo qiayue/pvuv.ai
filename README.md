@@ -177,6 +177,23 @@ Once it is running, useful next steps: create an **API token** to query your dat
 from a chatbot or the CLI ([`docs/API.md`](./docs/API.md)), and tune the signal
 weights in `config.local.toml` if your traffic has quirks the defaults misjudge.
 
+**Optional, once you're comfortable — see what the script never saw.** Every
+number above comes from the tracking script, so all of it is limited to visitors
+whose browser ran JavaScript. AI crawlers and scrapers fetch your HTML and leave;
+they never run a script, so they are absent by construction. Cloudflare counted
+them anyway. Paste a **read-only Cloudflare API token** into ⚙ settings and the
+nightly job pulls those request counts, so the dashboard can show the gap:
+
+```
+Edge HTML requests   12,480    ← what Cloudflare served
+Browser pageviews     2,773    ← what the script reported
+Gap                   9,707    ← fetched HTML, never ran JS
+```
+
+Skip it and everything works exactly as it does today — the panel simply stays
+hidden. Setup is two read-only permissions and one paste:
+[DEPLOY.md → Cloudflare edge requests](./DEPLOY.md#cloudflare-edge-requests-optional-advanced).
+
 ## Configuration
 
 Scoring weights, verdict thresholds, and the blocklist are **tunable and deployment-private**. `config.example.toml` ships example defaults; copy it to `config.local.toml` (gitignored) and tune privately. The engine reads weights from config — nothing is hardcoded — so you can adjust detection without exposing it to fraudsters. See [`PROJECT_PLAN.md` §21](./PROJECT_PLAN.md).

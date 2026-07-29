@@ -215,6 +215,34 @@ Body: JSON（单条或数组；SDK 攒批，≤10 条或每 3 秒发一次）
 
 **示例分档**：0–29 clean｜30–69 suspect｜70+ bot。verified crawler 单独归类。`score_stage` 记录本条分是哪一审给的，支持展示「初审→批量改判」的变化。
 
+### 6.7 Cloudflare 边缘请求（可选，仅观察）
+
+本产品其他所有测量都来自 JS 信标，这带来一个硬性上限：只能上报**浏览器执行了
+JavaScript** 的访客。AI 爬虫、采集器、RSS 阅读器抓走 HTML 就走，从不执行脚本，
+因此永远不会到达 `/in`。这不是「识别得不够准」，而是那次请求根本没被上报过。
+
+但挡在源站前面的 Cloudflare 全都数到了。如果部署者提供一个**只读**的 Cloudflare
+API 令牌（控制台 `/api/settings/cfedge`，存在 `instance_settings`，永不返回给
+浏览器），每天的 cron 会查询 `httpRequestsAdaptiveGroups`——**所有套餐**都可用，
+不像 Logpush/Logpull 是企业版专属——把按天的请求数存入 `rollup_edge_daily`，并把
+Top-N 的 User-Agent 存入 `rollup_edge_agent_daily`。面板据此展示差额：边缘 HTML
+请求数 − 上报的 PV。
+
+刻意保留的约束：
+
+* **仅观察。** 边缘请求数不参与评分、不参与判定、不参与广告防护。请求和访客是两个
+  不同的总体，混在一起会污染产品计算的每一个比率。
+* **可选且完全惰性。** 没配置令牌时，拉取任务只做一次 D1 读取就立刻返回，API 返回
+  `available:false`，面板自动隐藏，绝不会向 Cloudflare 发出任何请求。
+* **只读，且排在每日链条的最后。** 它是唯一依赖第三方 API 的任务，因此放在 rollup、
+  retention、异常检测之后，并单独包了错误捕获，绝不会拖住或弄坏它们。
+* **按站点本地日。** 时间窗用站点自己的本地日（`datetime_geq` / `datetime_lt`），
+  与 `rollup_site_daily` 的主键一致，两边可以直接相减、不需要时区换算。只拉完整的
+  日期；首次运行回溯 14 天，之后每次刷新最近 3 天，让延迟到达的数据自我修正。
+* **报错原样透出。** Cloudflare 的 GraphQL schema 没有版本化，字段可用性还随套餐
+  变化，因此上游报错原文会存进 `instance_settings.cf_edge_status` 并显示在控制台
+  ——权限没给全和令牌不对是两种完全不同的修法。
+
 ### 6.3 会话层（每小时 Cron）
 
 把事件缝合成会话，算会话级特征（页间间隔、路径模式、零交互/无 leave），修正 verdict（`score_stage='session'`）。
@@ -308,6 +336,7 @@ Body: { s, vid, sid, x{...}, state(来自签名Cookie) }
 
 - **原始层**：`events_YYYYMM` 按月分表；`sessions`；`identities`；`visitor_profiles`。
 - **聚合层**：`rollup_page_daily`、`rollup_source_daily`、`rollup_site_daily`。面板 95% 查聚合表。
+- **外部层（可选）**：`rollup_edge_daily`、`rollup_edge_agent_daily`——Cloudflare 边缘请求数（§6.7）。只有配置了 Cloudflare API 令牌才会写入，否则为空，且永远不与上面任何一层做 join。
 
 ### 9.2 D1 Schema（M1 建表 DDL）
 

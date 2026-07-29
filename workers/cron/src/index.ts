@@ -10,6 +10,7 @@ import { runHourlyRollup } from './rollup';
 import { runDailyBatch } from './batch';
 import { runRetentionPurge } from './retention';
 import { runAnomalyDetection } from './anomaly';
+import { runEdgePull } from './edge';
 
 export interface Env {
   DB: D1Database;
@@ -26,6 +27,10 @@ export default {
         await runDailyBatch(env);
         await runAnomalyDetection(env); // baseline trend anomalies → anomaly_reports
         await runRetentionPurge(env);   // drop raw data past the retention window
+        // optional, opt-in: pull edge request counts from Cloudflare. Last, and
+        // guarded, because it is the only job that depends on a third-party API
+        // — it must never be able to hold up or break the ones above.
+        try { await runEdgePull(env); } catch (err) { console.error('edge pull failed', err); }
         break;
     }
   },

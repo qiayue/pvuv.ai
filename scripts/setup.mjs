@@ -283,6 +283,14 @@ async function main() {
   info(`  npm run deploy:console`);
   say(`\nFull walkthrough: DEPLOY.md → "Google / GitHub login".`);
   say(`Then sign in at ${c.b(`https://${consoleHost}/login.html`)} as ${admins.split(',')[0].trim()}.\n`);
+  // Optional extras worth knowing about, but deliberately NOT prompted for
+  // here: each needs a credential from another service, and blocking a fresh
+  // install on them would trade the one-command promise for nothing.
+  say(`${c.dim('Optional later, from ⚙ settings in the console:')}`);
+  info(`Cloudflare edge requests — a read-only Cloudflare API token lets the`);
+  info(`nightly job count what the tracking script cannot see (AI crawlers and`);
+  info(`scrapers fetch HTML without ever running JS). DEPLOY.md → "Cloudflare`);
+  info(`edge requests". Skip it and everything works exactly the same.\n`);
 }
 
 function findD1Id(name) {

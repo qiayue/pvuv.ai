@@ -172,6 +172,22 @@ npm run setup -- --domain example.com --admin you@example.com
 ([`docs/API.md`](./docs/API.md));如果你的流量有默认值判不准的特点,在
 `config.local.toml` 里调整信号权重。
 
+**熟悉之后的可选项——看见统计脚本看不见的那部分。** 上面所有数字都来自埋点
+脚本,也就是说只统计了**浏览器真正执行了 JavaScript** 的访客。AI 爬虫和采集器
+抓走 HTML 就走,从不执行脚本,所以它们天然就不在里面——这不是识别得准不准的
+问题,而是那次请求压根没上报过。但 Cloudflare 全都数到了。在 ⚙ 设置里填一个
+**只读的 Cloudflare API 令牌**,每天的定时任务就会把这些请求数拉回来,面板上
+直接给出差额:
+
+```
+边缘 HTML 请求   12,480    ← Cloudflare 实际服务的
+浏览器 PV         2,773    ← 脚本上报的
+差额              9,707    ← 抓了 HTML,但从没执行 JS
+```
+
+不填也完全没问题,一切照旧,面板隐藏而已。配置只需要勾两个只读权限、粘贴一次:
+[DEPLOY.zh-CN.md → Cloudflare 边缘请求](./DEPLOY.zh-CN.md#cloudflare-边缘请求可选进阶)。
+
 ## 配置
 
 评分权重、判定阈值、黑名单都是**可调且部署私有**的。`config.example.toml` 提供示例默认值；复制为 `config.local.toml`（已 gitignore）自行私有调优。引擎从 config 读取权重、代码不硬编码，因此可以在不暴露给刷手的前提下调整检测。详见 [`PROJECT_PLAN.zh-CN.md` §21](./PROJECT_PLAN.zh-CN.md)。

@@ -269,6 +269,7 @@
     <div class="panel" id="flags"></div>
   </div>
   <div id="crawlerSec" hidden><div class="sec-head"><h2 data-i18n="Crawlers by category">Crawlers by category</h2></div><div class="panel" id="crawlers"></div></div>
+  <div id="edgeSec" hidden><div class="sec-head"><h2 data-i18n="What the script never saw">What the script never saw</h2></div><div class="panel" id="edge"></div></div>
 
   <h2 data-i18n="Ad protection">Ad protection</h2>
   <div class="panel" id="adguard"></div>
@@ -812,6 +813,47 @@ async function loadCrawlers() {
         + `<td class="num">${pctf((r.pv || 0) / total)}</td></tr>`).join('')
     + '</table>';
 }
+// Cloudflare edge requests (§6.7) — only rendered when the deployer configured
+// a Cloudflare API token AND at least one completed day has been pulled.
+//
+// This panel exists because the beacon has a blind spot it cannot report on:
+// anything that fetches HTML without running JavaScript is absent from every
+// other number on this page. Cloudflare counted those requests, so the gap
+// between the two is measurable — and it is where AI crawlers live.
+async function loadEdge() {
+  const sec = document.getElementById('edgeSec');
+  const el = document.getElementById('edge');
+  let d;
+  try { d = await get('edge'); } catch { sec.hidden = true; return; }
+  if (!d || !d.available) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const tt = d.totals || {};
+  // today is deliberately absent (its edge counts are still accumulating), so
+  // say which range these numbers actually cover rather than implying the
+  // selected period
+  const covered = d.days && d.days.length
+    ? `${esc(d.days[0].day)} → ${esc(d.days[d.days.length - 1].day)}` : '';
+  const agents = (d.agents || []).slice(0, 15);
+  el.innerHTML =
+    `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Requests Cloudflare served for this site, next to the pageviews the tracking script reported. The difference is HTML that was fetched without ever running JavaScript — AI crawlers, scrapers and feed readers. Descriptive only: none of this affects scoring, verdicts or ad protection.')}`
+      + (covered ? ` <span style="opacity:.7">(${covered})</span>` : '') + '</p>'
+    + '<div class="grid2" style="margin-bottom:12px">'
+      + `<div><table><tr><th>${te('Measure')}</th><th class="num">${te('Requests')}</th></tr>`
+        + `<tr><td>${te('Edge HTML requests')}</td><td class="num">${fmt(tt.html_requests)}</td></tr>`
+        + `<tr><td>${te('Browser pageviews')}</td><td class="num">${fmt(tt.pv)}</td></tr>`
+        + `<tr><td><b>${te('Gap — fetched, never ran JS')}</b></td>`
+          + `<td class="num"><b>${fmt(tt.gap)}</b> <span class="muted">${pctf(tt.gap_share)}</span></td></tr>`
+        + `<tr><td class="muted">${te('All edge requests (assets included)')}</td><td class="num muted">${fmt(tt.requests)}</td></tr>`
+        + '</table></div>'
+      + '<div>' + (agents.length
+        ? `<table><tr><th>${te('User agent')}</th><th class="num">${te('Requests')}</th></tr>`
+          + agents.map((a) => `<tr><td title="${esc(a.user_agent)}" style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.user_agent)}</td>`
+            + `<td class="num">${fmt(a.requests)}</td></tr>`).join('')
+          + '</table>'
+        : `<p class="muted">${te('no data yet')}</p>`) + '</div>'
+    + '</div>';
+}
+
 // friendly names for the categories the public directories use; unknown keys
 // fall through to the raw value so a new category is never hidden
 const CRAWLER_CAT = {
@@ -1127,7 +1169,7 @@ async function load() {
   // only for layout order; funnel is a no-op if <2 valid steps).
   const utm = (async () => { await loadUtm(); runFunnel(); })();
 
-  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadAdguard(), loadCrawlers()]);
+  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadAdguard(), loadCrawlers(), loadEdge()]);
 }
 
 // live "online now" — polls independently of the selected period (always the

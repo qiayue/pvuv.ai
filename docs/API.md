@@ -56,6 +56,7 @@ awkward (some no-code and spreadsheet tools).
 | `GET /v1/sites/{id}/quality` | verdict totals + which detection signals fired |
 | `GET /v1/sites/{id}/alerts` | rule checks, their ratios and thresholds |
 | `GET /v1/sites/{id}/adguard` | per-tier block/false-positive estimates, block reasons |
+| `GET /v1/sites/{id}/edge` | Cloudflare edge requests vs reported pageviews — the traffic that never ran JS |
 | `GET /v1/sites/{id}/traffic` | individual suspicious visitors with their evidence |
 | `GET /v1/sites/{id}/anomalies` | baseline anomaly reports |
 | `GET /v1/sites/{id}/funnel` | conversion funnel for `steps` |
@@ -74,6 +75,13 @@ awkward (some no-code and spreadsheet tools).
 
 Errors are `{"error":"…"}` with a matching status: `401` bad/missing token,
 `403` token not valid for that site, `404` unknown route or site.
+
+`edge` depends on an optional Cloudflare API token the deployer configures in
+the console; without it the endpoint answers `{"available": false}` with zeroed
+totals rather than an error. It also covers **completed days only** — today's
+edge counts are still accumulating and are deliberately excluded, so `days` can
+be shorter than the requested `period`. See
+[DEPLOY.md → Cloudflare edge requests](../DEPLOY.md#cloudflare-edge-requests-optional-advanced).
 
 ---
 
@@ -104,7 +112,7 @@ Add to your client's MCP config (Claude Desktop shown):
 
 Tools: `list_sites`, `get_overview`, `get_realtime`, `get_timeseries`,
 `get_breakdown`, `get_traffic_quality`, `get_alerts`, `get_ad_protection`,
-`get_suspicious_visitors`.
+`get_edge_requests`, `get_suspicious_visitors`.
 
 The server only issues GETs, so a chatbot can never change your configuration,
 delete data, or alter ad protection — the worst it can do is read.

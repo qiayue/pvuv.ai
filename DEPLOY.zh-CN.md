@@ -271,7 +271,7 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 | 计划 | 任务 |
 |---|---|
 | `5 * * * *`（每小时） | 从原始事件 + 会话重算最近几天的日 rollup，让卡片/图表保持新鲜、刚结束的一天定稿。 |
-| `30 3 * * *`（每天） | 群体/批量分析（指纹簇、IP 段簇、cookie 重置农场 → KV 黑名单 + 批量重判）、基线**与分布形态**异常检测 → `anomaly_reports`，然后清理早于 `[retention].raw_events_days` 的原始事件/会话。 |
+| `30 3 * * *`（每天） | 群体/批量分析（指纹簇、IP 段簇、cookie 重置农场 → KV 黑名单 + 批量重判）、基线**与分布形态**异常检测 → `anomaly_reports`，然后清理早于 `[retention].raw_events_days` 的原始事件/会话，最后——仅当你配置了令牌时——拉取 Cloudflare 边缘请求数（见下文）。 |
 
 所有阈值都从你的 config 读取（`config.example.toml` / `config.local.toml` 里的
 `[population]`、`[anomaly]`、`[distribution]`、`[retention]`），不硬编码——调完
@@ -411,6 +411,53 @@ AI 训练、SEO 工具、广告验证、监控等。
 
 这是**纯分类**——类别不会影响打分、判定或广告防护。默认不导入任何内容,你的
 部署也不会因此发出任何第三方请求。
+
+## Cloudflare 边缘请求（可选，进阶）
+
+这个产品其他所有数据都由埋点脚本测量，也就意味着只能统计到**浏览器执行了
+JavaScript** 的访客。AI 爬虫、采集器、RSS 阅读器抓走 HTML 就走，从不执行脚本，
+因此永远不会到达 `/in`。一次从未上报过的请求，再强的识别也救不回来。
+
+但挡在你源站前面的 Cloudflare 全都数到了。给控制台一个**只读**的 Cloudflare API
+令牌，每晚的定时任务就会把这些请求数拉回来，*统计脚本看不见的部分*面板会给出
+差额：
+
+```
+边缘 HTML 请求   12,480    ← Cloudflare 实际服务的
+浏览器 PV         2,773    ← 脚本上报的
+差额              9,707    ← 抓了 HTML，但从没执行 JS
+```
+
+以及差额背后排名靠前的 User-Agent（GPTBot、ClaudeBot、CCBot……）。
+
+**创建令牌。** 在 Cloudflare 控制台：*My Profile → API Tokens → Create Token →
+Create Custom Token*。只给这两个权限，都是只读：
+
+| 类型 | 资源 | 级别 |
+|---|---|---|
+| Zone | Zone | Read |
+| Zone | Analytics | Read |
+
+*Zone Resources* 选你站点所在的 zone（或账号下全部 zone）。然后把令牌粘贴到
+**⚙ 设置 → Cloudflare 边缘请求**，点*保存并检查*——会立即验证，并告诉你它把你的
+哪些站点匹配到了哪个 zone，这样权限范围填错当场就能发现，而不是一周后面对一个
+空面板。
+
+几点说明：
+
+- **完全可选。** 不填就是完全不生效：面板隐藏，也绝不会向 Cloudflare 发出任何
+  请求。
+- 令牌存在你自己的 D1 里，永远不会返回给浏览器。
+- 只读：这里不会对你的 Cloudflare 账号做任何写操作。
+- **仅供观察。** 边缘请求数不参与评分、不参与判定、不参与广告防护——请求和访客是
+  两个不同的总体，混在一起会污染产品计算的每一个比率。
+- 数据来自 `httpRequestsAdaptiveGroups`，**所有套餐**都能用（Logpush/Logpull 才是
+  企业版专属）。按你站点的本地日聚合，因此边缘请求数和 PV 天然对齐，不需要做
+  时区换算。
+- 只拉完整的日期——今天还在累加中。首次运行回溯 14 天，之后每晚刷新最近 3 天，
+  让延迟到达的数据自动修正。
+- 拉取失败时，设置面板里会原样显示 Cloudflare 自己的报错文本。"Authentication
+  error" 和权限没给全是两种完全不同的修法。
 
 ## 外部排名 / 评分 API（可选）
 
