@@ -157,10 +157,13 @@ async function main() {
     let after = before;
     for (const [ph, val] of subs) after = after.split(ph).join(val);
     // route patterns + zone: only the reference domain, never a custom one
+    // Custom Domains: wrangler provisions the DNS record and certificate during
+    // deploy, so the domain is configured exactly once — here — with no separate
+    // DNS step to remember afterwards.
     after = after
-      .replace(/pattern = "in\.pvuv\.ai\/\*"/g, `pattern = "${ingestHost}/*"`)
-      .replace(/pattern = "api\.pvuv\.ai\/\*"/g, `pattern = "${apiHost}/*"`)
-      .replace(/pattern = "pvuv\.ai\/\*"/g, `pattern = "${consoleHost}/*"`)
+      .replace(/pattern = "in\.pvuv\.ai"/g, `pattern = "${ingestHost}"`)
+      .replace(/pattern = "api\.pvuv\.ai"/g, `pattern = "${apiHost}"`)
+      .replace(/pattern = "pvuv\.ai"/g, `pattern = "${consoleHost}"`)
       .replace(/zone_name = "pvuv\.ai"/g, `zone_name = "${zone}"`)
       .replace(/ADMIN_EMAILS = "you@example\.com"/g, `ADMIN_EMAILS = "${admins}"`);
     if (after === before) { skipped++; continue; }
@@ -204,6 +207,15 @@ async function main() {
     if (r.code !== 0) {
       say(c.r(`  Deploy failed for ${w}:`));
       info(r.out.trim().split('\n').slice(-6).join('\n  '));
+      // by far the two most common causes, and both are about the domain
+      if (/zone|not found|10000|authoriz/i.test(r.out)) {
+        warn(`Is ${zone} added to this Cloudflare account? Custom Domains can only be`);
+        info(`created on a zone you own. Add the domain in the Cloudflare dashboard first.`);
+      }
+      if (/conflict|already exists|record/i.test(r.out)) {
+        warn(`A DNS record may already exist for that hostname. Either remove it, or`);
+        info(`re-run with a free hostname, e.g. --console-host analytics.${zone}`);
+      }
       info('Fix the cause and re-run `npm run setup` — completed steps are skipped.');
       process.exit(1);
     }
@@ -223,11 +235,10 @@ async function main() {
   }
 
   // ---- done --------------------------------------------------------------
-  say(`\n${c.g(c.b('Deployed.'))} Two manual steps remain — neither can be automated:\n`);
-  say(`${c.b('1. DNS')}  In the Cloudflare dashboard add proxied records so the routes fire:`);
-  info(`AAAA  ${ingestHost.split('.')[0]}  100::  (proxy ON)`);
-  info(`AAAA  ${apiHost.split('.')[0]}  100::  (proxy ON)`);
-  say(`\n${c.b('2. Login')}  The console is OAuth-only, so create an app at Google or GitHub:`);
+  say(`\n${c.g(c.b('Deployed.'))}  DNS and certificates were provisioned automatically:`);
+  info(`${consoleHost}  ${ingestHost}  ${apiHost}`);
+  say(`\n${c.b('One manual step remains')} — it is the only thing that cannot be automated.`);
+  say(`\n${c.b('Login')}  The console is OAuth-only, so create an app at Google or GitHub:`);
   info(`Callback URL:  https://${consoleHost}/api/auth/google/callback`);
   info(`               https://${consoleHost}/api/auth/github/callback`);
   info(`Then put the client id in workers/console/wrangler.toml [vars] and run:`);

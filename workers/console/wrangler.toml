@@ -19,8 +19,10 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 account_id = "PLACEHOLDER_ACCOUNT_ID"
 
+# Custom Domain — wrangler provisions DNS + certificate. This hostname is served
+# entirely by the console worker, so use a host you are not already serving from.
 routes = [
-  { pattern = "pvuv.ai/*", zone_name = "pvuv.ai" }
+  { pattern = "pvuv.ai", custom_domain = true }
 ]
 
 # KV: write-through site-config cache on site create/update (§5 whitelist)

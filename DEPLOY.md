@@ -79,8 +79,10 @@ npm run setup -- --domain example.com --admin you@example.com \
   [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
 ```
 
-Afterwards, complete the two steps it cannot do for you: the **DNS records**
-(step 5 note below) and **OAuth login** (its own section further down).
+Your domain is asked for once and written everywhere it is needed; DNS records
+and certificates are provisioned during deploy (Custom Domains, see step 5).
+Afterwards, complete the one step it cannot do for you: **OAuth login** (its own
+section further down).
 
 The rest of this guide is the manual equivalent — follow it if you want to
 understand each step, or if setup fails partway and you'd rather finish by hand.
@@ -118,21 +120,30 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 
 ## 5. Set your domains
 
-The route patterns default to `pvuv.ai`. Point them at your own zone:
+**This is the only place your domain is configured** — `npm run setup` asks for
+it here and writes it everywhere. Doing it by hand means editing three files.
 
-- `workers/ingest/wrangler.toml` → `pattern = "in.example.com/*", zone_name = "example.com"`
-- `workers/api/wrangler.toml` → `pattern = "api.example.com/*", zone_name = "example.com"`
-- `workers/console/wrangler.toml` → `pattern = "example.com/*", zone_name = "example.com"`
-  (or a subdomain like `console.example.com/*` — but then adjust the embed
-  snippet's `data-api`, see step 9)
+Each worker owns one hostname, declared as a Cloudflare **Custom Domain**:
+
+- `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`
+- `workers/api/wrangler.toml` → `{ pattern = "api.example.com", custom_domain = true }`
+- `workers/console/wrangler.toml` → `{ pattern = "example.com", custom_domain = true }`
+  (or a subdomain like `analytics.example.com` — then adjust the embed snippet's
+  `data-api`, see step 9)
 - `workers/console/wrangler.toml` `[vars] ADMIN_EMAILS` → your admin email(s),
   comma-separated. This build is **single-tenant**: everyone listed shares one
   site list (your own sites); anyone else is refused. Login is OAuth-only —
   you'll configure a provider in step 7.
 
-Routes only fire for hostnames proxied by Cloudflare. If `in.` / `api.` have
-no DNS records yet, add proxied placeholder records in the Cloudflare DNS
-dashboard: type `AAAA`, name `in` (and `api`), content `100::`, proxy **on**.
+**No DNS step is needed.** With `custom_domain`, `wrangler deploy` creates the
+proxied DNS record and provisions the certificate for each hostname. Two things
+this requires:
+
+- the zone must already be **added to this Cloudflare account** (any plan) —
+  otherwise the deploy fails with a zone error;
+- the hostname must be **free**. A worker serves that host entirely, so pick one
+  you are not already serving a site from. If a conflicting DNS record exists,
+  the deploy stops rather than overwriting it.
 
 ## 6. Create the database schema
 

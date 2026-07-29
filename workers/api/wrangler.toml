@@ -12,8 +12,9 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 account_id = "PLACEHOLDER_ACCOUNT_ID"
 
+# Custom Domain — wrangler provisions DNS + certificate (see ingest for notes).
 routes = [
-  { pattern = "api.pvuv.ai/*", zone_name = "pvuv.ai" }
+  { pattern = "api.pvuv.ai", custom_domain = true }
 ]
 
 [[d1_databases]]

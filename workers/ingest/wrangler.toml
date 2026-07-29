@@ -11,8 +11,10 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 account_id = "PLACEHOLDER_ACCOUNT_ID"
 
+# Custom Domain: wrangler creates the proxied DNS record and the certificate
+# itself, so no manual DNS step is needed. The worker owns this hostname.
 routes = [
-  { pattern = "in.pvuv.ai/*", zone_name = "pvuv.ai" }
+  { pattern = "in.pvuv.ai", custom_domain = true }
 ]
 
 # KV: blocklist lookups for /v, site-config cache for whitelist validation

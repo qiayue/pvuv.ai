@@ -73,8 +73,9 @@ npm run setup -- --domain example.com --admin you@example.com \
   [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
 ```
 
-之后请完成它无法代劳的两件事:**DNS 记录**(见下方第 5 步的说明)与
-**OAuth 登录**(下文有独立章节)。
+域名只询问一次,随后自动写入所有需要的位置;DNS 记录与证书在部署时自动签发
+(自定义域,见第 5 步)。之后只需完成它无法代劳的一件事:**OAuth 登录**
+(下文有独立章节)。
 
 本文余下部分是等价的手动步骤——如果你想理解每一步,或自动安装中途失败想手工
 接续,可以照着做。
@@ -110,22 +111,28 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 > （PROJECT_PLAN §21–§22）要求它们不进仓库。建议用私有克隆部署，或本地改动
 > 不提交。
 
-## 5. 改成你的域名
+## 5. 设置你的域名
 
-路由默认写的是 `pvuv.ai`，改成你自己的 zone：
+**这是配置域名的唯一位置**——`npm run setup` 会在这里询问,然后写入所有相关文件。
+手动做的话需要改三个文件。
 
-- `workers/ingest/wrangler.toml` → `pattern = "in.example.com/*", zone_name = "example.com"`
-- `workers/api/wrangler.toml` → `pattern = "api.example.com/*", zone_name = "example.com"`
-- `workers/console/wrangler.toml` → `pattern = "example.com/*", zone_name = "example.com"`
-  （也可以用 `console.example.com/*` 这样的子域，但需要相应调整嵌入代码里的
+每个 worker 独占一个主机名,以 Cloudflare **自定义域(Custom Domain)** 声明:
+
+- `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`
+- `workers/api/wrangler.toml` → `{ pattern = "api.example.com", custom_domain = true }`
+- `workers/console/wrangler.toml` → `{ pattern = "example.com", custom_domain = true }`
+  （也可以用子域名如 `analytics.example.com`，但要相应调整嵌入代码里的
   `data-api`，见第 9 步）
-- `workers/console/wrangler.toml` 的 `[vars] ADMIN_EMAILS` → 你的管理员邮箱
-  (逗号分隔多个)。本版本是**单租户**:列表里的所有人共享同一个站点列表(你
-  自己的站点),其他人一律拒绝。登录只走 OAuth——第 7 步配置渠道。
+- `workers/console/wrangler.toml` 的 `[vars] ADMIN_EMAILS` → 你的管理员邮箱（逗号
+  分隔）。本版本是**单租户**：列表里的人共享同一份站点列表（你自己的站点），
+  其他人一律拒绝。登录仅支持 OAuth，第 7 步配置。
 
-路由只对经过 Cloudflare 代理的主机名生效。如果 `in.`、`api.` 还没有 DNS 记录，
-在 Cloudflare DNS 面板加占位记录：类型 `AAAA`、名称 `in`（以及 `api`）、内容
-`100::`、代理状态**开启**（橙色云朵）。
+**不需要单独配 DNS。** 使用 `custom_domain` 后，`wrangler deploy` 会自动为每个主
+机名创建已开启代理的 DNS 记录并签发证书。前提有两条：
+
+- 该域名必须**已添加到这个 Cloudflare 账号**（任意套餐），否则部署会报 zone 错误；
+- 主机名必须**空闲**。worker 会完整接管该主机名，所以请选一个你当前没有在提供
+  服务的主机名。如果已存在冲突的 DNS 记录，部署会停下而不会覆盖它。
 
 ## 6. 建库表
 

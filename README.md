@@ -83,7 +83,9 @@ npm run setup
 
 `npm run setup` does the rest: creates the D1 database, KV namespaces and queues, fills in every config placeholder, points the routes at your domain, applies the migrations, builds the SDK and deploys all five workers. It is safe to re-run — completed steps are skipped and an already-configured file is never overwritten. Add `--dry-run` first to see exactly what it would do.
 
-It finishes by printing the only two steps that **cannot** be automated: adding the proxied DNS records, and creating a Google/GitHub OAuth app (console login is OAuth-only). Both are walked through in [`DEPLOY.md`](./DEPLOY.md).
+Your domain is asked for once, at the start, and written everywhere it is needed. DNS records and certificates are provisioned automatically (the workers use Cloudflare Custom Domains), so the **only** step that cannot be automated is creating a Google/GitHub OAuth app — console login is OAuth-only. It prints that step last, with your callback URLs filled in; [`DEPLOY.md`](./DEPLOY.md) walks through it.
+
+The domain must already be added to your Cloudflare account, and each hostname must be free — a worker serves its host entirely.
 
 Non-interactive (CI, scripted installs):
 
