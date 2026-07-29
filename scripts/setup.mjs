@@ -113,9 +113,29 @@ async function main() {
   if (interactive) say(c.dim('  The zone must already be on Cloudflare (any plan).'));
   const zone = await ask('domain', 'Root domain (e.g. example.com)');
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(zone)) { say(c.r('  That does not look like a domain.')); process.exit(1); }
-  const consoleHost = argValue('console-host') || (interactive ? await ask('console-host', 'Console host', zone) : zone);
-  const ingestHost = argValue('ingest-host') || (interactive ? await ask('ingest-host', 'Ingest host', `in.${zone}`) : `in.${zone}`);
-  const apiHost = argValue('api-host') || (interactive ? await ask('api-host', 'API host', `api.${zone}`) : `api.${zone}`);
+
+  // Default to a dedicated subdomain, NOT the apex: most people already serve a
+  // site from their root domain, and each worker takes over its hostname
+  // completely. The three hosts are then siblings of the console host, so the
+  // whole deployment lives under one name and the root namespace stays clean.
+  const defConsole = `pvuv.${zone}`;
+  const consoleHost = argValue('console-host')
+    || (interactive ? await ask('console-host', 'Console host', defConsole) : defConsole);
+  const sibling = (p) => (consoleHost === zone ? `${p}.${zone}` : `${p}-${consoleHost}`);
+  const ingestHost = argValue('ingest-host')
+    || (interactive ? await ask('ingest-host', 'Ingest host', sibling('in')) : sibling('in'));
+  const apiHost = argValue('api-host')
+    || (interactive ? await ask('api-host', 'API host', sibling('api')) : sibling('api'));
+
+  // Cloudflare's Universal SSL covers example.com and *.example.com only, so a
+  // host nested two levels deep needs Advanced Certificate Manager. Say so now
+  // rather than letting the certificate silently fail to issue after deploy.
+  const deep = [consoleHost, ingestHost, apiHost].filter((h) => h.split('.').length > zone.split('.').length + 1);
+  if (deep.length) {
+    warn(`${deep.join(', ')} ${deep.length > 1 ? 'are' : 'is'} more than one level below ${zone}.`);
+    info('Universal SSL does not cover that depth — you need Advanced Certificate Manager,');
+    info(`or use single-level hosts such as ${sibling('in')} instead.`);
+  }
   const admins = await ask('admin', 'Admin email(s), comma-separated');
   if (!admins.includes('@')) { say(c.r('  An admin email is required — nobody could sign in otherwise.')); process.exit(1); }
   rl?.close();
@@ -165,7 +185,10 @@ async function main() {
       .replace(/pattern = "api\.pvuv\.ai"/g, `pattern = "${apiHost}"`)
       .replace(/pattern = "pvuv\.ai"/g, `pattern = "${consoleHost}"`)
       .replace(/zone_name = "pvuv\.ai"/g, `zone_name = "${zone}"`)
-      .replace(/ADMIN_EMAILS = "you@example\.com"/g, `ADMIN_EMAILS = "${admins}"`);
+      .replace(/ADMIN_EMAILS = "you@example\.com"/g, `ADMIN_EMAILS = "${admins}"`)
+      // the console builds the embed snippet from this; it cannot infer the
+      // ingest host once the two are not siblings
+      .replace(/INGEST_HOST = "in\.pvuv\.ai"/g, `INGEST_HOST = "${ingestHost}"`);
     if (after === before) { skipped++; continue; }
     if (DRY) say(`  ${c.dim('~ would edit ' + rel)}`);
     else writeFileSync(file, after);

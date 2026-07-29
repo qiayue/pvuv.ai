@@ -123,6 +123,22 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 **This is the only place your domain is configured** — `npm run setup` asks for
 it here and writes it everywhere. Doing it by hand means editing three files.
 
+Most people already serve a site from their root domain, so the default layout
+puts the whole deployment under a **dedicated subdomain** and leaves the apex
+alone:
+
+| | default | if you deploy on the apex |
+|---|---|---|
+| console | `pvuv.example.com` | `example.com` |
+| ingest | `in-pvuv.example.com` | `in.example.com` |
+| api | `api-pvuv.example.com` | `api.example.com` |
+
+The hosts stay one level below the root on purpose: Cloudflare's Universal SSL
+covers `example.com` and `*.example.com`, so a host nested deeper
+(`in.pvuv.example.com`) needs Advanced Certificate Manager. `npm run setup`
+warns if you choose one. You can use any hostnames you like — these are only
+defaults.
+
 Each worker owns one hostname, declared as a Cloudflare **Custom Domain**:
 
 - `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`

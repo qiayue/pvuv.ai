@@ -116,6 +116,20 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 **这是配置域名的唯一位置**——`npm run setup` 会在这里询问,然后写入所有相关文件。
 手动做的话需要改三个文件。
 
+大多数人的主域名上已经有网站,所以默认布局把整个部署放在一个**专用子域名**下,
+不动主域名:
+
+| | 默认 | 如果你就是要部署在主域名上 |
+|---|---|---|
+| 控制台 | `pvuv.example.com` | `example.com` |
+| ingest | `in-pvuv.example.com` | `in.example.com` |
+| api | `api-pvuv.example.com` | `api.example.com` |
+
+这些主机名刻意都只比根域名低一级:Cloudflare 的 Universal SSL 只覆盖
+`example.com` 和 `*.example.com`,再深一层(如 `in.pvuv.example.com`)需要
+Advanced Certificate Manager。`npm run setup` 在你选择这类主机名时会给出提示。
+主机名可以完全自定义,以上只是默认值。
+
 每个 worker 独占一个主机名,以 Cloudflare **自定义域(Custom Domain)** 声明:
 
 - `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`

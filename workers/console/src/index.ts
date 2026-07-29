@@ -50,6 +50,8 @@ export interface Env {
   AI_API_KEY?: string;
   /** Plain vars (workers/console/wrangler.toml [vars]) */
   ADMIN_EMAILS: string;
+  /** hostname of the ingest worker, for the embed snippet (see wrangler.toml) */
+  INGEST_HOST?: string;
   GOOGLE_CLIENT_ID?: string;
   GITHUB_CLIENT_ID?: string;
   /** locale served at `/`; requests to /<DEFAULT_LANG> 301 there (default 'en') */
@@ -252,7 +254,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (!user) throw new ApiError(401, 'auth required');
 
   if (request.method === 'GET' && path === '/api/me') {
-    return json({ user, timezone: await userTimezone(env, user) });
+    return json({
+      user,
+      timezone: await userTimezone(env, user),
+      // the console can't reliably derive this from its own hostname, so it is
+      // deployment config (wrangler.toml [vars] INGEST_HOST)
+      ingest_host: env.INGEST_HOST || '',
+    });
   }
 
   // Personal API tokens (§10) — the credential for MCP clients, the CLI and

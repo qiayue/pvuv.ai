@@ -42,6 +42,13 @@ ADMIN_EMAILS = "you@example.com"
 # is offered only when BOTH are set. Register these callback URLs:
 #   https://<your-console-domain>/api/auth/google/callback
 #   https://<your-console-domain>/api/auth/github/callback
+# Hostname of the ingest worker, used to build the embed snippet shown after
+# creating a site. Declared rather than derived: the console cannot infer it
+# from its own hostname once the two are not siblings (e.g. console on
+# pvuv.example.com, ingest on in.example.com), and guessing wrong produces a
+# snippet that silently sends events nowhere.
+INGEST_HOST = "in.pvuv.ai"
+
 GOOGLE_CLIENT_ID = ""
 GITHUB_CLIENT_ID = ""
 

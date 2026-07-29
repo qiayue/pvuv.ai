@@ -206,6 +206,7 @@
 <script>
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const t = (s) => window.PVI18N.t(s);
+let ingestHostCfg = ''; // from /api/me — see the snippet builder below
 const te = (s) => esc(t(s));
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 
@@ -322,7 +323,11 @@ let userTz = 'UTC';
 async function loadUserTz() {
   // searchable datalist (type to filter hundreds of zones)
   document.getElementById('tzlist').innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"></option>`).join('');
-  try { userTz = (await (await fetch('/api/me')).json()).timezone || 'UTC'; } catch { userTz = 'UTC'; }
+  try {
+    const me = await (await fetch('/api/me')).json();
+    userTz = me.timezone || 'UTC';
+    ingestHostCfg = me.ingest_host || '';
+  } catch { userTz = 'UTC'; }
   if (!validTz(userTz)) userTz = 'UTC';
   // new-site form: prefill the browser's timezone (unless a non-UTC default is set),
   // so the common case needs no searching; submitting saves it for real.
@@ -359,8 +364,10 @@ document.getElementById('create').addEventListener('submit', async (e) => {
   // src: f.js as hosted by this console deployment (DEPLOY.md step 8);
   // data-api: ingest host, assumed in.<apex> per the reference layout —
   // deployers adjust if theirs differs (the SDK default is in.pvuv.ai).
-  const apex = location.hostname.replace(/^(www|console)\./, '');
-  const attrs = [`data-site="${data.site_id}"`, `data-api="https://in.${apex}"`];
+  // ingest host comes from deployment config; the sibling-subdomain guess is
+  // only a fallback for older deployments that predate INGEST_HOST
+  const ingestHost = ingestHostCfg || 'in.' + location.hostname.replace(/^(www|console)\./, '');
+  const attrs = [`data-site="${data.site_id}"`, `data-api="https://${ingestHost}"`];
   if (data.adguard_mode !== 'off') attrs.push(`data-adguard="${data.adguard_mode}"`);
   if (data.adclient) attrs.push(`data-adclient="${data.adclient}"`);
   document.getElementById('snippetCode').textContent =
