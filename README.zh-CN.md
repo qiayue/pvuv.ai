@@ -75,39 +75,20 @@ Cloudflare **Workers**（ingest、consumer、api、console、cron）· **D1**（
 **前置**：Node.js 18+、开通 **Workers Paid 套餐**的 Cloudflare 账号（Queues 需要付费套餐）、一个接入 Cloudflare 的域名。
 
 ```bash
-# 1. 克隆
-git clone https://github.com/qiayue/pvuv.ai.git
-cd pvuv.ai
-npm install                                    # 会同时生成打分配置
+git clone https://github.com/qiayue/pvuv.ai.git && cd pvuv.ai
+npm install
+npx wrangler login
+npm run setup
+```
 
-# 2. 创建 Cloudflare 资源
-npx wrangler d1 create pvuv-db
-npx wrangler kv namespace create BLOCKLIST
-npx wrangler kv namespace create SITE_CONFIG
-npx wrangler queues create pvuv-ingest
-npx wrangler queues create pvuv-ingest-dlq
+`npm run setup`会完成其余全部工作:创建 D1 数据库、KV 命名空间和队列,填好所有配置占位符,把路由指向你的域名,应用数据库迁移,构建 SDK 并部署全部 5 个 worker。**可以重复运行**——已完成的步骤会跳过,已配置好的文件不会被覆盖。先加 `--dry-run` 可以完整预览它将要做什么。
 
-# 3. 配置 —— 替换 wrangler.toml 和 workers/*/wrangler.toml 里的
-#    PLACEHOLDER_* 占位 id，把路由 pattern 改成你的域名，
-#    （可选）私有调参：
-cp config.example.toml config.local.toml       # 已 gitignore
-npm run config:gen
+结束时它会打印**唯一两件无法自动化**的事:添加已开启代理的 DNS 记录,以及创建 Google/GitHub OAuth 应用(控制台仅支持 OAuth 登录)。两者在 [`DEPLOY.md`](./DEPLOY.md) 里都有分步说明。
 
-# 4. 建表、部署、设密钥（三处 HMAC_KEY 必须是同一个值）
-npm run db:migrate:remote
-npm run deploy:all
-npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
-npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
-npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
-npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml
+非交互方式(CI、脚本化安装):
 
-# 5. 控制台登录只走 OAuth——配置 Google 和/或 GitHub
-#    (在 console/wrangler.toml [vars] 设 ADMIN_EMAILS + GOOGLE_CLIENT_ID)：
-npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
-
-# 6. 构建并托管 SDK
-npm run build:sdk
-cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
+```bash
+npm run setup -- --domain example.com --admin you@example.com
 ```
 
 然后在控制台域名登录、注册站点、把生成的嵌入代码贴到你的网站。DNS 配置、验证步骤和排障：[`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)。

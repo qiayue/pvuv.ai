@@ -49,6 +49,36 @@ npm run config:gen                          # 每次改完重新生成
 
 跳过这步就用示例默认值。`config:gen` 在 `npm install` 和 SDK 构建前都会自动跑。
 
+## 自动化安装（推荐）
+
+下面第 3–8 步全部可以自动完成,`npm run setup` 一条命令搞定:
+
+```bash
+npm install
+npx wrangler login
+npm run setup            # 建议先加 --dry-run 预览将要执行的每条命令
+```
+
+它会创建 D1 数据库、KV 命名空间与队列;填好所有 `PLACEHOLDER_*`;把路由指向你
+的域名;生成共享的 `HMAC_KEY` 并安装到需要它的三个 worker(全程不打印);应用
+数据库迁移;构建并拷贝 SDK;部署全部 5 个 worker。
+
+**可以重复运行。** 已存在的资源会复用,已配置好的文件会被报告并跳过——所以中途
+失败只需再跑一次即可继续,也不会误改一个正在运行的部署。
+
+非交互方式:
+
+```bash
+npm run setup -- --domain example.com --admin you@example.com \
+  [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
+```
+
+之后请完成它无法代劳的两件事:**DNS 记录**(见下方第 5 步的说明)与
+**OAuth 登录**(下文有独立章节)。
+
+本文余下部分是等价的手动步骤——如果你想理解每一步,或自动安装中途失败想手工
+接续,可以照着做。
+
 ## 3. 创建 Cloudflare 资源
 
 ```bash

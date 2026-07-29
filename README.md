@@ -75,39 +75,20 @@ Cloudflare **Workers** (ingest, consumer, api, console, cron) · **D1** (SQLite,
 **Prerequisites:** Node.js 18+, a Cloudflare account on the **Workers Paid plan** (Queues requires it), and a domain on Cloudflare.
 
 ```bash
-# 1. Clone
-git clone https://github.com/qiayue/pvuv.ai.git
-cd pvuv.ai
-npm install                                    # also generates the scoring config
+git clone https://github.com/qiayue/pvuv.ai.git && cd pvuv.ai
+npm install
+npx wrangler login
+npm run setup
+```
 
-# 2. Create Cloudflare resources
-npx wrangler d1 create pvuv-db
-npx wrangler kv namespace create BLOCKLIST
-npx wrangler kv namespace create SITE_CONFIG
-npx wrangler queues create pvuv-ingest
-npx wrangler queues create pvuv-ingest-dlq
+`npm run setup` does the rest: creates the D1 database, KV namespaces and queues, fills in every config placeholder, points the routes at your domain, applies the migrations, builds the SDK and deploys all five workers. It is safe to re-run — completed steps are skipped and an already-configured file is never overwritten. Add `--dry-run` first to see exactly what it would do.
 
-# 3. Configure — replace the PLACEHOLDER_* ids in wrangler.toml and
-#    workers/*/wrangler.toml, set your domains in the route patterns,
-#    and (optionally) tune scoring privately:
-cp config.example.toml config.local.toml       # gitignored
-npm run config:gen
+It finishes by printing the only two steps that **cannot** be automated: adding the proxied DNS records, and creating a Google/GitHub OAuth app (console login is OAuth-only). Both are walked through in [`DEPLOY.md`](./DEPLOY.md).
 
-# 4. Create the schema, deploy, set secrets (same HMAC_KEY on all three)
-npm run db:migrate:remote
-npm run deploy:all
-npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
-npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
-npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
-npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml
+Non-interactive (CI, scripted installs):
 
-# 5. Console login is OAuth-only — configure Google and/or GitHub
-#    (set ADMIN_EMAILS + GOOGLE_CLIENT_ID in console/wrangler.toml [vars]):
-npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
-
-# 6. Build + host the SDK
-npm run build:sdk
-cp sdk/dist/f.js workers/console/public/f.js && npm run deploy:console
+```bash
+npm run setup -- --domain example.com --admin you@example.com
 ```
 
 Then sign in at your console domain with Google/GitHub (your email must be in `ADMIN_EMAILS`), register a site, and embed the snippet it prints. Details, OAuth setup, DNS notes, verification, and troubleshooting: [`DEPLOY.md`](./DEPLOY.md).

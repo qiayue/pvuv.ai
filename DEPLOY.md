@@ -52,6 +52,39 @@ npm run config:gen                          # regenerate after every edit
 If you skip this, the example defaults are used. Either way `config:gen`
 runs automatically on `npm install` and before SDK builds.
 
+## Automated setup (recommended)
+
+Steps 3–8 below are all automatable, and `npm run setup` does them in one go:
+
+```bash
+npm install
+npx wrangler login
+npm run setup            # add --dry-run first to preview every command
+```
+
+It creates the D1 database, KV namespaces and queues; fills in every
+`PLACEHOLDER_*`; points the routes at your domain; generates the shared
+`HMAC_KEY` and installs it on the three workers that need it (never printing
+it); applies the migrations; builds and copies the SDK; and deploys all five
+workers.
+
+**Safe to re-run.** Existing resources are reused, and a file that is already
+configured is reported and left alone — so a partial or failed run is resumed by
+running it again, and an existing deployment can't be repointed by accident.
+
+Non-interactive:
+
+```bash
+npm run setup -- --domain example.com --admin you@example.com \
+  [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
+```
+
+Afterwards, complete the two steps it cannot do for you: the **DNS records**
+(step 5 note below) and **OAuth login** (its own section further down).
+
+The rest of this guide is the manual equivalent — follow it if you want to
+understand each step, or if setup fails partway and you'd rather finish by hand.
+
 ## 3. Create the Cloudflare resources
 
 ```bash

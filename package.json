@@ -27,7 +27,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply pvuv-db --remote",
     "typecheck": "tsc --noEmit && tsc -p sdk --noEmit",
     "dev:proxy": "wrangler dev -c workers/proxy/wrangler.toml",
-    "deploy:proxy": "wrangler deploy -c workers/proxy/wrangler.toml"
+    "deploy:proxy": "wrangler deploy -c workers/proxy/wrangler.toml",
+    "setup": "node scripts/setup.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260101.0",
