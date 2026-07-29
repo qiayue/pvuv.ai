@@ -121,9 +121,12 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 
 | | 默认 | 就是要用主域名 | `in.`/`api.` 已被占用 |
 |---|---|---|---|
-| 控制台 | `pvuv.example.com` | `example.com` | `pvuv.example.com` |
-| ingest | `in.example.com` | `in.example.com` | `in-pvuv.example.com` |
-| api | `api.example.com` | `api.example.com` | `api-pvuv.example.com` |
+| 控制台 | `analytics.example.com` | `example.com` | `analytics.example.com` |
+| ingest | `in.example.com` | `in.example.com` | `in-analytics.example.com` |
+| api | `api.example.com` | `api.example.com` | `api-analytics.example.com` |
+
+`analytics` 只是一个易读的默认值——这是你的 DNS,想叫什么都行:用
+`--subdomain stats` 换个名字,或用 `--console-host` 直接指定完整主机名。
 
 **所有主机名都要恰好比根域名低一级。** Universal SSL 覆盖 `example.com` 和
 `*.example.com`,而通配符只能匹配**一层**——所以 `in.pvuv.example.com` 不在覆盖
@@ -131,8 +134,8 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 归组效果且免费。`npm run setup` 检测到嵌套写法时,会直接打印出你那几个主机名对应
 的横杠版本。
 
-以上只是默认值——用 `--console-host` / `--ingest-host` / `--api-host` 传参(或直接
-改那三个文件)可以指定任意主机名。
+以上全部可覆盖——用 `--subdomain` 换子域名,或用 `--console-host` /
+`--ingest-host` / `--api-host` 完全指定(也可以直接改那三个文件)。
 
 每个 worker 独占一个主机名,以 Cloudflare **自定义域(Custom Domain)** 声明:
 

@@ -105,6 +105,7 @@ async function main() {
     if (!rl) {
       say(c.r(`  Missing --${flagName} (no terminal available to ask).`));
       info('Non-interactive use: npm run setup -- --domain example.com --admin you@example.com');
+      info('Optional: --subdomain stats  --console-host … --ingest-host … --api-host …');
       process.exit(1);
     }
     const a = (await rl.question(`  ${q}${def ? c.dim(` [${def}]`) : ''}: `)).trim();
@@ -116,9 +117,10 @@ async function main() {
 
   // Default to a dedicated subdomain, NOT the apex: most people already serve a
   // site from their root domain, and each worker takes over its hostname
-  // completely. The three hosts are then siblings of the console host, so the
-  // whole deployment lives under one name and the root namespace stays clean.
-  const defConsole = `pvuv.${zone}`;
+  // completely. The name is the deployer's to pick — this is their DNS, not
+  // ours — so it is a plain flag with a descriptive default, rather than the
+  // project's own name baked into it.
+  const defConsole = `${argValue('subdomain') || 'analytics'}.${zone}`;
   const consoleHost = argValue('console-host')
     || (interactive ? await ask('console-host', 'Console host', defConsole) : defConsole);
   // Flat siblings of the ROOT, always exactly one level down: short, matches the
@@ -249,7 +251,7 @@ async function main() {
       }
       if (/conflict|already exists|record/i.test(r.out)) {
         warn(`A DNS record may already exist for that hostname. Either remove it, or`);
-        info(`re-run with free hostnames, e.g. --api-host pvuv-api.${zone}`);
+        info(`re-run with free hostnames, e.g. --api-host api-${consoleHost.split('.')[0]}.${zone}`);
       }
       info('Fix the cause and re-run `npm run setup` — completed steps are skipped.');
       process.exit(1);

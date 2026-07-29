@@ -128,9 +128,12 @@ root domain, so the console defaults to a subdomain and leaves the apex alone:
 
 | | default | if you deploy on the apex | if `in.`/`api.` are taken |
 |---|---|---|---|
-| console | `pvuv.example.com` | `example.com` | `pvuv.example.com` |
-| ingest | `in.example.com` | `in.example.com` | `in-pvuv.example.com` |
-| api | `api.example.com` | `api.example.com` | `api-pvuv.example.com` |
+| console | `analytics.example.com` | `example.com` | `analytics.example.com` |
+| ingest | `in.example.com` | `in.example.com` | `in-analytics.example.com` |
+| api | `api.example.com` | `api.example.com` | `api-analytics.example.com` |
+
+`analytics` is just a readable default — it is your DNS, so name it whatever you
+like with `--subdomain stats`, or set the host outright with `--console-host`.
 
 **Keep every host exactly one level below the root.** Universal SSL covers
 `example.com` and `*.example.com`, and a wildcard matches *one* label — so
@@ -138,8 +141,8 @@ root domain, so the console defaults to a subdomain and leaves the apex alone:
 while `in-pvuv.example.com` groups things the same way for free. `npm run setup`
 detects the nested form and prints the hyphenated equivalent of your own hosts.
 
-These are only defaults — pass `--console-host` / `--ingest-host` / `--api-host`
-(or edit the three files) to use anything you like.
+All of it is overridable — `--subdomain`, or `--console-host` / `--ingest-host` /
+`--api-host` for full control (or just edit the three files).
 
 Each worker owns one hostname, declared as a Cloudflare **Custom Domain**:
 
