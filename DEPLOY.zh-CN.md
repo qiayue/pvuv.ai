@@ -116,19 +116,23 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 **这是配置域名的唯一位置**——`npm run setup` 会在这里询问,然后写入所有相关文件。
 手动做的话需要改三个文件。
 
-大多数人的主域名上已经有网站,所以默认布局把整个部署放在一个**专用子域名**下,
-不动主域名:
+三个主机名,每个 worker 一个。大多数人的主域名上已经有网站,所以控制台默认用子
+域名,不动主域名:
 
-| | 默认 | 如果你就是要部署在主域名上 |
-|---|---|---|
-| 控制台 | `pvuv.example.com` | `example.com` |
-| ingest | `in-pvuv.example.com` | `in.example.com` |
-| api | `api-pvuv.example.com` | `api.example.com` |
+| | 默认 | 就是要用主域名 | `in.`/`api.` 已被占用 |
+|---|---|---|---|
+| 控制台 | `pvuv.example.com` | `example.com` | `pvuv.example.com` |
+| ingest | `in.example.com` | `in.example.com` | `in-pvuv.example.com` |
+| api | `api.example.com` | `api.example.com` | `api-pvuv.example.com` |
 
-这些主机名刻意都只比根域名低一级:Cloudflare 的 Universal SSL 只覆盖
-`example.com` 和 `*.example.com`,再深一层(如 `in.pvuv.example.com`)需要
-Advanced Certificate Manager。`npm run setup` 在你选择这类主机名时会给出提示。
-主机名可以完全自定义,以上只是默认值。
+**所有主机名都要恰好比根域名低一级。** Universal SSL 覆盖 `example.com` 和
+`*.example.com`,而通配符只能匹配**一层**——所以 `in.pvuv.example.com` 不在覆盖
+范围内,需要 Advanced Certificate Manager;而 `in-pvuv.example.com` 能达到同样的
+归组效果且免费。`npm run setup` 检测到嵌套写法时,会直接打印出你那几个主机名对应
+的横杠版本。
+
+以上只是默认值——用 `--console-host` / `--ingest-host` / `--api-host` 传参(或直接
+改那三个文件)可以指定任意主机名。
 
 每个 worker 独占一个主机名,以 Cloudflare **自定义域(Custom Domain)** 声明:
 

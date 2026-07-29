@@ -123,21 +123,23 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 **This is the only place your domain is configured** — `npm run setup` asks for
 it here and writes it everywhere. Doing it by hand means editing three files.
 
-Most people already serve a site from their root domain, so the default layout
-puts the whole deployment under a **dedicated subdomain** and leaves the apex
-alone:
+Three hostnames, one per worker. Most people already serve a site from their
+root domain, so the console defaults to a subdomain and leaves the apex alone:
 
-| | default | if you deploy on the apex |
-|---|---|---|
-| console | `pvuv.example.com` | `example.com` |
-| ingest | `in-pvuv.example.com` | `in.example.com` |
-| api | `api-pvuv.example.com` | `api.example.com` |
+| | default | if you deploy on the apex | if `in.`/`api.` are taken |
+|---|---|---|---|
+| console | `pvuv.example.com` | `example.com` | `pvuv.example.com` |
+| ingest | `in.example.com` | `in.example.com` | `in-pvuv.example.com` |
+| api | `api.example.com` | `api.example.com` | `api-pvuv.example.com` |
 
-The hosts stay one level below the root on purpose: Cloudflare's Universal SSL
-covers `example.com` and `*.example.com`, so a host nested deeper
-(`in.pvuv.example.com`) needs Advanced Certificate Manager. `npm run setup`
-warns if you choose one. You can use any hostnames you like — these are only
-defaults.
+**Keep every host exactly one level below the root.** Universal SSL covers
+`example.com` and `*.example.com`, and a wildcard matches *one* label — so
+`in.pvuv.example.com` is not covered and needs Advanced Certificate Manager,
+while `in-pvuv.example.com` groups things the same way for free. `npm run setup`
+detects the nested form and prints the hyphenated equivalent of your own hosts.
+
+These are only defaults — pass `--console-host` / `--ingest-host` / `--api-host`
+(or edit the three files) to use anything you like.
 
 Each worker owns one hostname, declared as a Cloudflare **Custom Domain**:
 

@@ -121,7 +121,11 @@ async function main() {
   const defConsole = `pvuv.${zone}`;
   const consoleHost = argValue('console-host')
     || (interactive ? await ask('console-host', 'Console host', defConsole) : defConsole);
-  const sibling = (p) => (consoleHost === zone ? `${p}.${zone}` : `${p}-${consoleHost}`);
+  // Flat siblings of the ROOT, always exactly one level down: short, matches the
+  // reference architecture, and inside Universal SSL's *.example.com. The
+  // console is the only host that gets its own name; nesting these under it
+  // would look tidier but costs a certificate (see the depth check below).
+  const sibling = (p) => `${p}.${zone}`;
   const ingestHost = argValue('ingest-host')
     || (interactive ? await ask('ingest-host', 'Ingest host', sibling('in')) : sibling('in'));
   const apiHost = argValue('api-host')
@@ -130,11 +134,19 @@ async function main() {
   // Cloudflare's Universal SSL covers example.com and *.example.com only, so a
   // host nested two levels deep needs Advanced Certificate Manager. Say so now
   // rather than letting the certificate silently fail to issue after deploy.
+  // Someone typing in.pvuv.example.com wants the deployment grouped under one
+  // name. Hyphenating gives exactly that, one level down, on the free
+  // certificate — so suggest their own host rewritten, not a generic example.
+  const flatten = (h) => {
+    const labels = h.slice(0, -(zone.length + 1)).split('.');
+    return `${labels.join('-')}.${zone}`;
+  };
   const deep = [consoleHost, ingestHost, apiHost].filter((h) => h.split('.').length > zone.split('.').length + 1);
   if (deep.length) {
     warn(`${deep.join(', ')} ${deep.length > 1 ? 'are' : 'is'} more than one level below ${zone}.`);
-    info('Universal SSL does not cover that depth — you need Advanced Certificate Manager,');
-    info(`or use single-level hosts such as ${sibling('in')} instead.`);
+    info(`Universal SSL covers ${zone} and *.${zone} — a wildcard matches one label, not two —`);
+    info('so hosts nested that deep need Advanced Certificate Manager.');
+    info(`Same grouping, one level down, no extra cost:  ${deep.map(flatten).join('  ')}`);
   }
   const admins = await ask('admin', 'Admin email(s), comma-separated');
   if (!admins.includes('@')) { say(c.r('  An admin email is required — nobody could sign in otherwise.')); process.exit(1); }
@@ -237,7 +249,7 @@ async function main() {
       }
       if (/conflict|already exists|record/i.test(r.out)) {
         warn(`A DNS record may already exist for that hostname. Either remove it, or`);
-        info(`re-run with a free hostname, e.g. --console-host analytics.${zone}`);
+        info(`re-run with free hostnames, e.g. --api-host pvuv-api.${zone}`);
       }
       info('Fix the cause and re-run `npm run setup` — completed steps are skipped.');
       process.exit(1);
