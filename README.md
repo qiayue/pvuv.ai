@@ -158,14 +158,20 @@ changing anything:
 - The chart's **invalid-traffic band** tells you whether bad traffic is one short
   burst or spread across the day. Those mean very different things.
 
-**Week 2 — preview ad protection with shadow mode.** Shadow mode records every
-decision it *would* make while still loading ads normally. The *Ad protection*
-panel then shows, per tier, how many pageviews would be blocked and an estimated
-false-positive rate.
+**Week 2 — preview what ad protection would do.** The *Ad protection* panel
+estimates, for each tier, how many pageviews it would block and the resulting
+false-positive rate — computed from *your own* recorded traffic. No setting has
+to change to see this, and it is available from the moment you have data.
 
 **Then enforce.** Pick the tier whose false-positive rate you can live with —
-`balanced` is the usual answer — and switch it on. You can go back to `off` at
+`balanced` is usually the answer — and switch it on. You can go back to `off` at
 any time.
+
+> **Shadow mode** is a separate safety net for the other order of operations: if
+> you enable protection *when creating a site*, it records decisions while still
+> loading ads normally for the first `adguard.shadow_days` (7 by default), then
+> begins enforcing. A site created with protection `off` has nothing to shadow —
+> use the panel estimate above instead.
 
 Once it is running, useful next steps: create an **API token** to query your data
 from a chatbot or the CLI ([`docs/API.md`](./docs/API.md)), and tune the signal

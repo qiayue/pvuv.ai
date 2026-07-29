@@ -66,7 +66,7 @@
   <span class="brand" id="brand">pvuv.ai</span>
   <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
     <select id="lang" aria-label="Language" style="background:#171a21;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px;font:inherit"></select>
-    <a href="/health.html" id="selfcheckLink" hidden style="color:#7ab3ff;text-decoration:none;font-size:13px" data-i18n="Self-check">Self-check</a>
+    <a href="/health.html" id="selfcheckLink" style="color:#7ab3ff;text-decoration:none;font-size:13px" data-i18n="Self-check">Self-check</a>
     <button id="logout" data-i18n="Sign out">Sign out</button>
   </div>
 </header>
@@ -233,15 +233,11 @@ async function loadSites() {
   const r = await guard(await fetch('/api/sites'));
   const { sites } = await r.json();
   const el = document.getElementById('sites');
-  const scLink = document.getElementById('selfcheckLink');
   if (!sites.length) {
-    scLink.hidden = false; // fresh install: surface self-check until a site exists
     el.innerHTML = `<p style="color:#8b93a1">${te('No sites yet — use the “＋ New site” button to add one.')}<br>`
       + `${te('Just deployed?')} <a href="/health.html" style="color:#7ab3ff;text-decoration:none">${te('Run the self-check ↗')}</a></p>`;
     return;
   }
-  scLink.hidden = true; // once set up, it's tucked away (Site &amp; branding panel has a link)
-
   // one card per site, each showing its own overview so all sites' numbers
   // are visible at a glance on this page; click a card for the full dashboard
   el.innerHTML = '<div class="cards">' + sites.map((s) => `
