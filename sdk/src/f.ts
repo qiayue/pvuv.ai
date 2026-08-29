@@ -371,6 +371,201 @@ import type { XPayload } from '../../shared/flags';
   }
 
   // -------------------------------------------------------------------------
+  // Behavior accumulators (for AI funnel analysis). Everything here is a DELTA
+  // since the last report, carried by the periodic page_pulse events AND by
+  // page_leave — so the data survives a lost leave beacon (mobile tab kills,
+  // crashes). Nothing sensitive is collected: element ids/short button text,
+  // counts and timings only — no field values, no keystrokes, no coordinates.
+  // -------------------------------------------------------------------------
+
+  const CK_MAX_KEYS = 15;
+  let ckMap: Record<string, number> = {};
+  let ckTotal = 0;
+  let rageDelta = 0;
+  let deadDelta = 0;
+  let errDelta = 0;
+
+  // element → compact stable key: '#id' or 'tag.firstClass', plus short label
+  function clickKey(el: Element): string {
+    let key = el.id ? '#' + el.id
+      : el.tagName.toLowerCase() + (el.classList.length ? '.' + el.classList[0] : '');
+    const label = ((el as HTMLElement).innerText || (el as HTMLInputElement).value || '')
+      .trim().replace(/\s+/g, ' ').slice(0, 24);
+    if (label) key += '|' + label;
+    return key.slice(0, 64);
+  }
+
+  function noteClickKey(key: string): void {
+    if (!(key in ckMap) && Object.keys(ckMap).length >= CK_MAX_KEYS) key = '(other)';
+    ckMap[key] = (ckMap[key] || 0) + 1;
+    ckTotal++;
+  }
+
+  // rage: 3+ clicks on the same element within a short burst (counted once per
+  // burst). dead: a click on an interactive-looking element that produced no
+  // DOM change and no navigation shortly after.
+  let lastClickKey = '';
+  let burstStart = 0;
+  let burstCount = 0;
+  let rageCounted = false;
+  let lastMutation = 0;
+  let navigating = false;
+  try {
+    new MutationObserver(() => { lastMutation = Date.now(); })
+      .observe(doc.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+  } catch { /* dead-click detection simply disabled */ }
+  win.addEventListener('pagehide', () => { navigating = true; });
+
+  function noteBehaviorClick(el: Element): void {
+    const key = clickKey(el);
+    noteClickKey(key);
+    const now = Date.now();
+    if (key === lastClickKey && now - burstStart <= 1200) {
+      burstCount++;
+      if (burstCount >= 3 && !rageCounted) { rageDelta++; rageCounted = true; }
+    } else {
+      lastClickKey = key; burstStart = now; burstCount = 1; rageCounted = false;
+    }
+    // dead-click probe: nothing mutated and no navigation started within 600ms
+    const clickTs = now;
+    setTimeout(() => {
+      if (!navigating && lastMutation < clickTs && loc.href === currentUrl) deadDelta++;
+    }, 600);
+    maybePulseNow();
+  }
+
+  doc.addEventListener('click', (e) => {
+    if (!tracking) return;
+    const el = (e.target as Element | null)?.closest?.(
+      'a[href], button, [role="button"], input[type="submit"], input[type="button"], [data-pvuv-event]',
+    );
+    if (el) noteBehaviorClick(el);
+    // declarative no-code events: <button data-pvuv-event="signup" data-pvuv-props='{"plan":"pro"}'>
+    const dec = (e.target as Element | null)?.closest?.('[data-pvuv-event]');
+    if (dec) {
+      const name = dec.getAttribute('data-pvuv-event') || '';
+      let props: Record<string, unknown> | undefined;
+      const raw = dec.getAttribute('data-pvuv-props');
+      if (raw) { try { props = JSON.parse(raw); } catch { /* name-only */ } }
+      track(name, props);
+    }
+  }, { capture: true, passive: true });
+
+  // JS errors: count + a deduplicated sample of the messages (the count feeds
+  // aggregation; the messages tell the AI/owner WHAT broke). Bounded hard:
+  // ≤5 distinct messages per report, each ≤200 chars, no stacks.
+  const ERR_MAX_MSGS = 5;
+  let errMsgs: Record<string, number> = {};
+  function noteError(msg: unknown, src?: string, line?: number): void {
+    if (errDelta >= 200) return;
+    errDelta++;
+    let m = String(msg ?? 'unknown error').slice(0, 200);
+    if (src) {
+      const base = String(src).split('/').pop() || '';
+      if (base) m += ` (${base.slice(0, 40)}${line ? ':' + line : ''})`;
+    }
+    if (!(m in errMsgs) && Object.keys(errMsgs).length >= ERR_MAX_MSGS) return;
+    errMsgs[m] = (errMsgs[m] || 0) + 1;
+  }
+  win.addEventListener('error', (e) => {
+    // resource-load errors (img/script) have no message — label by the tag
+    if (e.message) noteError(e.message, e.filename, e.lineno);
+    else noteError('resource load failed: ' + ((e.target as Element | null)?.tagName || '').toLowerCase());
+  }, true);
+  win.addEventListener('unhandledrejection', (e) => {
+    const r = (e as PromiseRejectionEvent).reason;
+    noteError(r instanceof Error ? r.message : r);
+  });
+
+  // form funnel events: form_start (first focus into a form, once per form per
+  // page) and form_submit. Abandonment is DERIVED server-side (starts −
+  // submits) so it never depends on the leave beacon. Only the form's identity
+  // is reported — never any field content.
+  function formKey(f: HTMLFormElement): string {
+    return (f.id ? '#' + f.id
+      : f.getAttribute('name') ? 'form[' + f.getAttribute('name') + ']'
+      : 'form@' + loc.pathname).slice(0, 64);
+  }
+  const formsStarted: Record<string, 1> = {};
+  doc.addEventListener('focusin', (e) => {
+    if (!tracking) return;
+    const t = e.target as Element | null;
+    if (!t || !/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    const f = (t as HTMLInputElement).form;
+    if (!f) return;
+    const key = formKey(f);
+    if (formsStarted[key]) return;
+    formsStarted[key] = 1;
+    const ev = baseEvent('form_start');
+    ev.p = { form: key };
+    enqueue(ev);
+  }, { capture: true, passive: true });
+  doc.addEventListener('submit', (e) => {
+    if (!tracking) return;
+    const f = e.target as HTMLFormElement | null;
+    if (!f || f.tagName !== 'FORM') return;
+    const ev = baseEvent('form_submit');
+    ev.p = { form: formKey(f) };
+    queue.push(ev);
+    flush(true); // the submit may navigate away immediately
+  }, { capture: true });
+
+  /** Attach all pending behavior deltas (+ one-shot vitals) to a carrier event
+   *  and reset them. Shared by page_pulse and page_leave. */
+  function attachBehavior(ev: IncomingEvent): boolean {
+    let any = false;
+    accumulateDwell();
+    if (unreportedDwell > 0) { ev.d = unreportedDwell; ev.sd = maxScroll; unreportedDwell = 0; any = true; }
+    if (errDelta > 0) {
+      ev.er = errDelta; errDelta = 0; any = true;
+      const msgs = Object.keys(errMsgs);
+      if (msgs.length) {
+        ev.p = { ...(ev.p || {}), err: msgs.map((m) => ({ m, n: errMsgs[m] })) };
+        errMsgs = {};
+      }
+    }
+    if (rageDelta > 0) { ev.rg = rageDelta; rageDelta = 0; any = true; }
+    if (deadDelta > 0) { ev.dc = deadDelta; deadDelta = 0; any = true; }
+    if (ckTotal > 0) {
+      ev.p = { ...(ev.p || {}), ck: Object.keys(ckMap).map((s) => ({ s, n: ckMap[s] })) };
+      ckMap = {}; ckTotal = 0; any = true;
+    }
+    const wv = vitalsPayload();
+    if (wv) { ev.wv = wv; any = true; }
+    return any;
+  }
+
+  // -------------------------------------------------------------------------
+  // periodic reporting (page_pulse): batched deltas on a visible-time backoff
+  // schedule — 15s, 30s, 60s, then every 120s — plus an immediate report when
+  // the click buffer runs hot. Fires only when something new accumulated.
+  // -------------------------------------------------------------------------
+
+  const PULSE_DELAYS = [15_000, 30_000, 60_000, 120_000];
+  let pulseStep = 0;
+  let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function sendPulse(): void {
+    if (!tracking) return;
+    const ev = baseEvent('page_pulse');
+    if (attachBehavior(ev)) enqueue(ev); // rides the normal batch queue
+  }
+  function schedulePulse(): void {
+    if (pulseTimer) clearTimeout(pulseTimer);
+    pulseTimer = setTimeout(() => {
+      pulseTimer = null;
+      if (doc.visibilityState === 'visible') {
+        sendPulse();
+        pulseStep = Math.min(pulseStep + 1, PULSE_DELAYS.length - 1);
+      }
+      schedulePulse();
+    }, PULSE_DELAYS[pulseStep]);
+  }
+  function maybePulseNow(): void {
+    if (ckTotal >= 25 || Object.keys(ckMap).length >= 12) sendPulse();
+  }
+
+  // -------------------------------------------------------------------------
   // interaction & dwell tracking (behavioral signals, §4.4)
   // -------------------------------------------------------------------------
 
@@ -473,6 +668,13 @@ import type { XPayload } from '../../shared/flags';
     if (!tracking) return;
     unreportedDwell = 0;
     maxScroll = 0;
+    // behavior deltas are per-page: a fresh route starts a clean slate and a
+    // fresh (fast-first) pulse schedule
+    ckMap = {}; ckTotal = 0; rageDelta = 0; deadDelta = 0; errDelta = 0; errMsgs = {};
+    lastClickKey = ''; burstCount = 0;
+    for (const k of Object.keys(formsStarted)) delete formsStarted[k];
+    pulseStep = 0;
+    schedulePulse();
     visibleSince = doc.visibilityState === 'visible' ? Date.now() : 0;
     noteScroll();
     enqueue(baseEvent('pageview'));
@@ -482,16 +684,10 @@ import type { XPayload } from '../../shared/flags';
   // page_leave — increments sum to true visible dwell server-side (§4.1).
   function pageLeave(beacon: boolean): void {
     if (!tracking) return;
-    accumulateDwell();
-    if (unreportedDwell > 0) {
-      const ev = baseEvent('page_leave');
-      ev.d = unreportedDwell;
-      ev.sd = maxScroll;
-      const wv = vitalsPayload(); // first leave of the initial load only
-      if (wv) ev.wv = wv;
-      unreportedDwell = 0;
-      queue.push(ev);
-    }
+    // page_leave is one of the behavior carriers (page_pulse is the other), so
+    // it drains whatever deltas the last pulse hasn't shipped yet
+    const ev = baseEvent('page_leave');
+    if (attachBehavior(ev)) queue.push(ev);
     // always flush: a pageview may still be sitting behind the 3s batch timer
     // (e.g. a tab opened in the background and closed before it fired), and the
     // timer won't survive the unload

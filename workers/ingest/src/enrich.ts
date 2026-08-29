@@ -224,6 +224,10 @@ function vitalMs(v: unknown): number | null {
 function vitalCls(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10 ? Math.round(v * 1000) / 1000 : null;
 }
+/** Frustration/error deltas: small non-negative counts, capped defensively. */
+function smallCount(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(Math.round(v), 500) : null;
+}
 
 export interface RequestContext {
   cf: IncomingRequestCfProperties | undefined;
@@ -332,6 +336,9 @@ export async function enrichEvent(
     inp_ms: vitalMs(ev.wv?.inp),
     fcp_ms: vitalMs(ev.wv?.fcp),
     ttfb_ms: vitalMs(ev.wv?.ttfb),
+    err_count: smallCount(ev.er),
+    rage_count: smallCount(ev.rg),
+    dead_count: smallCount(ev.dc),
     ts,
     created_at: ctx.now,
   };

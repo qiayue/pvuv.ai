@@ -43,8 +43,14 @@ export interface IncomingEvent {
   /** first-touch attribution snapshot from _pv_ft (§3) */
   ft?: { s?: string; m?: string; c?: string; r?: string };
   /** Core Web Vitals snapshot — sent once per page load, on the first
-   *  page_leave (lcp/fcp/ttfb/inp in ms; cls unitless) */
+   *  behavior carrier (page_pulse or page_leave, whichever comes first) */
   wv?: { lcp?: number; cls?: number; inp?: number; fcp?: number; ttfb?: number };
+  /** JS error count since the last report (behavior carriers only) */
+  er?: number;
+  /** rage-click bursts since the last report */
+  rg?: number;
+  /** dead clicks since the last report */
+  dc?: number;
   /** client unix ms */
   ts?: number;
 }
@@ -112,12 +118,16 @@ export interface EventRow {
   /** crawler category from the owner-imported bot directory (§6.6) — purely
    *  descriptive, never feeds scoring or the ad-guard decision */
   bot_category: string | null;
-  /** Core Web Vitals (page_leave of the initial load only; NULL elsewhere) */
+  /** Core Web Vitals (first behavior carrier of the initial load; NULL elsewhere) */
   lcp_ms: number | null;
   cls: number | null;
   inp_ms: number | null;
   fcp_ms: number | null;
   ttfb_ms: number | null;
+  /** frustration/error deltas (behavior carriers only; NULL elsewhere) */
+  err_count: number | null;
+  rage_count: number | null;
+  dead_count: number | null;
   ts: number;
   created_at: number;
 }
@@ -137,6 +147,7 @@ export const EVENT_COLUMNS = [
   'ft_source', 'ft_medium', 'ft_campaign', 'ft_referrer',
   'bot_score', 'verdict', 'bot_flags', 'score_stage', 'bot_category',
   'lcp_ms', 'cls', 'inp_ms', 'fcp_ms', 'ttfb_ms',
+  'err_count', 'rage_count', 'dead_count',
   'ts', 'created_at',
 ] as const satisfies readonly (keyof EventRow)[];
 
@@ -145,7 +156,11 @@ export const EVENT_COLUMNS = [
 // "goal". Shared so consumer / rollup / query layer agree on the definition.
 // ---------------------------------------------------------------------------
 
-export const RESERVED_EVENTS = ['pageview', 'page_leave', 'outbound_click', 'identify'] as const;
+// page_pulse = the periodic behavior carrier (incremental dwell/scroll/click
+// deltas, so data survives a lost leave beacon); form_start/form_submit are
+// auto-collected — abandonment is DERIVED (starts − submits), never an event,
+// so it can't be lost with the page. None of these are goals.
+export const RESERVED_EVENTS = ['pageview', 'page_leave', 'page_pulse', 'outbound_click', 'identify', 'form_start', 'form_submit'] as const;
 export function isConversion(event: string): boolean {
   return !(RESERVED_EVENTS as readonly string[]).includes(event);
 }
@@ -214,6 +229,10 @@ export const EVENT_LATE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = 
   { name: 'inp_ms', ddl: 'INTEGER' },
   { name: 'fcp_ms', ddl: 'INTEGER' },
   { name: 'ttfb_ms', ddl: 'INTEGER' },
+  // frustration/error signals — migration 0017
+  { name: 'err_count', ddl: 'INTEGER' },
+  { name: 'rage_count', ddl: 'INTEGER' },
+  { name: 'dead_count', ddl: 'INTEGER' },
 ];
 
 /** Minimal structural shape of what this helper needs from D1, so shared/ does
@@ -272,6 +291,7 @@ export function eventsTableDDL(suffix: string): string[] {
       score_stage TEXT DEFAULT 'realtime',
       bot_category TEXT,
       lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
+      err_count INTEGER, rage_count INTEGER, dead_count INTEGER,
       ts INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`,

@@ -96,8 +96,10 @@ CREATE TABLE events_202607 (
   bot_flags INTEGER DEFAULT 0,
   score_stage TEXT DEFAULT 'realtime',
   bot_category TEXT,             -- crawler category from the imported bot directory (0013); descriptive only
-  -- Core Web Vitals, reported once per page load on the first page_leave (0016)
+  -- Core Web Vitals, reported once per page load on the first behavior carrier (0016)
   lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
+  -- frustration/error deltas on page_pulse / page_leave carriers (0017)
+  err_count INTEGER, rage_count INTEGER, dead_count INTEGER,
   ts INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );

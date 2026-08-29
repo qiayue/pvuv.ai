@@ -252,7 +252,7 @@ export async function rollupSiteDay(
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END),
       COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END),
       0,
-      SUM(CASE WHEN event = 'page_leave' THEN COALESCE(duration_ms, 0) ELSE 0 END),
+      SUM(CASE WHEN event IN ('page_leave','page_pulse') THEN COALESCE(duration_ms, 0) ELSE 0 END),
       SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')),
       COUNT(DISTINCT CASE WHEN event = 'pageview' AND verdict NOT IN ('bot','crawler') THEN visitor_id END)
     FROM ${pageEv.sql}

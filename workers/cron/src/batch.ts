@@ -198,7 +198,10 @@ async function updateProfiles(
   // active-hours bitmask via SUM(DISTINCT 1<<hour) (== bitwise OR of the powers).
   // All three statements run in ONE db.batch (atomic transaction) so the fold is
   // all-or-nothing — its watermark can then advance exactly once (see §B1).
-  const uv = unionOver(tables, 'site_id, visitor_id, ts', startTs, endTs);
+  // page_pulse is machine-scheduled (fixed backoff cadence) — folding it into
+  // the interval stats would make every real human look mechanically timed and
+  // collapse interval_cv toward 0, tripping the bot-timing rule on everyone.
+  const uv = unionOver(tables, 'site_id, visitor_id, ts', startTs, endTs, "event != 'page_pulse'");
   const merge = db.prepare(`
     UPDATE visitor_profiles AS vp SET
       interval_m2 = CASE WHEN vp.interval_n + w.n > 0

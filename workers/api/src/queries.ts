@@ -701,7 +701,7 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
         COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END) AS sessions,
         COALESCE(SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')), 0) AS pv_clean,
         COUNT(DISTINCT CASE WHEN event = 'pageview' AND verdict NOT IN ('bot','crawler') THEN visitor_id END) AS uv_clean,
-        COALESCE(SUM(CASE WHEN event = 'page_leave' THEN COALESCE(duration_ms, 0) ELSE 0 END), 0) AS total_duration_ms
+        COALESCE(SUM(CASE WHEN event IN ('page_leave','page_pulse') THEN COALESCE(duration_ms, 0) ELSE 0 END), 0) AS total_duration_ms
       FROM (${u.sql})
       GROUP BY hostname, path ORDER BY pv DESC LIMIT ?
     `).bind(...u.binds, limit).all<Record<string, unknown> & { hostname: string; path: string }>();
@@ -1079,9 +1079,9 @@ export async function vitals(db: D1Database, siteId: string, period: Period, fil
   const empty = { metrics: {}, pages: [], samples: 0 };
   if (tables.length === 0) return empty;
   const ef = evFilter(filters);
-  // one measured load per row: page_leave events that carried at least one
-  // vital, from traffic not judged bot/crawler (bad-bot timings are noise)
-  const base = `event = 'page_leave' AND verdict NOT IN ('bot','crawler')
+  // one measured load per row: behavior carriers (pulse or leave) that carried
+  // at least one vital, from traffic not judged bot/crawler
+  const base = `event IN ('page_leave','page_pulse') AND verdict NOT IN ('bot','crawler')
     AND (lcp_ms IS NOT NULL OR cls IS NOT NULL OR inp_ms IS NOT NULL OR fcp_ms IS NOT NULL OR ttfb_ms IS NOT NULL)`
     + (ef.sql ? ` AND ${ef.sql}` : '');
   const u = unionOver(tables, 'hostname, path, lcp_ms, cls, inp_ms, fcp_ms, ttfb_ms', siteId, period.startTs, period.endTs, base, ef.binds);
@@ -1269,7 +1269,7 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
     const rows = await db.prepare(`
       SELECT ts, event, session_id, hostname, path, referrer, duration_ms, scroll_depth,
              had_interaction, props, bot_score, verdict, bot_flags, score_stage
-      FROM ${table} WHERE site_id = ? AND visitor_id = ? ORDER BY ts DESC LIMIT ?
+      FROM ${table} WHERE site_id = ? AND visitor_id = ? AND event != 'page_pulse' ORDER BY ts DESC LIMIT ?
     `).bind(siteId, vid, PROFILE_EVENTS_MAX - events.length).all();
     events.push(...rows.results);
   }
