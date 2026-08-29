@@ -1058,6 +1058,71 @@ export async function funnel(db: D1Database, siteId: string, period: Period, ste
 const VERDICT_BY_RANK: Record<number, string> = { 4: 'bot', 3: 'crawler', 2: 'suspect', 1: 'clean' };
 
 // ---------------------------------------------------------------------------
+// GET /sites/:id/ctit — conversion-timing distribution (CTIT paradigm from
+// mobile attribution, applied to web): time from session start to each goal
+// event, clean traffic only. Two fraud shapes to watch: a spike in the 0–10s
+// bucket (injection-like — conversions faster than a human can act) and a
+// near-flat distribution at volume (flooding-like — no natural clustering).
+// Only the spike is auto-flagged; flatness needs volume and stays visual.
+// ---------------------------------------------------------------------------
+
+const CTIT_BUCKETS: Array<{ key: string; label: string; maxMs: number }> = [
+  { key: 'b0', label: '<10s', maxMs: 10_000 },
+  { key: 'b1', label: '10–30s', maxMs: 30_000 },
+  { key: 'b2', label: '30–60s', maxMs: 60_000 },
+  { key: 'b3', label: '1–3m', maxMs: 180_000 },
+  { key: 'b4', label: '3–10m', maxMs: 600_000 },
+  { key: 'b5', label: '>10m', maxMs: Number.MAX_SAFE_INTEGER },
+];
+/** Auto-flag threshold: ≥30 conversions and ≥30% inside 10s of session start. */
+const CTIT_MIN_N = 30;
+const CTIT_FAST_SHARE = 0.3;
+
+export async function conversionTiming(db: D1Database, siteId: string, period: Period) {
+  const empty = { n: 0, fast_share: null as number | null, median_ms: null as number | null, buckets: [] as unknown[], flag: null as string | null };
+  const tables = await eventTables(db, period.startTs, period.endTs);
+  if (tables.length === 0) return empty;
+
+  // goal events joined to their session's start; negative deltas (clock skew /
+  // session-row races) are excluded rather than clamped into the fast bucket
+  const parts = tables.map((t) => `
+    SELECT e.ts - s.started_at AS delta FROM ${t} e
+    JOIN sessions s ON s.site_id = e.site_id AND s.session_id = e.session_id
+    WHERE e.site_id = ? AND e.ts >= ? AND e.ts < ?
+      AND e.event NOT IN (${RESERVED_EVENTS_SQL})
+      AND e.verdict NOT IN ('bot','crawler')`);
+  const binds = tables.flatMap(() => [siteId, period.startTs, period.endTs]);
+  const bucketCols = CTIT_BUCKETS.map((b, i) => {
+    const lo = i === 0 ? 0 : CTIT_BUCKETS[i - 1].maxMs;
+    return b.maxMs === Number.MAX_SAFE_INTEGER
+      ? `COALESCE(SUM(delta >= ${lo}), 0) AS ${b.key}`
+      : `COALESCE(SUM(delta >= ${lo} AND delta < ${b.maxMs}), 0) AS ${b.key}`;
+  }).join(', ');
+
+  const row = await db.prepare(`
+    SELECT COUNT(*) AS n, ${bucketCols}
+    FROM (${parts.join(' UNION ALL ')}) WHERE delta >= 0
+  `).bind(...binds).first<Record<string, number>>();
+  const n = row?.n ?? 0;
+  if (!n) return empty;
+
+  const med = await db.prepare(`
+    SELECT MAX(CASE WHEN q <= 2 THEN delta END) AS p50
+    FROM (SELECT delta, NTILE(4) OVER (ORDER BY delta) AS q
+          FROM (${parts.join(' UNION ALL ')}) WHERE delta >= 0)
+  `).bind(...binds).first<{ p50: number | null }>();
+
+  const fastShare = (row!.b0 ?? 0) / n;
+  return {
+    n,
+    fast_share: Math.round(fastShare * 1e4) / 1e4,
+    median_ms: med?.p50 ?? null,
+    buckets: CTIT_BUCKETS.map((b) => ({ label: b.label, n: row![b.key] ?? 0 })),
+    flag: n >= CTIT_MIN_N && fastShare >= CTIT_FAST_SHARE ? 'fast_spike' : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // GET /sites/:id/vitals — Core Web Vitals (p75 + Google rating), clean traffic
 // only. Values ride the initial load's first page_leave (SDK), so each row is
 // one measured page load. p75 via NTILE(4): max of the first three quartiles.

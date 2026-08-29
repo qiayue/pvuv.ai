@@ -100,6 +100,8 @@ CREATE TABLE events_202607 (
   lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
   -- frustration/error deltas on page_pulse / page_leave carriers (0017)
   err_count INTEGER, rage_count INTEGER, dead_count INTEGER,
+  -- transport fingerprint: JA4-inspired own-implementation hash + RTT + protocol (0018)
+  tls_fp TEXT, tcp_rtt INTEGER, http_protocol TEXT,
   ts INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );

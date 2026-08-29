@@ -339,6 +339,11 @@ export async function enrichEvent(
     err_count: smallCount(ev.er),
     rage_count: smallCount(ev.rg),
     dead_count: smallCount(ev.dc),
+    // tls_fp is request-level (one keyed hash per request) — the caller stamps
+    // it after enrichment, like bot_category
+    tls_fp: null,
+    tcp_rtt: typeof cf?.clientTcpRtt === 'number' ? Math.min(Math.round(cf.clientTcpRtt), 60_000) : null,
+    http_protocol: (cf?.httpProtocol as string | undefined)?.slice(0, 16) ?? null,
     ts,
     created_at: ctx.now,
   };

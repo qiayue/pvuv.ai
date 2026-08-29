@@ -255,6 +255,10 @@
     <h2 data-i18n="Goals (custom events)">Goals (custom events)</h2>
     <div class="panel" id="goals"></div>
   </div>
+  <div id="ctitSection" hidden>
+    <h2 data-i18n="Conversion timing">Conversion timing</h2>
+    <div class="panel" id="ctit"></div>
+  </div>
 
   <div class="chart-head">
     <h2 data-i18n="Funnel">Funnel</h2>
@@ -404,7 +408,7 @@ const FLAG_LABELS = {
   0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
   0x4000: 'search referrer from datacenter', 0x8000: 'forged search referrer',
   0x10000: 'headless UA', 0x20000: 'headless window', 0x40000: 'platform/UA mismatch',
-  0x80000: 'synthetic render env',
+  0x80000: 'synthetic render env', 0x100000: 'HTTP/1 + modern browser',
 };
 const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
 
@@ -432,6 +436,7 @@ const SIGNAL_INFO = {
   HEADLESS_WINDOW: ['Windowless browser', 'The browser window reports zero outer size — typical of a headless / windowless runtime'],
   UA_PLATFORM_MISMATCH: ['OS spoofing', "The claimed operating system (Windows/macOS/iOS) contradicts the browser's actual platform"],
   SYNTHETIC_ENV: ['Synthetic environment', 'Renders color emoji in monochrome and has no real system fonts — a bare headless/container browser, not a real device'],
+  HTTP1_MODERN_BROWSER: ['HTTP/1 with modern browser', 'Claims a modern Chrome but spoke HTTP/1.x to the edge — real Chrome negotiates HTTP/2/3; typical of scripted TLS stacks behind a spoofed UA (corporate proxies can also cause this)'],
 };
 const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
 const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];
@@ -874,6 +879,7 @@ async function loadEdge() {
 // friendly names for the categories the public directories use; unknown keys
 // fall through to the raw value so a new category is never hidden
 const CRAWLER_CAT = {
+  ai_agent_declared: 'AI agent (declared)',
   search: 'Search engine', ai_training: 'AI training', ai: 'AI', ai_assistant: 'AI assistant',
   ai_search: 'AI search', seo: 'SEO tool', advertising: 'Ad verification', ads: 'Ad verification',
   monitoring: 'Monitoring', security: 'Security scanner', archive: 'Archiving',
@@ -1463,10 +1469,40 @@ document.getElementById('shareBtn').addEventListener('click', renderShareModal);
 async function loadGoals() {
   const sec = document.getElementById('goalsSection');
   let rows = [];
-  try { rows = (await get('breakdown', '&dim=goal')).rows || []; } catch { sec.hidden = true; return; }
-  if (!rows.length) { sec.hidden = true; return; }
+  try { rows = (await get('breakdown', '&dim=goal')).rows || []; } catch { sec.hidden = true; loadCtit(false); return; }
+  if (!rows.length) { sec.hidden = true; loadCtit(false); return; }
   sec.hidden = false;
   renderBreakdown('goals', 'goal', rows);
+  loadCtit(true);
+}
+
+// Conversion-timing distribution (CTIT): how long after the session started
+// each goal event fired. Fraud shapes: a 0–10s spike = conversions faster than
+// a human plausibly acts; a near-flat histogram at volume = flooding-like.
+async function loadCtit(hasGoals) {
+  const sec = document.getElementById('ctitSection');
+  if (!hasGoals) { sec.hidden = true; return; }
+  const el = document.getElementById('ctit');
+  let d;
+  try { d = await get('ctit'); } catch { sec.hidden = true; return; }
+  if (!d || !d.n) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const max = Math.max(1, ...d.buckets.map((b) => b.n));
+  const bars = d.buckets.map((b) => `
+    <div style="display:flex;align-items:center;gap:10px;margin:3px 0">
+      <span class="muted" style="width:56px;text-align:right;font-size:12px">${esc(b.label)}</span>
+      <div style="flex:1;background:#1d222c;border-radius:4px;height:14px;overflow:hidden">
+        <div style="width:${(b.n / max * 100).toFixed(1)}%;height:100%;background:${b.label === '<10s' && d.flag ? '#f87171' : '#3b82f6'}"></div>
+      </div>
+      <span class="num" style="width:70px;font-size:12px">${fmt(b.n)} <span class="muted">${pctf(b.n / d.n)}</span></span>
+    </div>`).join('');
+  el.innerHTML =
+    `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Time from session start to each conversion (clean traffic). A spike under 10s means conversions faster than a human plausibly acts; a flat spread at volume suggests flooding.')}</p>`
+    + bars
+    + `<p class="muted" style="margin:10px 0 0;font-size:12.5px">${fmt(d.n)} ${te('conversions')} · ${te('median')} ${dur(d.median_ms)}`
+    + (d.flag === 'fast_spike'
+      ? ` · <span style="color:#f87171">${te('⚠ suspicious: ')}${pctf(d.fast_share)} ${te('convert within 10s of arriving')}</span>` : '')
+    + '</p>';
 }
 document.getElementById('utmDim').addEventListener('change', loadUtm);
 document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });

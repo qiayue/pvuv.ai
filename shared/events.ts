@@ -128,6 +128,14 @@ export interface EventRow {
   err_count: number | null;
   rage_count: number | null;
   dead_count: number | null;
+  /** transport fingerprint (JA4-inspired, own implementation): keyed hash of
+   *  TLS version|cipher|extensions-sha1|hello-length|http protocol. Server-
+   *  observed, spoof-resistant; clusters sessions across rotating IPs. */
+  tls_fp: string | null;
+  /** smoothed TCP RTT to the edge in ms (request.cf.clientTcpRtt) */
+  tcp_rtt: number | null;
+  /** negotiated HTTP protocol (e.g. HTTP/2, HTTP/3, HTTP/1.1) */
+  http_protocol: string | null;
   ts: number;
   created_at: number;
 }
@@ -148,6 +156,7 @@ export const EVENT_COLUMNS = [
   'bot_score', 'verdict', 'bot_flags', 'score_stage', 'bot_category',
   'lcp_ms', 'cls', 'inp_ms', 'fcp_ms', 'ttfb_ms',
   'err_count', 'rage_count', 'dead_count',
+  'tls_fp', 'tcp_rtt', 'http_protocol',
   'ts', 'created_at',
 ] as const satisfies readonly (keyof EventRow)[];
 
@@ -233,6 +242,10 @@ export const EVENT_LATE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = 
   { name: 'err_count', ddl: 'INTEGER' },
   { name: 'rage_count', ddl: 'INTEGER' },
   { name: 'dead_count', ddl: 'INTEGER' },
+  // transport fingerprint — migration 0018
+  { name: 'tls_fp', ddl: 'TEXT' },
+  { name: 'tcp_rtt', ddl: 'INTEGER' },
+  { name: 'http_protocol', ddl: 'TEXT' },
 ];
 
 /** Minimal structural shape of what this helper needs from D1, so shared/ does
@@ -292,6 +305,7 @@ export function eventsTableDDL(suffix: string): string[] {
       bot_category TEXT,
       lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
       err_count INTEGER, rage_count INTEGER, dead_count INTEGER,
+      tls_fp TEXT, tcp_rtt INTEGER, http_protocol TEXT,
       ts INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`,

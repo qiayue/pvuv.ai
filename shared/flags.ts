@@ -60,6 +60,10 @@ export const FLAG = {
    *  color emoji as a monochrome glyph and collapses every system-font family to
    *  one fallback metric (no real fonts installed). Count of such tells (§4.4). */
   SYNTHETIC_ENV: 0x80000,
+  /** modern Chromium UA speaking HTTP/1.x to the edge — real Chrome ≥90 always
+   *  negotiates h2/h3; HTTP/1 + modern UA is a transport/UA contradiction
+   *  typical of TLS-terminating bot stacks (curl/python behind a spoofed UA) */
+  HTTP1_MODERN_BROWSER: 0x100000,
 } as const;
 
 export type FlagName = keyof typeof FLAG;
@@ -90,6 +94,7 @@ export const FLAG_CONFIG_KEY: Record<FlagName, string> = {
   HEADLESS_WINDOW: 'headless_window',
   UA_PLATFORM_MISMATCH: 'ua_platform_mismatch',
   SYNTHETIC_ENV: 'synthetic_env',
+  HTTP1_MODERN_BROWSER: 'http1_modern_browser',
 } as const;
 
 /** All flag names, in ascending bit order. */
@@ -124,6 +129,8 @@ export const ENV_ONLY_FLAGS: ReadonlySet<FlagName> = new Set<FlagName>([
   'HEADLESS_WINDOW',
   'UA_PLATFORM_MISMATCH',
   'SYNTHETIC_ENV',
+  // corporate/legacy proxies downgrade real users to HTTP/1 too — corroboration only
+  'HTTP1_MODERN_BROWSER',
 ]);
 
 /** SQLite predicate matching a search-engine referrer host over a ref_domain

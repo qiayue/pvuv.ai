@@ -16,7 +16,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
 import { hmacSign } from '../../../shared/ids';
@@ -96,6 +96,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
   if (resource === 'vitals') return json(await vitals(env.DB, siteId, period, filters));
+  if (resource === 'ctit') return json(await conversionTiming(env.DB, siteId, period));
   if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
   if (resource === 'edge') return json(await edge(env.DB, siteId, period));
   if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));

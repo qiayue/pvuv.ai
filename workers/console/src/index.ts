@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { parseBotDirectory } from '../../../shared/botdir';
 import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
@@ -709,6 +709,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
     if (resource === 'vitals') return json(await vitals(env.DB, siteId, period, filters));
+    if (resource === 'ctit') return json(await conversionTiming(env.DB, siteId, period));
     if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
     if (resource === 'edge') return json(await edge(env.DB, siteId, period));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));

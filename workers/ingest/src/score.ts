@@ -43,6 +43,8 @@ export interface ScoreInput {
   headlessUA: boolean;
   /** fp_hash / ip24_hash matched the KV blocklist */
   blocklisted: boolean;
+  /** negotiated HTTP protocol from request.cf (e.g. "HTTP/2", "HTTP/1.1") */
+  httpProtocol?: string | undefined;
   /** raw navigation referrer (document.referrer) — for forged-search detection */
   referrer?: string | undefined;
 }
@@ -108,6 +110,12 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
   // --- server-side signals (§6.1) ---
   if (input.asnType === 'datacenter') fire('DATACENTER_ASN');
   if (input.headlessUA) fire('HEADLESS_UA'); // self-declared automation runtime
+
+  // transport/UA contradiction: real Chromium ≥90 negotiates h2/h3 with the
+  // edge; HTTP/1.x under a modern Chrome UA is typical of curl/python-tls
+  // stacks behind a spoofed UA. Evidence-only by default (weight 0 in config)
+  // until validated — corporate MITM proxies downgrade real users too.
+  if (input.chromiumUA && /^http\/1/i.test(input.httpProtocol ?? '')) fire('HTTP1_MODERN_BROWSER');
 
   const hasSecFetch =
     input.headers.has('sec-fetch-mode') || input.headers.has('sec-fetch-site') || input.headers.has('sec-fetch-dest');

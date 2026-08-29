@@ -77,6 +77,17 @@
       'Ask the site owner for a fresh link.': '请向站点所有者索取新链接。',
       'analytics with invalid-traffic detection': '自带无效流量识别的网站统计',
       'after invalid-traffic filtering': '过滤无效流量后',
+      // conversion timing (CTIT)
+      'Conversion timing': '转化时延',
+      'Time from session start to each conversion (clean traffic). A spike under 10s means conversions faster than a human plausibly acts; a flat spread at volume suggests flooding.': '从会话开始到每次转化的耗时(干净流量)。10 秒内的尖峰意味着转化快得不像真人操作;大流量下的平坦分布则疑似刷量。',
+      'conversions': '次转化',
+      'median': '中位数',
+      '⚠ suspicious: ': '⚠ 可疑:',
+      'convert within 10s of arriving': '的转化发生在到站 10 秒内',
+      // new signals / categories
+      'HTTP/1 with modern browser': 'HTTP/1 + 现代浏览器',
+      'Claims a modern Chrome but spoke HTTP/1.x to the edge — real Chrome negotiates HTTP/2/3; typical of scripted TLS stacks behind a spoofed UA (corporate proxies can also cause this)': '自称现代 Chrome 却用 HTTP/1.x 连接边缘——真 Chrome 会协商 HTTP/2/3;典型于伪装 UA 的脚本 TLS 栈(企业代理也可能导致)',
+      'AI agent (declared)': 'AI 代理(自声明)',
       'all sites': '全部站点',
       'used': '最近使用',
       'never used': '从未使用',

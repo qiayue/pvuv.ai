@@ -45,6 +45,7 @@ headless_ua            = 70       # 0x10000 UA advertises a headless engine ("He
 headless_window        = 15       # 0x20000 desktop headless window tell (outerWidth/outerHeight === 0). Lowered from 30: on live traffic only 1 of 139 confirmed bots tripped it, while it fired on 22% of JP and 18% of TW visitors — corroborating strength at most, and at 30 it alone crossed the suspect band.
 ua_platform_mismatch   = 30       # 0x40000 navigator.platform contradicts the UA OS family (Win/Mac/iOS on Linux)
 synthetic_env          = 0        # 0x80000 DISABLED (evidence-only) — production data showed this fires on geography, not on synthetic environments: 0/209 headless-flagged and 2/209 datacenter visitors tripped it, vs 34% of CN visitors and ~0% of every other country. It was pushing real users into 'suspect' on its own (2 tells = 40). Still recorded in bot_flags for investigation; set >0 only after the probe is fixed and re-validated.
+http1_modern_browser   = 0        # 0x100000 evidence-only until validated on live traffic — modern Chromium UA speaking HTTP/1.x to the edge (real Chrome >=90 negotiates h2/h3; HTTP/1 + modern UA is typical of curl/python-tls behind a spoofed UA). Recorded in bot_flags; corporate MITM proxies can downgrade real users, so validate the false-positive profile (check the fired-signals panel against verdicts/geo) before setting a weight (suggested 10-15 once clean).
 
 [trust_credits]
 # Subtracted from bot_score (make legit traffic look cleaner).

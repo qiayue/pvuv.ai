@@ -11,7 +11,7 @@ import { enrichEvent, parseUA, isChromiumUA, isHeadlessUA, hashIP, fingerprintHa
 import { scoreRealtime } from './score';
 import { classifyAsn } from '../../../shared/asn';
 import { matchBot, type BotEntry } from '../../../shared/botdir';
-import { signVerdictState, verifyVerdictState, type VerdictState } from '../../../shared/ids';
+import { hmacSign, signVerdictState, verifyVerdictState, type VerdictState } from '../../../shared/ids';
 import type { XPayload, Verdict } from '../../../shared/flags';
 import {
   MAX_REQUEST_EVENTS, type IncomingEvent, type EventRow,
@@ -180,11 +180,25 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
   };
   const uaInfo = parseUA(reqCtx.ua);
   const chromiumUA = isChromiumUA(reqCtx.ua);
-  // crawler category from the owner-imported directory (§6.6). Descriptive
-  // only — deliberately NOT passed to scoreRealtime, so importing a directory
-  // can never change anyone's verdict or ad-guard outcome.
-  const botCategory = matchBot(reqCtx.ua, await botDirectory(env))?.category ?? null;
+  // crawler category, by precedence:
+  //   1. platform-verified (request.cf.verifiedBotCategory — Cloudflare checked
+  //      the IP ranges, available on all plans)
+  //   2. self-declared AI agent (Web Bot Auth Signature-Agent header, or an
+  //      official user-triggered agent UA like ChatGPT-User / Claude-User)
+  //   3. the owner-imported UA directory (§6.6)
+  // Directory categories stay descriptive-only for scoring; 1 and 2 DO affect
+  // the verdict below — a verified/declared non-human is 'crawler'-class
+  // (separate bucket, excluded from clean counts), because the declaration is
+  // trustworthy in the direction that matters: nobody spoofs their way INTO
+  // being counted as a bot.
+  const declaredAgent = isDeclaredAgent(request, reqCtx.ua);
+  const verifiedCategory = verifiedBotCategory(cf);
+  const botCategory = verifiedCategory
+    ?? (declaredAgent ? 'ai_agent_declared' : null)
+    ?? matchBot(reqCtx.ua, await botDirectory(env))?.category ?? null;
   const asnType = classifyAsn(typeof cf?.asn === 'number' ? cf.asn : undefined, cf?.asOrganization);
+  // transport fingerprint: one keyed hash per request (see migration 0018)
+  const tlsFp = await transportFingerprint(env.HMAC_KEY, cf);
 
   // --- KV blocklist check (§6.2 0x0200): once per request, by ip24 + fp ---
   const { ip24_hash } = await hashIP(env.HMAC_KEY, reqCtx.ip);
@@ -215,8 +229,13 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
       headlessUA: isHeadlessUA(reqCtx.ua),
       blocklisted,
       referrer: typeof ev.r === 'string' ? ev.r : undefined,
+      httpProtocol: cf?.httpProtocol,
     });
-    rows.push({ ...row, ...scored, bot_category: botCategory });
+    // platform-verified bot / self-declared agent → crawler-class verdict
+    // (unless already scored bot); keeps them out of clean counts and visible
+    // in the crawler-category breakdown
+    if ((verifiedCategory || declaredAgent) && scored.verdict !== 'bot') scored.verdict = 'crawler';
+    rows.push({ ...row, ...scored, bot_category: botCategory, tls_fp: tlsFp });
   }
   if (rows.length === 0) return respond(204);
 
@@ -310,7 +329,12 @@ async function handleVerdict(request: Request, env: Env): Promise<Response> {
     headlessUA: isHeadlessUA(ua),
     blocklisted,
     referrer: typeof body.r === 'string' ? body.r : undefined,
+    httpProtocol: cf?.httpProtocol,
   });
+  // self-declared agents / platform-verified bots never see ads (crawler-class)
+  if ((isDeclaredAgent(request, ua) || verifiedBotCategory(cf)) && scored.verdict !== 'bot') {
+    scored.verdict = 'crawler';
+  }
 
   // progressive stacking: once judged bot, stay bot for this state chain (§7.3)
   let verdict: Verdict = scored.verdict;
@@ -402,6 +426,63 @@ async function getSiteConfig(env: Env, siteId: string): Promise<SiteConfig | nul
 export function domainAllowed(host: string, allowed: string[]): boolean {
   const h = host.toLowerCase();
   return allowed.some((d) => h === d || h.endsWith(`.${d}`));
+}
+
+// ---------------------------------------------------------------------------
+// Transport fingerprint + declared-automation detection (T0, research §3/§6)
+// ---------------------------------------------------------------------------
+
+/** JA4-INSPIRED, OWN IMPLEMENTATION (the JA4+ suite is FoxIO-licensed; this
+ *  neither implements nor claims it). Keyed hash over the request.cf TLS/HTTP
+ *  facts — stable per client stack, unobtainable from JS, so it survives IP
+ *  rotation and UA spoofing. Null when the fields aren't populated (e.g. plain
+ *  HTTP in local dev). */
+async function transportFingerprint(secret: string, cf: IncomingRequestCfProperties | undefined): Promise<string | null> {
+  if (!cf) return null;
+  const c = cf as unknown as Record<string, unknown>;
+  const parts = [c.tlsVersion, c.tlsCipher, c.tlsClientExtensionsSha1, c.tlsClientHelloLength, c.httpProtocol]
+    .map((v) => (v == null ? '' : String(v)));
+  if (parts.every((p) => p === '')) return null;
+  return (await hmacSign(secret, `tlsfp|${parts.join('|')}`)).slice(0, 20);
+}
+
+/** Official user-triggered AI-agent UA tokens (crawler-style training/index
+ *  bots are already caught by CRAWLER_RE). Conservative list — a browser-based
+ *  agent with a plain Chrome UA is NOT detectable here (that's the behavioral
+ *  layer's job, T1). */
+const AGENT_UA_RE = /chatgpt-user|oai-searchbot|claude-user|perplexity-user|comet\//i;
+
+/** Self-declared automation: a Web Bot Auth signature header (RFC 9421 +
+ *  Signature-Agent, the Cloudflare/IETF signed-agents scheme) or an official
+ *  agent UA. Presence alone is enough to classify — spoofing INTO the bot
+ *  bucket gains an attacker nothing (cryptographic verification of the
+ *  signature against the agent registry is the T1 follow-up). */
+function isDeclaredAgent(request: Request, ua: string | null): boolean {
+  if (request.headers.get('signature-agent')) return true;
+  return !!ua && AGENT_UA_RE.test(ua);
+}
+
+/** Map request.cf.verifiedBotCategory (all plans) onto the crawler-category
+ *  slugs the dashboard already renders (§6.6 directory categories). */
+function verifiedBotCategory(cf: IncomingRequestCfProperties | undefined): string | null {
+  const raw = (cf as unknown as { verifiedBotCategory?: unknown } | undefined)?.verifiedBotCategory;
+  if (typeof raw !== 'string' || raw === '') return null;
+  const c = raw.toLowerCase();
+  if (c.includes('agent') || c.includes('assistant')) return 'ai_assistant';
+  if (c.includes('ai') && (c.includes('train') || c.includes('crawl'))) return 'ai_training';
+  if (c.includes('ai') && c.includes('search')) return 'ai_search';
+  if (c.includes('search')) return 'search';
+  if (c.includes('optimiz') || c.includes('seo')) return 'seo';
+  if (c.includes('advertis') || c.includes('marketing')) return 'advertising';
+  if (c.includes('monitor') || c.includes('analytics') || c.includes('webhook')) return 'monitoring';
+  if (c.includes('security')) return 'security';
+  if (c.includes('archiv')) return 'archive';
+  if (c.includes('social')) return 'social';
+  if (c.includes('preview')) return 'page_preview';
+  if (c.includes('academic') || c.includes('research')) return 'academic';
+  if (c.includes('accessibility')) return 'accessibility';
+  if (c.includes('aggregat') || c.includes('feed')) return 'aggregator';
+  return c.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32) || null;
 }
 
 function requestOriginHost(request: Request): string | null {
