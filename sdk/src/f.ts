@@ -318,6 +318,59 @@ import type { XPayload } from '../../shared/flags';
   }
 
   // -------------------------------------------------------------------------
+  // Core Web Vitals (buffered observers; values ride the FIRST page_leave of
+  // the initial load — no extra events, no extra requests). SPA soft
+  // navigations get no vitals: the browser only measures paint/layout metrics
+  // for the real navigation. INP here is an approximation (max event duration
+  // ≥40ms via the Event Timing API, not the spec's percentile-of-interactions);
+  // CLS is the simple cumulative sum, not session-windowed.
+  // -------------------------------------------------------------------------
+
+  let wvLcp: number | undefined;
+  let wvCls = 0;
+  let wvClsSeen = false;
+  let wvFcp: number | undefined;
+  let wvInp = 0;
+  let wvTtfb: number | undefined;
+  let wvSent = false;
+  try {
+    const PO = win.PerformanceObserver;
+    if (PO) {
+      new PO((l) => {
+        const es = l.getEntries();
+        if (es.length) wvLcp = es[es.length - 1].startTime;
+      }).observe({ type: 'largest-contentful-paint', buffered: true } as PerformanceObserverInit);
+      new PO((l) => {
+        for (const e of l.getEntries() as (PerformanceEntry & { value: number; hadRecentInput: boolean })[]) {
+          if (!e.hadRecentInput) { wvCls += e.value; wvClsSeen = true; }
+        }
+      }).observe({ type: 'layout-shift', buffered: true } as PerformanceObserverInit);
+      new PO((l) => {
+        for (const e of l.getEntries()) if (e.name === 'first-contentful-paint') wvFcp = e.startTime;
+      }).observe({ type: 'paint', buffered: true } as PerformanceObserverInit);
+      new PO((l) => {
+        for (const e of l.getEntries()) if (e.duration > wvInp) wvInp = e.duration;
+      }).observe({ type: 'event', buffered: true, durationThreshold: 40 } as PerformanceObserverInit);
+    }
+    const nav0 = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    if (nav0 && nav0.responseStart > 0) wvTtfb = nav0.responseStart;
+  } catch { /* unsupported browser — vitals simply absent */ }
+
+  /** Snapshot for the wire (round; omit what was never observed). One-shot. */
+  function vitalsPayload(): IncomingEvent['wv'] | undefined {
+    if (wvSent) return undefined;
+    const out: NonNullable<IncomingEvent['wv']> = {};
+    if (wvLcp !== undefined) out.lcp = Math.round(wvLcp);
+    if (wvClsSeen) out.cls = Math.round(wvCls * 1000) / 1000;
+    if (wvFcp !== undefined) out.fcp = Math.round(wvFcp);
+    if (wvTtfb !== undefined) out.ttfb = Math.round(wvTtfb);
+    if (wvInp > 0) out.inp = Math.round(wvInp);
+    if (Object.keys(out).length === 0) return undefined;
+    wvSent = true;
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
   // interaction & dwell tracking (behavioral signals, §4.4)
   // -------------------------------------------------------------------------
 
@@ -434,6 +487,8 @@ import type { XPayload } from '../../shared/flags';
       const ev = baseEvent('page_leave');
       ev.d = unreportedDwell;
       ev.sd = maxScroll;
+      const wv = vitalsPayload(); // first leave of the initial load only
+      if (wv) ev.wv = wv;
       unreportedDwell = 0;
       queue.push(ev);
     }

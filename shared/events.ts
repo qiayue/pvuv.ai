@@ -42,6 +42,9 @@ export interface IncomingEvent {
   x?: XPayload;
   /** first-touch attribution snapshot from _pv_ft (§3) */
   ft?: { s?: string; m?: string; c?: string; r?: string };
+  /** Core Web Vitals snapshot — sent once per page load, on the first
+   *  page_leave (lcp/fcp/ttfb/inp in ms; cls unitless) */
+  wv?: { lcp?: number; cls?: number; inp?: number; fcp?: number; ttfb?: number };
   /** client unix ms */
   ts?: number;
 }
@@ -109,6 +112,12 @@ export interface EventRow {
   /** crawler category from the owner-imported bot directory (§6.6) — purely
    *  descriptive, never feeds scoring or the ad-guard decision */
   bot_category: string | null;
+  /** Core Web Vitals (page_leave of the initial load only; NULL elsewhere) */
+  lcp_ms: number | null;
+  cls: number | null;
+  inp_ms: number | null;
+  fcp_ms: number | null;
+  ttfb_ms: number | null;
   ts: number;
   created_at: number;
 }
@@ -127,6 +136,7 @@ export const EVENT_COLUMNS = [
   'revenue', 'revenue_usd', 'currency', 'props',
   'ft_source', 'ft_medium', 'ft_campaign', 'ft_referrer',
   'bot_score', 'verdict', 'bot_flags', 'score_stage', 'bot_category',
+  'lcp_ms', 'cls', 'inp_ms', 'fcp_ms', 'ttfb_ms',
   'ts', 'created_at',
 ] as const satisfies readonly (keyof EventRow)[];
 
@@ -198,6 +208,12 @@ export function eventsIndexDDL(suffix: string): string[] {
  */
 export const EVENT_LATE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
   { name: 'bot_category', ddl: 'TEXT' }, // migration 0013
+  // Core Web Vitals — migration 0016
+  { name: 'lcp_ms', ddl: 'INTEGER' },
+  { name: 'cls', ddl: 'REAL' },
+  { name: 'inp_ms', ddl: 'INTEGER' },
+  { name: 'fcp_ms', ddl: 'INTEGER' },
+  { name: 'ttfb_ms', ddl: 'INTEGER' },
 ];
 
 /** Minimal structural shape of what this helper needs from D1, so shared/ does
@@ -255,6 +271,7 @@ export function eventsTableDDL(suffix: string): string[] {
       bot_flags INTEGER DEFAULT 0,
       score_stage TEXT DEFAULT 'realtime',
       bot_category TEXT,
+      lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
       ts INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`,

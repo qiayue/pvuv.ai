@@ -214,6 +214,17 @@ const MAX_PROPS_LEN = 4096;
 /** Client ts is trusted only within this window around server time (§5 anti-forgery). */
 const TS_TOLERANCE_MS = 10 * 60 * 1000;
 
+/** Core Web Vitals bounds: a duration metric must be a sane 0–120s value —
+ *  anything else (forged, NaN, absurd) is dropped rather than clamped, since a
+ *  clamped fake would still poison the p75. */
+function vitalMs(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 120_000 ? Math.round(v) : null;
+}
+/** CLS is unitless; real pages live in 0–~5, anything above 10 is forged. */
+function vitalCls(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10 ? Math.round(v * 1000) / 1000 : null;
+}
+
 export interface RequestContext {
   cf: IncomingRequestCfProperties | undefined;
   ua: string | null;
@@ -316,6 +327,11 @@ export async function enrichEvent(
     bot_flags: 0,
     score_stage: 'realtime',
     bot_category: null, // stamped by the caller after directory lookup (§6.6)
+    lcp_ms: vitalMs(ev.wv?.lcp),
+    cls: vitalCls(ev.wv?.cls),
+    inp_ms: vitalMs(ev.wv?.inp),
+    fcp_ms: vitalMs(ev.wv?.fcp),
+    ttfb_ms: vitalMs(ev.wv?.ttfb),
     ts,
     created_at: ctx.now,
   };

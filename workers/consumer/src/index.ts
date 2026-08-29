@@ -24,6 +24,7 @@ import {
   monthSuffix, eventsTableDDL, ensureEventColumns, eventInsertSQL, eventRowValues, isConversion,
   type EventRow,
 } from '../../../shared/events';
+import { classifyChannel } from '../../../shared/channel';
 
 export interface Env {
   DB: D1Database;
@@ -131,8 +132,8 @@ function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1Prep
       entry_page, exit_page, entry_host, pageviews, events_count, duration_ms,
       had_interaction, is_bounce,
       source, medium, campaign, referrer, country, device_type,
-      bot_score, verdict, bot_flags, started_at, last_active_at, last_pageview_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?21, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?23)
+      bot_score, verdict, bot_flags, started_at, last_active_at, last_pageview_at, channel
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?21, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?23, ?24)
     ON CONFLICT(site_id, session_id) DO UPDATE SET
       user_id         = COALESCE(excluded.user_id, sessions.user_id),
       exit_page       = CASE WHEN ?6 = 1 THEN excluded.exit_page ELSE sessions.exit_page END,
@@ -181,6 +182,11 @@ function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1Prep
     row.hostname,                                     // 21 entry_host (kept from first event)
     engagedMs,                                        // 22 per-site engaged dwell threshold
     isPageview ? row.ts : null,                       // 23 last_pageview_at (pageview events only)
+    // 24 channel — attribution is session-level, set on first insert only
+    classifyChannel({
+      refDomain: row.ref_domain, utmSource: row.utm_source,
+      utmMedium: row.utm_medium, clickIdType: row.click_id_type,
+    }),
   );
 }
 

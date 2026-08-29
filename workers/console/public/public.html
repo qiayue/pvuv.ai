@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Analytics — pvuv.ai</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; flex-wrap: wrap; }
+  header b { font-size: 16px; }
+  header .pub { font-size: 11.5px; color: #8b93a1; border: 1px solid #313847; border-radius: 10px; padding: 1px 8px; }
+  header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
+  main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
+  .card .v { font-size: 20px; font-weight: 700; }
+  .card .k { color: #8b93a1; font-size: 12px; }
+  .card .h { color: #8b93a1; font-size: 11.5px; margin-top: 2px; }
+  .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; }
+  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .muted { color: #8b93a1; }
+  svg text { fill: #8b93a1; font-size: 10px; }
+  footer { text-align: center; color: #8b93a1; font-size: 12.5px; padding: 22px 0 30px; }
+  footer a { color: inherit; }
+  .err { max-width: 560px; margin: 80px auto; text-align: center; color: #aeb6c2; }
+</style>
+</head>
+<body>
+<script src="/i18n.js"></script>
+<header>
+  <b id="siteName">…</b><span class="pub" data-i18n="public dashboard">public dashboard</span>
+  <select id="period" aria-label="Date range">
+    <option value="today" data-i18n="Today">Today</option>
+    <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+    <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
+    <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
+    <option value="this_month" data-i18n="This month">This month</option>
+    <option value="last_month" data-i18n="Last month">Last month</option>
+  </select>
+</header>
+<main id="main" hidden>
+  <div class="cards" id="cards"></div>
+
+  <h2 id="trendTitle" data-i18n="Visitors per day">Visitors per day</h2>
+  <div class="panel" id="chart"></div>
+
+  <div class="grid2">
+    <div><h2 data-i18n="Top pages">Top pages</h2><div class="panel" id="pages"></div></div>
+    <div><h2 data-i18n="Channels">Channels</h2><div class="panel" id="channels"></div></div>
+  </div>
+
+  <div id="vitalsSec" hidden>
+    <h2 data-i18n="Web Vitals">Web Vitals</h2>
+    <div class="panel" id="vitals"></div>
+  </div>
+</main>
+<div class="err" id="err" hidden>
+  <p><b data-i18n="This dashboard link is invalid or has been disabled.">This dashboard link is invalid or has been disabled.</b></p>
+  <p class="muted" data-i18n="Ask the site owner for a fresh link.">Ask the site owner for a fresh link.</p>
+</div>
+<footer>Powered by <a href="https://pvuv.ai">pvuv.ai</a> — <span data-i18n="analytics with invalid-traffic detection">analytics with invalid-traffic detection</span></footer>
+<script>
+const qs = new URLSearchParams(location.search);
+const site = qs.get('site'), key = qs.get('k');
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const t = (s) => window.PVI18N ? window.PVI18N.t(s) : s;
+const te = (s) => esc(t(s));
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
+const pct = (v) => v == null ? '–' : (v * 100).toFixed(1) + '%';
+
+const CHANNEL_LABEL = {
+  direct: 'Direct', organic_search: 'Organic search', paid_search: 'Paid search',
+  organic_social: 'Organic social', paid_social: 'Paid social', email: 'Email',
+  ai: 'AI assistants', video: 'Video', referral: 'Referral', '(unknown)': '(unknown)',
+};
+const VITAL_META = { lcp_ms: 'LCP', inp_ms: 'INP*', cls: 'CLS', fcp_ms: 'FCP', ttfb_ms: 'TTFB' };
+const RATING_COLOR = { good: '#34d399', needs_improvement: '#fbbf24', poor: '#f87171' };
+const fmtVital = (k, v) => v == null ? '–' : k === 'cls' ? Number(v).toFixed(3) : v >= 1000 ? (v / 1000).toFixed(2) + 's' : Math.round(v) + 'ms';
+
+function fail() {
+  document.getElementById('main').hidden = true;
+  document.getElementById('err').hidden = false;
+}
+if (!site || !key) fail();
+
+const get = async (p, extra = '') => {
+  const r = await fetch(`/api/public/${encodeURIComponent(site)}/${encodeURIComponent(key)}/${p}?period=${document.getElementById('period').value}${extra}`);
+  if (!r.ok) throw new Error('public api ' + r.status);
+  return r.json();
+};
+
+function lineChart(points) {
+  const el = document.getElementById('chart');
+  const drawn = points.filter((p) => p.status !== 'future');
+  if (!drawn.length || !drawn.some((p) => p.value)) { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
+  const W = 980, H = 170, P = 40;
+  const max = Math.max(...drawn.map((p) => p.value ?? 0), 1);
+  const xs = (i) => P + (i * (W - P - 12)) / Math.max(points.length - 1, 1);
+  const ys = (v) => H - 26 - ((v ?? 0) * (H - 44)) / max;
+  const solid = points.map((p, i) => p.status === 'future' ? '' : `${xs(i).toFixed(1)},${ys(p.value).toFixed(1)}`).filter(Boolean).join(' ');
+  const step = Math.ceil(points.length / 8);
+  const labels = points.filter((_, i) => i % step === 0);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">
+    <polyline points="${solid}" fill="none" stroke="#3b82f6" stroke-width="2"/>
+    ${points.map((p, i) => p.status === 'future' ? '' : `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.value).toFixed(1)}" r="2.4" fill="#3b82f6"><title>${esc(p.label)}: ${fmt(p.value)}</title></circle>`).join('')}
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p)).toFixed(1)}" y="${H - 8}" text-anchor="middle">${esc(p.label)}</text>`).join('')}
+    <text x="${P - 6}" y="${(ys(max) + 4).toFixed(1)}" text-anchor="end">${fmt(max)}</text>
+  </svg>`;
+}
+
+function barTable(elId, headers, rows) {
+  const el = document.getElementById(elId);
+  if (!rows.length) { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
+  el.innerHTML = `<table><tr>${headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${te(h)}</th>`).join('')}</tr>`
+    + rows.map((r) => `<tr>${r.map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('') + '</table>';
+}
+
+async function load() {
+  try {
+    const [o, ts, pages, channels] = await Promise.all([
+      get('overview'), get('timeseries', '&metric=uv&interval=day'),
+      get('breakdown', '&dim=page&limit=10'), get('breakdown', '&dim=channel&limit=10'),
+    ]);
+    const cleanShare = o.pv ? ((o.clean_count + o.suspect_count) / o.pv * 100).toFixed(1) + '%' : '–';
+    const card = (k, v, h) => `<div class="card"><div class="v">${v}</div><div class="k">${te(k)}</div>${h ? `<div class="h">${te(h)}</div>` : ''}</div>`;
+    document.getElementById('cards').innerHTML =
+      card('Visitors', fmt(o.uv)) + card('Pageviews', fmt(o.pv)) + card('Sessions', fmt(o.sessions)) +
+      card('Bounce rate (engaged)', pct(o.bounce_rate)) + card('Engaged time', dur(o.avg_duration_ms)) +
+      card('Human share', cleanShare, 'after invalid-traffic filtering');
+    lineChart(ts.points || []);
+    barTable('pages', ['Path', 'PV', 'Visitors'],
+      (pages.rows || []).map((r) => [esc(r.path), fmt(r.pv), fmt(r.uv)]));
+    barTable('channels', ['Channel', 'Sessions', 'Visitors'],
+      (channels.rows || []).map((r) => [te(CHANNEL_LABEL[r.key] || r.key), fmt(r.sessions), fmt(r.uv)]));
+    document.getElementById('main').hidden = false;
+  } catch { fail(); return; }
+
+  // vitals: separate try — absence just hides the section
+  try {
+    const d = await get('vitals');
+    const sec = document.getElementById('vitalsSec');
+    if (!d || !d.samples) { sec.hidden = true; return; }
+    sec.hidden = false;
+    document.getElementById('vitals').innerHTML = `<div class="cards">` + Object.keys(VITAL_META).map((k) => {
+      const m = (d.metrics || {})[k] || {};
+      const color = RATING_COLOR[m.rating] || '#8b93a1';
+      return `<div class="card" style="border-left:3px solid ${color}"><div class="v">${fmtVital(k, m.p75)}</div><div class="k">${esc(VITAL_META[k])} <span class="muted">p75</span></div></div>`;
+    }).join('') + '</div>';
+  } catch { document.getElementById('vitalsSec').hidden = true; }
+}
+
+async function loadMeta() {
+  try {
+    const m = await get('meta');
+    if (m && m.name) {
+      document.getElementById('siteName').textContent = m.name;
+      document.title = `${m.name} — pvuv.ai`;
+    }
+  } catch { fail(); }
+}
+
+document.getElementById('period').addEventListener('change', load);
+if (window.PVI18N) { window.PVI18N.applyStatic(); document.addEventListener('pvuv:lang', load); }
+if (site && key) { loadMeta(); load(); }
+</script>
+</body>
+</html>

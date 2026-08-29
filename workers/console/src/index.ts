@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { parseBotDirectory } from '../../../shared/botdir';
 import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
@@ -249,6 +249,39 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (!isProvider(provider)) return json({ error: 'unknown provider' }, 404);
     if (action === 'start') return oauthStart(env, provider, url.origin, Date.now());
     return oauthCallbackHandler(request, env, url, provider);
+  }
+
+  // Read-only PUBLIC dashboard endpoints (no session): the owner enables
+  // sharing per site, which mints sites.public_token; the share link carries
+  // it. Aggregates only — no visitor-level resources are reachable here, and
+  // the whole thing 404s (never 403) so links don't confirm a site exists.
+  const pub = path.match(/^\/api\/public\/([A-Za-z0-9]{4,16})\/([A-Za-z0-9_-]{12,64})\/([a-z_]+)$/);
+  if (pub && request.method === 'GET') {
+    const [, siteId, tok, resource] = pub;
+    const site = await env.DB.prepare('SELECT name, timezone, status, public_token FROM sites WHERE site_id = ?')
+      .bind(siteId).first<{ name: string; timezone: string; status: string; public_token: string | null }>();
+    // timing-safe-ish token compare, same trick as the api worker
+    const match = site?.public_token
+      ? (await hmacSign(env.HMAC_KEY, tok)) === (await hmacSign(env.HMAC_KEY, site.public_token)) : false;
+    if (!site || site.status !== 'active' || !match) throw new ApiError(404, 'not found');
+    const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
+    const q = url.searchParams;
+    let resp: Response | null = null;
+    if (resource === 'meta') resp = json({ name: site.name, timezone: site.timezone });
+    else if (resource === 'overview') resp = json(await overview(env.DB, siteId, period));
+    else if (resource === 'timeseries') resp = json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day'));
+    else if (resource === 'quality') resp = json(await quality(env.DB, siteId, period));
+    else if (resource === 'vitals') resp = json(await vitals(env.DB, siteId, period));
+    else if (resource === 'breakdown') {
+      const dim = q.get('dim') ?? 'page';
+      // aggregate dimensions only — nothing session/visitor-granular
+      if (!['page', 'source', 'channel', 'country', 'device'].includes(dim)) throw new ApiError(400, 'dim not public');
+      resp = json(await breakdown(env.DB, siteId, dim, period, parseInt(q.get('limit') ?? '20', 10)));
+    }
+    if (!resp) throw new ApiError(404, 'not found');
+    // modest shared cache: public pages may be embedded/linked widely
+    resp.headers.set('cache-control', 'public, max-age=60');
+    return resp;
   }
 
   // everything below requires a session
@@ -559,11 +592,32 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/sites') {
     if (request.method === 'GET') {
       const rows = await env.DB.prepare(
-        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status, shadow_until FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
+        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status, shadow_until, public_token FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
       ).bind(user).all();
       return json({ sites: rows.results });
     }
     if (request.method === 'POST') return createSite(request, env, user);
+  }
+
+  // public-dashboard sharing: enable mints a fresh random token (also rotates
+  // an existing one), disable clears it — old links die immediately either way.
+  const shareMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/share$/);
+  if (shareMatch && request.method === 'POST') {
+    const siteId = shareMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+    let body: { enable?: boolean };
+    try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    if (body.enable) {
+      const bytes = crypto.getRandomValues(new Uint8Array(18));
+      let raw = '';
+      for (const b of bytes) raw += String.fromCharCode(b);
+      const token = btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      await env.DB.prepare('UPDATE sites SET public_token = ? WHERE site_id = ?').bind(token, siteId).run();
+      return json({ enabled: true, token, url: `${url.origin}/public.html?site=${siteId}&k=${token}` });
+    }
+    await env.DB.prepare('UPDATE sites SET public_token = NULL WHERE site_id = ?').bind(siteId).run();
+    return json({ enabled: false });
   }
 
   // end shadow mode early → start enforcing ads immediately (§7)
@@ -654,6 +708,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
     }
     if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
+    if (resource === 'vitals') return json(await vitals(env.DB, siteId, period, filters));
     if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
     if (resource === 'edge') return json(await edge(env.DB, siteId, period));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));

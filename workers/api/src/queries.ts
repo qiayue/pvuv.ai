@@ -717,9 +717,12 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
     return { dim, rows };
   }
 
-  // source / campaign: from the live sessions table (session-level attribution)
-  if (dim === 'source' || dim === 'utm_campaign') {
-    const keyExpr = dim === 'source' ? "COALESCE(source, '(direct)')" : "COALESCE(campaign, '')";
+  // source / campaign / channel: from the live sessions table (session-level
+  // attribution; channel = GA4-style group computed at write time, 0016)
+  if (dim === 'source' || dim === 'utm_campaign' || dim === 'channel') {
+    const keyExpr = dim === 'source' ? "COALESCE(source, '(direct)')"
+      : dim === 'channel' ? "COALESCE(channel, '(unknown)')"
+      : "COALESCE(campaign, '')";
     const rows = await db.prepare(`
       SELECT ${keyExpr} AS key,
         COALESCE(SUM(pageviews), 0) AS pv,
@@ -1053,6 +1056,71 @@ export async function funnel(db: D1Database, siteId: string, period: Period, ste
 // ---------------------------------------------------------------------------
 
 const VERDICT_BY_RANK: Record<number, string> = { 4: 'bot', 3: 'crawler', 2: 'suspect', 1: 'clean' };
+
+// ---------------------------------------------------------------------------
+// GET /sites/:id/vitals — Core Web Vitals (p75 + Google rating), clean traffic
+// only. Values ride the initial load's first page_leave (SDK), so each row is
+// one measured page load. p75 via NTILE(4): max of the first three quartiles.
+// ---------------------------------------------------------------------------
+
+/** Google's CWV thresholds: [good ≤, poor >] per metric. */
+const VITAL_THRESHOLDS: Record<string, [number, number]> = {
+  lcp_ms: [2500, 4000], cls: [0.1, 0.25], inp_ms: [200, 500],
+  fcp_ms: [1800, 3000], ttfb_ms: [800, 1800],
+};
+const vitalRating = (metric: string, v: number | null): string | null => {
+  if (v == null) return null;
+  const t = VITAL_THRESHOLDS[metric];
+  return v <= t[0] ? 'good' : v <= t[1] ? 'needs_improvement' : 'poor';
+};
+
+export async function vitals(db: D1Database, siteId: string, period: Period, filters: Filter[] = []) {
+  const tables = await eventTables(db, period.startTs, period.endTs);
+  const empty = { metrics: {}, pages: [], samples: 0 };
+  if (tables.length === 0) return empty;
+  const ef = evFilter(filters);
+  // one measured load per row: page_leave events that carried at least one
+  // vital, from traffic not judged bot/crawler (bad-bot timings are noise)
+  const base = `event = 'page_leave' AND verdict NOT IN ('bot','crawler')
+    AND (lcp_ms IS NOT NULL OR cls IS NOT NULL OR inp_ms IS NOT NULL OR fcp_ms IS NOT NULL OR ttfb_ms IS NOT NULL)`
+    + (ef.sql ? ` AND ${ef.sql}` : '');
+  const u = unionOver(tables, 'hostname, path, lcp_ms, cls, inp_ms, fcp_ms, ttfb_ms', siteId, period.startTs, period.endTs, base, ef.binds);
+
+  const metrics: Record<string, { p75: number | null; count: number; rating: string | null }> = {};
+  let samples = 0;
+  for (const col of Object.keys(VITAL_THRESHOLDS)) {
+    const row = await db.prepare(`
+      SELECT COUNT(*) AS n, MAX(CASE WHEN q <= 3 THEN v END) AS p75
+      FROM (SELECT v, NTILE(4) OVER (ORDER BY v) AS q
+            FROM (SELECT ${col} AS v FROM (${u.sql})) WHERE v IS NOT NULL)
+    `).bind(...u.binds).first<{ n: number; p75: number | null }>();
+    const n = row?.n ?? 0;
+    // with <4 samples NTILE can leave quartiles 1–3 empty → fall back to MAX
+    let p75 = row?.p75 ?? null;
+    if (n > 0 && p75 == null) {
+      const mx = await db.prepare(`SELECT MAX(${col}) AS m FROM (${u.sql})`).bind(...u.binds).first<{ m: number | null }>();
+      p75 = mx?.m ?? null;
+    }
+    metrics[col] = { p75, count: n, rating: vitalRating(col, p75) };
+    samples = Math.max(samples, n);
+  }
+
+  // slowest pages by LCP p75 (≥3 measured loads so one outlier isn't a "page")
+  const pages = await db.prepare(`
+    SELECT hostname, path, COUNT(*) AS n, MAX(CASE WHEN q <= 3 THEN v END) AS lcp_p75
+    FROM (SELECT hostname, path, v, NTILE(4) OVER (PARTITION BY hostname, path ORDER BY v) AS q
+          FROM (SELECT hostname, path, lcp_ms AS v FROM (${u.sql})) WHERE v IS NOT NULL)
+    GROUP BY hostname, path
+    HAVING n >= 3 AND lcp_p75 IS NOT NULL
+    ORDER BY lcp_p75 DESC LIMIT 10
+  `).bind(...u.binds).all<{ hostname: string; path: string; n: number; lcp_p75: number }>();
+
+  return {
+    metrics,
+    samples,
+    pages: pages.results.map((r) => ({ ...r, rating: vitalRating('lcp_ms', r.lcp_p75) })),
+  };
+}
 
 export async function traffic(
   db: D1Database, siteId: string, period: Period,

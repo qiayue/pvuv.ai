@@ -59,7 +59,8 @@ CREATE TABLE sites (
   status          TEXT DEFAULT 'active',
   timezone        TEXT DEFAULT 'UTC',        -- display/aggregation tz, IMMUTABLE (added by 0004)
   engaged_seconds INTEGER NOT NULL DEFAULT 15, -- GA4 engagement dwell threshold, set at creation (added by 0006)
-  shadow_until    INTEGER                    -- record-only until this instant, then enforce ads (added by 0008)
+  shadow_until    INTEGER,                   -- record-only until this instant, then enforce ads (added by 0008)
+  public_token    TEXT                       -- non-NULL = read-only public dashboard enabled (added by 0016)
 );
 
 -- raw events (monthly-partitioned; initial month 202607)
@@ -95,6 +96,8 @@ CREATE TABLE events_202607 (
   bot_flags INTEGER DEFAULT 0,
   score_stage TEXT DEFAULT 'realtime',
   bot_category TEXT,             -- crawler category from the imported bot directory (0013); descriptive only
+  -- Core Web Vitals, reported once per page load on the first page_leave (0016)
+  lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
   ts INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
@@ -122,6 +125,7 @@ CREATE TABLE sessions (
   bot_score INTEGER DEFAULT 0, verdict TEXT DEFAULT 'clean', bot_flags INTEGER DEFAULT 0,
   started_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
   last_pageview_at INTEGER,        -- ts of the session's latest pageview; Plausible-style visit duration = this − started_at (added by 0010)
+  channel TEXT,                    -- GA4-style default channel group, from shared/channel.ts (added by 0016)
   -- keyed per site: _pv_sid is shared across sibling subdomains, so two sites on
   -- the same registrable domain must not merge sessions (added by 0009)
   PRIMARY KEY (site_id, session_id)

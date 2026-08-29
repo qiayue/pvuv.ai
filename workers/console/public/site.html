@@ -201,6 +201,7 @@
       <option value="this_year" data-i18n="This year">This year</option>
     </optgroup>
   </select>
+  <button id="shareBtn" class="dl-btn" title="Read-only public dashboard link">🔗 <span data-i18n="Share">Share</span></button>
   <button id="dlBtn" class="dl-btn" title="Download all data for the selected range as JSON">⬇ <span data-i18n="Download data">Download data</span></button>
 </header>
 <main>
@@ -227,6 +228,11 @@
   <div class="grid2">
     <div><div class="sec-head"><h2 data-i18n="Locations">Locations</h2><span class="tabs" data-tabs="countries"></span><button class="all-btn" data-panel="countries" data-i18n="All →">All →</button></div><div class="panel" id="countries"></div></div>
     <div><div class="sec-head"><h2 data-i18n="Devices">Devices</h2><span class="tabs" data-tabs="devices"></span><button class="all-btn" data-panel="devices" data-i18n="All →">All →</button></div><div class="panel" id="devices"></div></div>
+  </div>
+
+  <div id="vitalsSec" hidden>
+    <h2 data-i18n="Web Vitals">Web Vitals</h2>
+    <div class="panel" id="vitals"></div>
   </div>
 
   <div class="chart-head">
@@ -435,8 +441,19 @@ const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];
 // the row cells. Drives the panels, their sub-tabs, and the "All …" modal.
 const utmCell = (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)];
 const geoCell = (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)];
+// GA4-style channel groups (sessions.channel) — label + glyph per key
+const CHANNEL_LABEL = {
+  direct: 'Direct', organic_search: 'Organic search', paid_search: 'Paid search',
+  organic_social: 'Organic social', paid_social: 'Paid social', email: 'Email',
+  ai: 'AI assistants', video: 'Video', referral: 'Referral', '(unknown)': '(unknown)',
+};
+const CHANNEL_ICON = {
+  direct: '↗', organic_search: '🔍', paid_search: '💰', organic_social: '💬',
+  paid_social: '📣', email: '✉️', ai: '🤖', video: '▶', referral: '🔗',
+};
 const dimConfig = {
   source:      { label: 'Sources',   headers: ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => sourceIcon(r.key), cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  channel:     { label: 'Channels',  headers: ['Channel', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => `<span class="favi-generic">${CHANNEL_ICON[r.key] || '🔗'}</span>`, cells: (r) => [te(CHANNEL_LABEL[r.key] || r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
   page:        { label: 'Pages',     headers: ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'], val: (r) => r.path, bar: (r) => r.uv, cells: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)] },
   entry_page:  { label: 'Entry',     headers: ['Entry page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
   exit_page:   { label: 'Exit',      headers: ['Exit page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
@@ -482,7 +499,7 @@ function renderBreakdown(elId, dim, rows) {
 
 // ── tabbed breakdown panels (Plausible-style dimension switchers)
 const PANELS = {
-  sources:   ['source'],
+  sources:   ['source', 'channel'],
   pages:     ['page', 'entry_page', 'exit_page'],
   countries: ['country', 'region', 'city'],
   devices:   ['browser', 'os', 'device', 'size'],
@@ -1066,7 +1083,7 @@ async function loadAdguard() {
 // Bundle every endpoint the dashboard reads — for the CURRENTLY selected period
 // AND active filters — into one JSON file. Limits are generous (not the on-screen
 // top-N) so the export is the full data for the range, easy to audit offline.
-const DL_DIMS = ['source', 'page', 'entry_page', 'exit_page', 'country', 'region', 'city',
+const DL_DIMS = ['source', 'channel', 'page', 'entry_page', 'exit_page', 'country', 'region', 'city',
   'browser', 'os', 'device', 'size', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
   'ft_source', 'ft_medium', 'ft_campaign', 'goal'];
 async function downloadData() {
@@ -1169,7 +1186,7 @@ async function load() {
   // only for layout order; funnel is a no-op if <2 valid steps).
   const utm = (async () => { await loadUtm(); runFunnel(); })();
 
-  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadAdguard(), loadCrawlers(), loadEdge()]);
+  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadVitals(), loadAdguard(), loadCrawlers(), loadEdge()]);
 }
 
 // live "online now" — polls independently of the selected period (always the
@@ -1349,6 +1366,97 @@ async function runFunnel() {
 }
 document.getElementById('funnelAdd').addEventListener('click', () => { if (funnelSteps.length < 8) { funnelSteps.push({ type: 'event', value: '' }); saveFunnel(); renderFunnelSteps(); } });
 document.getElementById('funnelRun').addEventListener('click', runFunnel);
+
+// ── Core Web Vitals: p75 + Google rating per metric, slowest pages by LCP.
+// Hidden until the SDK has reported at least one measured load (clean traffic
+// only, server-side). Sub-second values shown in ms, larger in seconds.
+const VITAL_META = { // key → [label, help]
+  lcp_ms: ['LCP', 'Largest Contentful Paint — when the main content became visible'],
+  inp_ms: ['INP*', 'Interaction latency (approximation: slowest observed interaction)'],
+  cls: ['CLS', 'Cumulative Layout Shift — how much the page jumped around'],
+  fcp_ms: ['FCP', 'First Contentful Paint'],
+  ttfb_ms: ['TTFB', 'Time To First Byte — server response speed'],
+};
+const RATING_META = {
+  good: ['#34d399', 'Good'], needs_improvement: ['#fbbf24', 'Needs improvement'], poor: ['#f87171', 'Poor'],
+};
+const fmtVital = (key, v) => v == null ? '–'
+  : key === 'cls' ? Number(v).toFixed(3)
+  : v >= 1000 ? (v / 1000).toFixed(2) + 's' : Math.round(v) + 'ms';
+async function loadVitals() {
+  const sec = document.getElementById('vitalsSec');
+  const el = document.getElementById('vitals');
+  let d;
+  try { d = await get('vitals'); } catch { sec.hidden = true; return; }
+  if (!d || !d.samples) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const tiles = Object.keys(VITAL_META).map((k) => {
+    const m = (d.metrics || {})[k] || {};
+    const r = RATING_META[m.rating] || ['#8b93a1', ''];
+    return `<div class="card" title="${esc(t(VITAL_META[k][1]))}" style="border-left:3px solid ${r[0]}">
+      <div class="v">${fmtVital(k, m.p75)}</div>
+      <div class="k">${esc(VITAL_META[k][0])} <span class="muted">p75</span></div>
+      <div class="h" style="color:${r[0]}">${te(r[1] || '')}${m.count ? ` <span class="muted">· ${fmt(m.count)} ${te('loads')}</span>` : ''}</div>
+    </div>`;
+  }).join('');
+  const pages = (d.pages || []).length
+    ? `<h3 style="font-size:13px;margin:16px 0 8px">${te('Slowest pages (LCP p75)')}</h3>`
+      + `<table><tr><th>${te('Path')}</th><th class="num">${te('Loads')}</th><th class="num">LCP p75</th></tr>`
+      + d.pages.map((p) => `<tr><td>${esc(p.path)}</td><td class="num">${fmt(p.n)}</td>`
+        + `<td class="num" style="color:${(RATING_META[p.rating] || ['#8b93a1'])[0]}">${fmtVital('lcp_ms', p.lcp_p75)}</td></tr>`).join('')
+      + '</table>'
+    : '';
+  el.innerHTML = `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Real-user Core Web Vitals from clean traffic — the same metrics Google Search uses. p75 = 75% of page loads were at least this fast.')}</p>`
+    + `<div class="cards">${tiles}</div>` + pages
+    + `<p class="muted" style="margin:10px 0 0;font-size:11.5px">${te('*INP is approximated from the slowest observed interaction.')}</p>`;
+}
+
+// ── Public share: enable mints a read-only dashboard link (rotate = new link,
+// disable kills it). State rides on /api/sites (public_token).
+function shareState() { const s = allSites.find((x) => x.site_id === site); return s ? s.public_token : null; }
+function renderShareModal() {
+  const tok = shareState();
+  document.getElementById('modalTitle').textContent = t('Public dashboard');
+  const body = document.getElementById('modalBody');
+  if (tok) {
+    const shareUrl = `${location.origin}/public.html?site=${encodeURIComponent(site)}&k=${encodeURIComponent(tok)}`;
+    body.innerHTML = `<p style="margin:4px 0 10px">${te('Sharing is ON — anyone with this link can view a read-only dashboard (aggregates only, no visitor-level data).')}</p>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <input id="shareUrl" readonly value="${esc(shareUrl)}" style="flex:1;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:7px 9px;font:12.5px ui-monospace,monospace">
+        <button id="shareCopy" class="fbtn">${te('Copy')}</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="shareRotate" class="fbtn">${te('Rotate link')}</button>
+        <button id="shareOff" class="fbtn" style="color:#f87171">${te('Disable sharing')}</button>
+      </div>`;
+    document.getElementById('shareCopy').addEventListener('click', async () => {
+      const inp = document.getElementById('shareUrl');
+      inp.select();
+      try { await navigator.clipboard.writeText(inp.value); } catch { document.execCommand('copy'); }
+      document.getElementById('shareCopy').textContent = t('Copied!');
+    });
+    document.getElementById('shareRotate').addEventListener('click', () => setShare(true));
+    document.getElementById('shareOff').addEventListener('click', () => setShare(false));
+  } else {
+    body.innerHTML = `<p style="margin:4px 0 14px">${te('Create a read-only public link for this site — overview, trend, top pages, channels, quality and Web Vitals. No visitor-level data is exposed, and you can revoke the link at any time.')}</p>
+      <button id="shareOn" class="fbtn">${te('Enable sharing')}</button>`;
+    document.getElementById('shareOn').addEventListener('click', () => setShare(true));
+  }
+  document.getElementById('modal').hidden = false;
+}
+async function setShare(enable) {
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/share`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enable }),
+    }));
+    const d = await r.json();
+    if (!r.ok) return;
+    const s = allSites.find((x) => x.site_id === site);
+    if (s) s.public_token = enable ? d.token : null;
+    renderShareModal();
+  } catch { /* leave the modal as-is */ }
+}
+document.getElementById('shareBtn').addEventListener('click', renderShareModal);
 
 // Goals = custom (non-lifecycle) events; the panel hides itself when the site
 // sends none, so it never clutters sites that don't use pvuv('event', …).

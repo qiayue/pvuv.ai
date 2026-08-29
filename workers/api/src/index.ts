@@ -6,6 +6,7 @@
  *   GET /v1/sites/:id/timeseries?metric=pv&interval=day&period=30d
  *   GET /v1/sites/:id/breakdown?dim=page|source|utm_campaign|country|device
  *   GET /v1/sites/:id/quality?period=30d
+ *   GET /v1/sites/:id/vitals?period=30d
  *   GET /v1/sites/:id/traffic?verdict=bot&min_score=70&limit=50
  *   GET /v1/sites/:id/visitors?path=/pay&limit=50
  *   GET /v1/sites/:id/visitors/:vid/profile
@@ -15,7 +16,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
 import { hmacSign } from '../../../shared/ids';
@@ -94,6 +95,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
   }
   if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
+  if (resource === 'vitals') return json(await vitals(env.DB, siteId, period, filters));
   if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
   if (resource === 'edge') return json(await edge(env.DB, siteId, period));
   if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
