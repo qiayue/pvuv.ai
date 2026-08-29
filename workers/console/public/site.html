@@ -409,6 +409,7 @@ const FLAG_LABELS = {
   0x4000: 'search referrer from datacenter', 0x8000: 'forged search referrer',
   0x10000: 'headless UA', 0x20000: 'headless window', 0x40000: 'platform/UA mismatch',
   0x80000: 'synthetic render env', 0x100000: 'HTTP/1 + modern browser',
+  0x200000: 'mechanical pointer', 0x400000: 'session drift',
 };
 const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
 
@@ -437,6 +438,8 @@ const SIGNAL_INFO = {
   UA_PLATFORM_MISMATCH: ['OS spoofing', "The claimed operating system (Windows/macOS/iOS) contradicts the browser's actual platform"],
   SYNTHETIC_ENV: ['Synthetic environment', 'Renders color emoji in monochrome and has no real system fonts — a bare headless/container browser, not a real device'],
   HTTP1_MODERN_BROWSER: ['HTTP/1 with modern browser', 'Claims a modern Chrome but spoke HTTP/1.x to the edge — real Chrome negotiates HTTP/2/3; typical of scripted TLS stacks behind a spoofed UA (corporate proxies can also cause this)'],
+  MOUSE_MECHANICAL: ['Mechanical pointer', 'Pointer moved with machine-like dynamics: constant speed, zero curvature, or clicks landing with no nearby movement'],
+  SESSION_DRIFT: ['Session identity drift', 'Browser family, OS or language changed within one session — impossible for a real visitor; a replayed session cookie or an environment-rotating farm'],
 };
 const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
 const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];

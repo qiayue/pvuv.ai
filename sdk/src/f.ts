@@ -378,6 +378,69 @@ import type { XPayload } from '../../shared/flags';
   // counts and timings only — no field values, no keystrokes, no coordinates.
   // -------------------------------------------------------------------------
 
+  // --- pointer dynamics (mouse only; touch devices skipped) -----------------
+  // Incremental handcrafted features — speed Welford, direction-change mean,
+  // pauses, click/pointer alignment. Only scalar summaries ever leave the
+  // page (props.mm + the x14/x15 verdict inputs); no trajectories (§16).
+  let pmN = 0;
+  let pmVMean = 0, pmVM2 = 0;        // Welford over segment speeds (px/ms)
+  let pmTurnSum = 0, pmTurnN = 0;    // mean |direction change| between segments (rad)
+  let pmPauses = 0;
+  let pmLastX = 0, pmLastY = 0, pmLastT = 0;
+  let pmPrevAngle: number | null = null;
+  let pmClicksNoMove = 0, pmAlignSum = 0, pmAlignN = 0;
+  const touchDevice = 'ontouchstart' in win && nav.maxTouchPoints > 0 && mobileUA;
+
+  win.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const now = e.timeStamp || 0;
+    const px = e.clientX, py = e.clientY;
+    if (pmLastT > 0 && now > pmLastT) {
+      const dt = now - pmLastT;
+      if (dt > 5000) pmPrevAngle = null;                    // long idle: new burst
+      else if (dt > 150) { pmPauses++; pmPrevAngle = null; } // human micro-pause
+      else {
+        const dx = px - pmLastX, dy = py - pmLastY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0) {
+          const v = dist / dt;
+          pmN++;
+          const d1 = v - pmVMean;
+          pmVMean += d1 / pmN;
+          pmVM2 += d1 * (v - pmVMean);
+          const ang = Math.atan2(dy, dx);
+          if (pmPrevAngle !== null) {
+            let da = Math.abs(ang - pmPrevAngle);
+            if (da > Math.PI) da = 2 * Math.PI - da;
+            pmTurnSum += da; pmTurnN++;
+          }
+          pmPrevAngle = ang;
+        }
+      }
+    }
+    pmLastX = px; pmLastY = py; pmLastT = now;
+  }, { passive: true, capture: true });
+
+  const pmSpeedCv = (): number => (pmN > 1 && pmVMean > 0 ? Math.sqrt(pmVM2 / pmN) / pmVMean : 0);
+  const pmMeanTurn = (): number => (pmTurnN > 0 ? pmTurnSum / pmTurnN : 0);
+
+  /** Mechanical-pointer tells (0–3): near-constant speed, zero curvature,
+   *  clicks landing with no nearby pointer movement. Desktop mouse only. */
+  function mouseTells(): number {
+    if (touchDevice) return 0;
+    let tells = 0;
+    if (pmN >= 20) {
+      if (pmSpeedCv() < 0.08) tells++;
+      if (pmTurnN >= 10 && pmMeanTurn() < 0.01) tells++;
+    }
+    if (pmClicksNoMove >= 2) tells++;
+    return tells;
+  }
+  /** Rich human-like motion — the trust-credit inverse of the tells. */
+  function humanMotion(): boolean {
+    return !touchDevice && pmN >= 30 && pmSpeedCv() >= 0.25 && pmTurnN >= 10 && pmMeanTurn() >= 0.05;
+  }
+
   const CK_MAX_KEYS = 15;
   let ckMap: Record<string, number> = {};
   let ckTotal = 0;
@@ -436,6 +499,17 @@ import type { XPayload } from '../../shared/flags';
 
   doc.addEventListener('click', (e) => {
     if (!tracking) return;
+    // click/pointer alignment (desktop): a real click lands where the pointer
+    // just was; synthetic clicks arrive with no nearby movement
+    if (!touchDevice) {
+      const now = e.timeStamp || 0;
+      if (pmLastT === 0 || now - pmLastT > 2000) pmClicksNoMove++;
+      else {
+        const d = Math.sqrt((e.clientX - pmLastX) ** 2 + (e.clientY - pmLastY) ** 2);
+        pmAlignSum += d; pmAlignN++;
+        if (d > 150) pmClicksNoMove++;
+      }
+    }
     const el = (e.target as Element | null)?.closest?.(
       'a[href], button, [role="button"], input[type="submit"], input[type="button"], [data-pvuv-event]',
     );
@@ -532,6 +606,21 @@ import type { XPayload } from '../../shared/flags';
     }
     const wv = vitalsPayload();
     if (wv) { ev.wv = wv; any = true; }
+    // pointer-dynamics verdict inputs ride the shared x payload so later events
+    // and /v re-checks carry them (progressive evidence, like the sensor bits)
+    const mt = mouseTells();
+    if (mt > 0) x.x14 = mt; else delete x.x14;
+    if (humanMotion()) x.x15 = 1; else delete x.x15;
+    // cumulative per-page feature snapshot for offline analysis / future GBDT:
+    // [samples, mean speed·1e3, speed CV·1e2, mean turn·1e3, pauses,
+    //  clicks-without-move, mean click-alignment px (−1 = none)]
+    if (pmN > 0 || pmClicksNoMove > 0) {
+      ev.p = { ...(ev.p || {}), mm: [
+        pmN, Math.round(pmVMean * 1000), Math.round(pmSpeedCv() * 100),
+        Math.round(pmMeanTurn() * 1000), pmPauses, pmClicksNoMove,
+        pmAlignN > 0 ? Math.round(pmAlignSum / pmAlignN) : -1,
+      ] };
+    }
     return any;
   }
 
@@ -672,6 +761,9 @@ import type { XPayload } from '../../shared/flags';
     // fresh (fast-first) pulse schedule
     ckMap = {}; ckTotal = 0; rageDelta = 0; deadDelta = 0; errDelta = 0; errMsgs = {};
     lastClickKey = ''; burstCount = 0;
+    pmN = 0; pmVMean = 0; pmVM2 = 0; pmTurnSum = 0; pmTurnN = 0; pmPauses = 0;
+    pmPrevAngle = null; pmLastT = 0; pmClicksNoMove = 0; pmAlignSum = 0; pmAlignN = 0;
+    delete x.x14; delete x.x15;
     for (const k of Object.keys(formsStarted)) delete formsStarted[k];
     pulseStep = 0;
     schedulePulse();

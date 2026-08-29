@@ -24,6 +24,9 @@ const MAX_SCREEN_CONTRADICTIONS = 6;
 /** Distinct synthetic-render tells the SDK checks (§4.4): monochrome color
  *  emoji, and an empty system-font stack. */
 const MAX_SYNTHETIC_TELLS = 2;
+/** Distinct mechanical-pointer tells the SDK checks: near-constant speed,
+ *  zero curvature, clicks with no nearby movement. */
+const MAX_MOUSE_TELLS = 3;
 
 export interface ScoreInput {
   x: XPayload | undefined;
@@ -100,6 +103,11 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
   // x13 is a spoofable count from the client; clamp to the tells the SDK checks
   // (per-tell weight itself comes from CONFIG, §21)
   if (typeof x.x13 === 'number' && x.x13 > 0) fire('SYNTHETIC_ENV', Math.min(x.x13, MAX_SYNTHETIC_TELLS));
+  // mechanical pointer dynamics (desktop mouse only; x14 is a spoofable count —
+  // clamp to the tells the SDK checks, per-tell weight from CONFIG §21)
+  if (input.deviceType === 'desktop' && typeof x.x14 === 'number' && x.x14 > 0) {
+    fire('MOUSE_MECHANICAL', Math.min(x.x14, MAX_MOUSE_TELLS));
+  }
 
   // --- mobile sensor signals, Android-only (§4.6) ---
   if (CONFIG.detection.mobile_sensors_enabled && input.os === 'Android' && input.deviceType === 'mobile') {
@@ -192,6 +200,9 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
     }
     if (input.hadInteraction) score -= credits.has_interaction ?? 0;
     if (input.isPageLeave) score -= credits.has_page_leave ?? 0;
+    // rich human-like pointer motion (x15) — behavioral evidence a scripted
+    // client rarely fakes convincingly
+    if (x.x15 === 1) score -= credits.human_motion ?? 0;
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));

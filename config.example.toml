@@ -46,12 +46,15 @@ headless_window        = 15       # 0x20000 desktop headless window tell (outerW
 ua_platform_mismatch   = 30       # 0x40000 navigator.platform contradicts the UA OS family (Win/Mac/iOS on Linux)
 synthetic_env          = 0        # 0x80000 DISABLED (evidence-only) — production data showed this fires on geography, not on synthetic environments: 0/209 headless-flagged and 2/209 datacenter visitors tripped it, vs 34% of CN visitors and ~0% of every other country. It was pushing real users into 'suspect' on its own (2 tells = 40). Still recorded in bot_flags for investigation; set >0 only after the probe is fixed and re-validated.
 http1_modern_browser   = 0        # 0x100000 evidence-only until validated on live traffic — modern Chromium UA speaking HTTP/1.x to the edge (real Chrome >=90 negotiates h2/h3; HTTP/1 + modern UA is typical of curl/python-tls behind a spoofed UA). Recorded in bot_flags; corporate MITM proxies can downgrade real users, so validate the false-positive profile (check the fired-signals panel against verdicts/geo) before setting a weight (suggested 10-15 once clean).
+mouse_mechanical       = 10       # 0x200000 per tell (max 3): near-constant pointer speed, zero-curvature paths, clicks with no nearby movement. Desktop mouse only; trackpads still show human variance. Behavioral (not env-only) but modest per-tell — validate against the fired-signals panel before raising.
+session_drift          = 30       # 0x400000 browser family / OS / language changed WITHIN one session_id — impossible for a real visitor (the sid cookie lives in one browser); a replayed cookie or a farm rotating environments (FP-Inconsistent temporal check: ~3% FP in the IMC 2025 study). Applied by the daily batch.
 
 [trust_credits]
 # Subtracted from bot_score (make legit traffic look cleaner).
 residential_or_mobile_asn = 10
 has_interaction           = 10
 has_page_leave            = 10
+human_motion              = 10   # rich human-like pointer dynamics observed (x15): real speed variance + curvature over enough samples — the strongest human evidence short of a challenge
 
 # ------------------------------------------------------------------
 # Dashboard "unreasonable data" alerts — self-contained plausibility
@@ -124,6 +127,10 @@ cookie_reset_epv_max       = 1.5    # ...where avg events per visitor_id <= this
 interval_cv_bot_ceiling    = 0.20   # per-visitor interval CV <= this -> mechanical
 interval_min_n             = 20     # ...only judged once a visitor has >= N measured intervals
 max_clusters_per_run       = 50     # safety cap: top-N clusters (by members) re-verdicted per daily run
+graph_min_members          = 5      # bipartite propagation: a fp/ip24 node needs >= N distinct visitors to be judged at all
+graph_seed_share           = 0.6    # direct taint: >= this share of a node's visitors already verdicted bot -> tainted
+graph_hop2_seed_share      = 0.25   # two-hop: a fp reached via tainted /24s (>= half its visitors there) needs only this much of its own bot evidence
+drift_max_sessions_per_run = 200    # safety cap: session-drift re-verdicts per daily run
 path_signature_min_count   = 50     # identical path+dwell signature repeated >= N -> flag (M3)
 baseline_deviation_sigma   = 4.0    # MAD-based deviation to raise an anomaly (M3)
 

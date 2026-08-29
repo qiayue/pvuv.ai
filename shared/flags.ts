@@ -64,6 +64,13 @@ export const FLAG = {
    *  negotiates h2/h3; HTTP/1 + modern UA is a transport/UA contradiction
    *  typical of TLS-terminating bot stacks (curl/python behind a spoofed UA) */
   HTTP1_MODERN_BROWSER: 0x100000,
+  /** mechanical pointer dynamics (per tell): near-constant speed, zero
+   *  curvature, or clicks with no nearby pointer movement — synthetic input */
+  MOUSE_MECHANICAL: 0x200000,
+  /** immutable properties (browser family / OS / language) changed WITHIN one
+   *  session — a session cookie replayed across machines or a farm rotating
+   *  environments mid-session (FP-Inconsistent temporal check, IMC 2025) */
+  SESSION_DRIFT: 0x400000,
 } as const;
 
 export type FlagName = keyof typeof FLAG;
@@ -95,6 +102,8 @@ export const FLAG_CONFIG_KEY: Record<FlagName, string> = {
   UA_PLATFORM_MISMATCH: 'ua_platform_mismatch',
   SYNTHETIC_ENV: 'synthetic_env',
   HTTP1_MODERN_BROWSER: 'http1_modern_browser',
+  MOUSE_MECHANICAL: 'mouse_mechanical',
+  SESSION_DRIFT: 'session_drift',
 } as const;
 
 /** All flag names, in ascending bit order. */
@@ -189,6 +198,12 @@ export const XF = {
   /** count — synthetic-render tells: color emoji rendered monochrome, and/or
    *  no real system fonts installed (every family collapses to one metric) */
   SYNTHETIC_ENV: 'x13',
+  /** count — mechanical-pointer tells (desktop mouse only): near-constant
+   *  speed, zero curvature, clicks with no nearby movement (§ mouse dynamics) */
+  MOUSE_MECHANICAL: 'x14',
+  /** 0/1 — rich human-like pointer motion observed (speed variance + curvature
+   *  over enough samples); a trust credit, the inverse of x14 */
+  HUMAN_MOTION: 'x15',
 } as const;
 
 /** Shape of the event `x` payload as sent by f.js. */
@@ -206,6 +221,8 @@ export interface XPayload {
   x11?: 0 | 1;
   x12?: 0 | 1;
   x13?: number;
+  x14?: number;
+  x15?: 0 | 1;
 }
 
 /** Persisted verdict values (§6.2). Verified crawlers classified separately. */

@@ -51,7 +51,7 @@ const DAY_MS = 86_400_000;
 
 interface Cluster {
   id: string;
-  type: 'fp' | 'ip24' | 'cookie_reset';
+  type: 'fp' | 'ip24' | 'cookie_reset' | 'graph';
   siteId: string | null;          // null = cross-site/global
   members: number;
   sites: number;
@@ -97,6 +97,7 @@ export async function runDailyBatch(env: Env): Promise<void> {
     ...(await fpClusters(db, u, P.fp_cluster_min_visitors, cap)),
     ...(await ip24Clusters(db, u, P.ip24_share_threshold, P.ip24_min_events, cap)),
     ...(await cookieResetClusters(db, u, P.cookie_reset_min_visitors, P.cookie_reset_epv_max, cap)),
+    ...(await graphClusters(db, u, P.graph_min_members ?? 5, P.graph_seed_share ?? 0.6, P.graph_hop2_seed_share ?? 0.25, cap)),
   ];
 
   // ---- record evidence + write the KV blocklist (loops back to /v, /in) ------
@@ -127,6 +128,13 @@ export async function runDailyBatch(env: Env): Promise<void> {
   const fps = [...new Set(blocking.filter((c) => c.fp).map((c) => c.fp!))];
   const ip24Only = blocking.filter((c) => !c.fp && c.ip24);
   const affectedSites = await reverdict(db, tables, start, end, fps, ip24Only);
+
+  // ---- 5b. session-drift re-verdict (FP-Inconsistent temporal check): the
+  // browser family / OS / language changed WITHIN one session_id — impossible
+  // for a real visitor (the sid cookie lives in one browser instance).
+  for (const s of await sessionDriftReverdict(db, tables, start, end, P.drift_max_sessions_per_run ?? 200)) {
+    affectedSites.add(s);
+  }
 
   // ---- 6. mechanical-timing profiles: population-level escalation ------------
   // Raise bot_score above clean_max too (not just the verdict), otherwise the
@@ -336,6 +344,72 @@ async function cookieResetClusters(
 }
 
 // ---------------------------------------------------------------------------
+// 4b. bipartite-graph score propagation (iBGP-style label propagation over the
+//     fp_hash × ip24_hash graph, in plain SQL). Seeds = visitors already
+//     verdicted 'bot'. Direct taint: a node whose visitors are mostly seeds.
+//     Two-hop: a fingerprint reached THROUGH tainted /24s (≥ half its visitors
+//     sit on them) needs only weaker bot evidence of its own — this is what
+//     catches a farm's "fresh" fingerprints before they earn a record.
+//     fp-backed taints block; bare-IP taints follow the share_bare_ip rule.
+// ---------------------------------------------------------------------------
+
+async function graphClusters(
+  db: D1Database, u: (cols: string, extra?: string) => Union,
+  minMembers: number, seedShare: number, hop2Share: number, cap: number,
+): Promise<Cluster[]> {
+  const uv = u('fp_hash, ip24_hash, visitor_id, verdict', 'fp_hash IS NOT NULL OR ip24_hash IS NOT NULL');
+  // thresholds are inlined as validated numerics (gen-config enforces number
+  // types) — mixing numbered params with uv.sql's anonymous ?'s would misbind
+  const M = Math.max(2, Math.floor(minMembers));
+  const S = Number(seedShare);
+  const S2 = Number(hop2Share);
+  const C = Math.max(1, Math.floor(cap));
+  const rows = await db.prepare(`
+    WITH vis AS (
+      SELECT visitor_id, fp_hash, ip24_hash, MAX(verdict = 'bot') AS is_seed
+      FROM ${uv.sql} GROUP BY visitor_id, fp_hash, ip24_hash
+    ),
+    fp1 AS (
+      SELECT fp_hash, COUNT(DISTINCT visitor_id) AS members,
+             COUNT(DISTINCT CASE WHEN is_seed THEN visitor_id END) AS seeds,
+             COUNT(*) AS events
+      FROM vis WHERE fp_hash IS NOT NULL GROUP BY fp_hash
+      HAVING members >= ${M}
+    ),
+    ip1 AS (
+      SELECT ip24_hash, COUNT(DISTINCT visitor_id) AS members,
+             COUNT(DISTINCT CASE WHEN is_seed THEN visitor_id END) AS seeds,
+             COUNT(*) AS events
+      FROM vis WHERE ip24_hash IS NOT NULL GROUP BY ip24_hash
+      HAVING members >= ${M}
+    ),
+    bad_ip AS (SELECT ip24_hash FROM ip1 WHERE seeds * 1.0 / members >= ${S})
+    SELECT 'fp' AS kind, fp_hash AS k, members, seeds, events FROM fp1
+      WHERE seeds * 1.0 / members >= ${S} AND seeds < members
+    UNION ALL
+    SELECT 'fp2', f.fp_hash, f.members, f.seeds, f.events FROM fp1 f
+      WHERE f.seeds * 1.0 / f.members >= ${S2} AND f.seeds * 1.0 / f.members < ${S}
+        AND (SELECT COUNT(DISTINCT v.visitor_id) FROM vis v
+             WHERE v.fp_hash = f.fp_hash
+               AND v.ip24_hash IN (SELECT ip24_hash FROM bad_ip)) * 2 >= f.members
+    UNION ALL
+    SELECT 'ip', ip24_hash, members, seeds, events FROM ip1
+      WHERE seeds * 1.0 / members >= ${S} AND seeds < members
+    ORDER BY members DESC LIMIT ${C}
+  `).bind(...uv.binds)
+    .all<{ kind: string; k: string; members: number; seeds: number; events: number }>();
+
+  const bareIpAction = CONFIG.blocklist.share_bare_ip ? 'block' as const : 'observe' as const;
+  return rows.results.map((r) => ({
+    id: `g:${r.kind}:${r.k}`, type: 'graph' as const, siteId: null,
+    members: r.members, sites: 0, events: r.events,
+    action: r.kind === 'ip' ? bareIpAction : 'block' as const,
+    fp: r.kind === 'ip' ? undefined : r.k,
+    ip24: r.kind === 'ip' ? r.k : undefined,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // 5. batch re-verdict (§6.4 output): flag + rescore the window's events of a
 //    blocking cluster; propagate to their sessions and member profiles.
 //    Idempotent via the BLOCKLIST_CLUSTER flag bit / MAX() semantics.
@@ -392,6 +466,65 @@ async function reverdict(
   for (const c of ip24Clusters) {
     await pass('ip24_hash = ? AND site_id = ?', [c.ip24, c.siteId]);
     await profileSet('ip24_hash = ? AND site_id = ?', [c.ip24, c.siteId]).run();
+  }
+  return affected;
+}
+
+// ---------------------------------------------------------------------------
+// 5b. session-drift re-verdict — FP-Inconsistent's temporal check: immutable
+//     client properties (browser family / OS / language) changed within one
+//     session_id. The sid cookie lives in a single browser instance, so a real
+//     visitor cannot do this; a replayed/shared session cookie or a farm
+//     rotating environments can. Idempotent via the SESSION_DRIFT flag bit.
+// ---------------------------------------------------------------------------
+
+async function sessionDriftReverdict(
+  db: D1Database, tables: string[], startTs: number, endTs: number, capSessions: number,
+): Promise<Set<string>> {
+  const flag = FLAG.SESSION_DRIFT;
+  const w = typeof CONFIG.weights.session_drift === 'number' ? CONFIG.weights.session_drift : 30;
+  const { clean_max, suspect_max } = CONFIG.bands;
+  const affected = new Set<string>();
+  const cap = Math.max(1, Math.floor(capSessions));
+
+  const setClause = `
+    bot_flags = bot_flags | ${flag},
+    bot_score = MIN(100, bot_score + ${w}),
+    verdict   = CASE WHEN verdict = 'crawler' THEN verdict
+                     WHEN MIN(100, bot_score + ${w}) > ${suspect_max} THEN 'bot'
+                     WHEN MIN(100, bot_score + ${w}) > ${clean_max} THEN 'suspect'
+                     ELSE verdict END`;
+
+  for (const t of tables) {
+    // COUNT(DISTINCT CASE …) ignores NULLs, so 'unknown' values never create
+    // drift on their own — only two genuinely different known values do.
+    const drifted = await db.prepare(`
+      SELECT site_id, session_id FROM ${t}
+      WHERE ts > ? AND ts <= ? AND verdict != 'crawler'
+      GROUP BY site_id, session_id
+      HAVING COUNT(DISTINCT CASE WHEN browser IS NOT NULL AND browser != 'unknown' THEN browser END) > 1
+          OR COUNT(DISTINCT CASE WHEN os IS NOT NULL AND os != 'unknown' THEN os END) > 1
+          OR COUNT(DISTINCT lang) > 1
+      LIMIT ${cap}
+    `).bind(startTs, endTs).all<{ site_id: string; session_id: string }>();
+    if (drifted.results.length === 0) continue;
+
+    const CHUNK = 40; // 2 binds per pair + start/end, well under D1's limit
+    for (let i = 0; i < drifted.results.length; i += CHUNK) {
+      const chunk = drifted.results.slice(i, i + CHUNK);
+      chunk.forEach((r) => affected.add(r.site_id));
+      const values = chunk.map(() => '(?, ?)').join(',');
+      const pairBinds = chunk.flatMap((r) => [r.site_id, r.session_id]);
+      await db.prepare(`
+        UPDATE ${t} SET ${setClause}, score_stage = 'batch'
+        WHERE ts > ? AND ts <= ? AND (bot_flags & ${flag}) = 0 AND verdict != 'crawler'
+          AND (site_id, session_id) IN (VALUES ${values})
+      `).bind(startTs, endTs, ...pairBinds).run();
+      await db.prepare(`
+        UPDATE sessions SET ${setClause}
+        WHERE (bot_flags & ${flag}) = 0 AND (site_id, session_id) IN (VALUES ${values})
+      `).bind(...pairBinds).run();
+    }
   }
   return affected;
 }
