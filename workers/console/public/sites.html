@@ -10,7 +10,9 @@
   body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
   header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid #262b36; }
   header b { font-size: 17px; }
-  .brand { font-size: 17px; font-weight: 700; display: inline-flex; align-items: center; }
+  .brand { font-size: 17px; font-weight: 700; display: inline-flex; align-items: center; white-space: nowrap; }
+  header a, header button { white-space: nowrap; }
+  @media (max-width: 560px) { header { padding: 10px 14px; gap: 8px; } .brand { font-size: 15px; } }
   .brand img.logo { height: 28px; display: block; }
   header button { background: none; border: 1px solid #313847; color: #8b93a1; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
   main { max-width: 960px; margin: 28px auto; padding: 0 16px; }
@@ -52,7 +54,9 @@
   .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; }
   .err { color: #f87171; font-size: 13px; grid-column: span 2; min-height: 1em; margin: 0; }
   @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create button, .err, .full { grid-column: span 1; } }
+  #ranking { overflow-x: auto; }
   #ranking table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #ranking th { white-space: nowrap; }
   #ranking th, #ranking td { padding: 8px 10px; border-bottom: 1px solid #1e2530; }
   #ranking th { text-align: left; color: #8b93a1; font-size: 12px; font-weight: 500; }
   #ranking td.num, #ranking th.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -100,7 +104,7 @@
   <section id="rankingSection" hidden style="margin-top:24px">
     <div class="head">
       <h2 data-i18n="Site ranking · clean traffic">Site ranking · clean traffic</h2>
-      <span style="font-size:12px;color:#8b93a1">Ranked by external clean pageviews — bots &amp; crawlers excluded, mutual visits between your own sites don't count.</span>
+      <span style="font-size:12px;color:#8b93a1" data-i18n="ranking-help">Ranked by external clean pageviews — bots &amp; crawlers excluded, mutual visits between your own sites don't count.</span>
     </div>
     <div class="panel" id="ranking">loading…</div>
   </section>
@@ -148,8 +152,8 @@
       <button type="submit" data-i18n="Save">Save</button>
     </form>
     <p style="margin:14px 0 0;font-size:12.5px;color:#8b93a1;border-top:1px solid #262b36;padding-top:12px">
-      Logos/favicon can be URLs or files you place in <code>workers/console/public/</code>.
-      The console header (dark) uses the light logo. · <a href="/health.html" style="color:#7ab3ff;text-decoration:none">Run self-check ↗</a>
+      <span data-i18n="logo-help">Logos/favicon can be URLs or files you place in <code>workers/console/public/</code>.
+      The console header (dark) uses the light logo.</span> · <a href="/health.html" style="color:#7ab3ff;text-decoration:none" data-i18n="Run self-check ↗">Run self-check ↗</a>
     </p>
     <form class="create" id="tzSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full"><label><span data-i18n="Default timezone for new sites">Default timezone for new sites</span>
@@ -159,7 +163,7 @@
     </form>
     <form class="create" id="aiSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="AI analysis reports">AI analysis reports</strong>
-        <span style="font-size:12px;color:#8b93a1"> — used on each site's dashboard to generate a written summary.</span></div>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="ai-help"> — used on each site's dashboard to generate a written summary.</span></div>
       <div><label><span data-i18n="Provider (API format)">Provider (API format)</span>
         <select id="aiProvider">
           <option value="openai" data-i18n="OpenAI-compatible">OpenAI-compatible</option>
@@ -589,7 +593,7 @@ function renderCfState(d) {
       + `<span style="font-family:ui-monospace,monospace">${esc(s.error)}</span>`;
     return;
   }
-  box.innerHTML = `${te('Last pull')} ${when} · <b>${esc(String(s.days_written ?? 0))}</b> ${te('site-days')}`
+  box.innerHTML = `${te('Last pull')} ${when} · <b>${esc(String(s.days_written ?? 0))}</b> ${esc(window.PVI18N.tk('site-days', 'site-days'))}`
     + ` · ${esc(String(s.sites_matched ?? 0))} ${te('sites matched')} · ${esc(String(s.zones ?? 0))} ${te('zones visible')}`;
 }
 async function loadCfSettings() {

@@ -1050,9 +1050,30 @@ async function loadAnomalies() {
   } catch { el.innerHTML = ''; return; }
   el.innerHTML = list.length
     ? `<div class="anomaly-hd">${te('Recent anomalies (vs baseline)')}</div>`
-      + list.map((a) => `<div class="anomaly"><span class="ico">${a.kind === 'drop' ? '📉' : '📈'}</span>`
-        + `<span class="day">${esc(a.day)}</span><span>${esc(a.message)}</span></div>`).join('')
+      + list.map((a) => `<div class="anomaly"><span class="ico">${a.kind === 'drop' ? '📉' : a.kind === 'concentration' ? '🎯' : '📈'}</span>`
+        + `<span class="day">${esc(a.day)}</span><span>${esc(anomalyText(a))}</span></div>`).join('')
     : '';
+}
+// The cron stores an English sentence; other languages rebuild it from the
+// structured fields (dimension / baseline / actual / deviation) so the banner
+// reads natively. Shapes without enough structure (distribution findings)
+// keep the server text.
+function anomalyText(a) {
+  if (window.PVI18N.lang === 'en') return a.message;
+  const x = (n, d = 1) => Number(n).toFixed(d);
+  // ratio recomputed from the raw numbers so the text never depends on how a
+  // given cron version encoded `deviation`
+  const ratio = a.baseline ? a.actual / a.baseline : a.deviation;
+  const fill = (key, en, vars) => Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(v), window.PVI18N.tk(key, en));
+  if ((a.dimension === 'pageviews' || a.dimension === 'pv') && a.kind === 'spike')
+    return fill('anom-pv-spike', 'Pageviews {x}× the recent average ({from} → {to})', { x: x(ratio), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
+  if ((a.dimension === 'pageviews' || a.dimension === 'pv') && a.kind === 'drop')
+    return fill('anom-pv-drop', 'Pageviews fell to {pct}% of the recent average ({from} → {to})', { pct: Math.round(ratio * 100), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
+  if (a.dimension === 'invalid_share')
+    return fill('anom-invalid', 'Invalid traffic {now}% of pageviews vs {base}% baseline', { now: Math.round(a.actual * 100), base: Math.round(a.baseline * 100) });
+  if (String(a.dimension).startsWith('source:'))
+    return fill('anom-source', 'Traffic from “{src}” {x}× its recent average ({from} → {to} visitors)', { src: sourceLabel(a.dimension.slice(7)), x: x(ratio), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
+  return a.message;
 }
 
 // ── AI report ──────────────────────────────────────────────────────────────
@@ -1138,8 +1159,9 @@ async function loadAdguard() {
   };
   const reasons = (d.reasons || []).map((r) =>
     `<tr><td title="${esc(signalHelp(r.flag))}">${esc(signalLabel(r.flag))}</td><td class="num">${fmt(r.n)}</td></tr>`).join('');
-  const sources = (d.sources || []).map((s) =>
-    `<tr><td>${esc(s.source)}</td><td class="num">${fmt(s.sessions)}</td><td class="num">${fmt(s.pv)}</td></tr>`).join('');
+  // same platform folding as the Top-sources panel, so "Google" is one row here too
+  const sources = mergeSources((d.sources || []).map((s) => ({ ...s, key: s.source ?? '(direct)' }))).map((s) =>
+    `<tr><td title="${esc(s.keys.join(', '))}">${esc(sourceLabel(s.key))}</td><td class="num">${fmt(s.sessions)}</td><td class="num">${fmt(s.pv)}</td></tr>`).join('');
   const trend = (d.trend || []).map((x) => x.blocked);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -1150,7 +1172,7 @@ async function loadAdguard() {
       </label>
       <span class="muted" id="agModeMsg" style="font-size:12px">${te(MODE_HELP[d.current_mode] || '')}</span>
     </div>
-    <p class="muted" style="margin:14px 0 6px;font-size:12px">${te('Estimated impact over this period')} (${fmt(d.pv)} ${te('pageviews')}). ${te('fp-explainer')}</p>
+    <p class="muted" style="margin:14px 0 6px;font-size:12px">${te('Estimated impact over this period')} (${fmt(d.pv)} ${te('pageviews')}). ${esc(window.PVI18N.tk('fp-explainer', '"Est. false-positive" = share of blocked traffic that still showed human interaction — treat it as an upper bound.'))}</p>
     <table><tr><th>${te('Tier')}</th><th class="num">${te('Block rate')}</th><th class="num">${te('Blocked PV')}</th><th class="num">${te('Est. false-positive')}</th></tr>
       ${['loose', 'balanced', 'strict'].map(tierRow).join('')}</table>
     ${trend.some((v) => v > 0) ? `<div style="margin-top:12px;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:12px">${te('Blocked/day')}</span>${sparkline(trend)}</div>` : ''}
@@ -1366,8 +1388,7 @@ function renderShadowBanner(o) {
   const blocked = o && o.pv ? (((o.pv - o.clean_count) / o.pv) * 100).toFixed(1) : '0.0';
   el.hidden = false;
   const SHADOW_EN = `recording only, ads still load for {days} more day${days === 1 ? '' : 's'}. At the current tier, {blocked} of pageviews in this range would be blocked once enforcing.`;
-  const tpl = t('shadow-banner');
-  const body = (tpl === 'shadow-banner' ? SHADOW_EN : tpl)
+  const body = window.PVI18N.tk('shadow-banner', SHADOW_EN)
     .replace('{days}', `<b>${days}</b>`)
     .replace('{blocked}', `<b>${esc(blocked)}%</b>`);
   el.innerHTML = `<span><b>${te('Shadow mode')}</b> — ${body}</span>`

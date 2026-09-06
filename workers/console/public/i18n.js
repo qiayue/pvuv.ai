@@ -242,6 +242,13 @@
       'Page path, e.g. /pay — trailing * matches a prefix (/pay*)': '页面路径,如 /pay —— 结尾 * 匹配前缀(/pay*)',
       'Share link': '分享链接', 'Source': '来源', 'All': '全部', 'Click a row to filter the dashboard by it.': '点击任意一行即可按它筛选整个仪表盘。',
       'Shadow mode': '影子模式',
+      'ranking-help': '按外部清洗浏览量排名——已排除机器人与爬虫,自己站点之间的互访不计。', 'Clean PV': '干净PV',
+      'logo-help': 'Logo/favicon 可以填 URL,也可以是放在 <code>workers/console/public/</code> 下的文件。控制台页头(深色)使用浅色 Logo。',
+      'ai-help': ' — 用于在每个站点的仪表盘上生成一段文字总结。',
+      'anom-pv-spike': '浏览量达到近期均值的 {x} 倍({from} → {to})',
+      'anom-pv-drop': '浏览量跌至近期均值的 {pct}%({from} → {to})',
+      'anom-invalid': '无效流量占浏览量 {now}%,基线为 {base}%',
+      'anom-source': '来自“{src}”的流量达到其近期均值的 {x} 倍({from} → {to} 访客)',
       'shadow-banner': '仅记录不拦截,广告还会继续加载 {days} 天。按当前档位,本时段将有 {blocked} 的浏览量在启用拦截后被拦下。',
       'Start blocking ads for suspected invalid traffic now? This ends the record-only window and can\'t be undone.': '现在就开始对疑似无效流量拦截广告?这将结束"仅记录"窗口且不可撤销。',
     },
@@ -939,7 +946,18 @@
   function applyStatic(root) {
     root = root || document;
     root.querySelectorAll('[data-i18n]').forEach(function (el) {
-      el.textContent = t(el.getAttribute('data-i18n'));
+      // Remember the element's authored (English) markup once, so a key with
+      // no translation (English mode, or a short symbolic key like
+      // "token-help") shows the authored text instead of the raw key, and
+      // switching back from another language restores it. Translations that
+      // carry markup (<b>, <i>) are applied as HTML — they come from this
+      // file, never from user input.
+      var key = el.getAttribute('data-i18n');
+      if (el.__i18nSrc == null) el.__i18nSrc = el.innerHTML;
+      var v = t(key);
+      if (v === key) el.innerHTML = el.__i18nSrc;
+      else if (v.indexOf('<') >= 0) el.innerHTML = v;
+      else el.textContent = v;
     });
     root.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
       el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
@@ -973,8 +991,12 @@
     el.addEventListener('change', function () { setLang(el.value); });
   }
 
+  /** Translate a symbolic key (e.g. 'fp-explainer') with an explicit English
+   *  fallback for when the current language has no entry. */
+  function tk(key, en) { var v = t(key); return v === key ? en : v; }
+
   window.PVI18N = {
-    t: t, setLang: setLang, applyStatic: applyStatic, mountSelect: mountSelect, langs: LANGS,
+    t: t, tk: tk, setLang: setLang, applyStatic: applyStatic, mountSelect: mountSelect, langs: LANGS,
     get lang() { return lang; },
   };
   document.documentElement.setAttribute('lang', lang);
