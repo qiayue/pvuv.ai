@@ -145,7 +145,10 @@ function unionOver(tables: string[], cols: string, siteId: string, startTs: numb
 // derived metrics (bounce/dwell/sources) use the matching session column.
 // ---------------------------------------------------------------------------
 
-export interface Filter { dim: string; value: string; }
+/** `values` (optional) widens the match to any of several raw keys — the
+ *  console sends it when one display row folds several stored sources
+ *  (www.google.com + google.com.hk + google → "Google"). */
+export interface Filter { dim: string; value: string; values?: string[]; }
 
 /** dim → raw-events WHERE fragment (+binds). */
 const EVENT_FILTER: Record<string, (v: string) => { sql: string; binds: unknown[] }> = {
@@ -194,9 +197,10 @@ function buildWhere(
     if (skipDim && f.dim === skipDim) continue;
     const fn = map[f.dim];
     if (!fn) continue; // dim not representable on this target → not constrained
-    const r = fn(f.value);
-    parts.push(r.sql);
-    binds.push(...r.binds);
+    const vals = f.values && f.values.length ? f.values : [f.value];
+    const alts = vals.map(fn);
+    parts.push(alts.length === 1 ? alts[0].sql : `(${alts.map((a) => a.sql).join(' OR ')})`);
+    for (const a of alts) binds.push(...a.binds);
   }
   return { sql: parts.join(' AND '), binds };
 }
@@ -1267,11 +1271,14 @@ const VERDICT_OF_RANK: Record<number, string> = { 1: 'clean', 2: 'suspect', 3: '
  *  cover just the matching events. Verdict shown is the visitor's worst. */
 export async function visitorsList(
   db: D1Database, siteId: string, period: Period,
-  opts: { path?: string | null; limit?: number },
+  opts: { path?: string | null; limit?: number; verdict?: string | null },
 ) {
-  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
   const tables = await eventTables(db, period.startTs, period.endTs);
   if (tables.length === 0) return { path: opts.path ?? null, rows: [] };
+  const wantRank = Number(Object.keys(VERDICT_OF_RANK).find((k) => VERDICT_OF_RANK[Number(k)] === opts.verdict) ?? -1);
+  const verdictCond = wantRank > 0 ? ' AND vrank = ?' : '';
+  const verdictBinds = wantRank > 0 ? [wantRank] : [];
 
   let pathCond = '';
   const pathBinds: unknown[] = [];
@@ -1285,7 +1292,7 @@ export async function visitorsList(
     }
   }
   const parts = tables.map((t) =>
-    `SELECT visitor_id, session_id, event, verdict, country, device_type, ts FROM ${t}
+    `SELECT visitor_id, session_id, event, verdict, country, device_type, browser, os, path, ts FROM ${t}
      WHERE site_id = ? AND ts >= ? AND ts < ?${pathCond}`);
   const binds = tables.flatMap(() => [siteId, period.startTs, period.endTs, ...pathBinds]);
 
@@ -1295,12 +1302,14 @@ export async function visitorsList(
       COUNT(DISTINCT session_id) AS sessions,
       MIN(ts) AS first_ts, MAX(ts) AS last_ts,
       MAX(CASE verdict WHEN 'bot' THEN 4 WHEN 'crawler' THEN 3 WHEN 'suspect' THEN 2 ELSE 1 END) AS vrank,
-      MAX(country) AS country, MAX(device_type) AS device_type
+      MAX(country) AS country, MAX(device_type) AS device_type,
+      MAX(browser) AS browser, MAX(os) AS os,
+      COALESCE(SUM(event NOT IN ('pageview','page_leave','page_pulse','outbound_click','identify')), 0) AS goals
     FROM (${parts.join(' UNION ALL ')})
     GROUP BY visitor_id
-    HAVING pv > 0
+    HAVING pv > 0${verdictCond}
     ORDER BY last_ts DESC LIMIT ?
-  `).bind(...binds, limit).all<Record<string, unknown> & { vrank: number }>();
+  `).bind(...binds, ...verdictBinds, limit).all<Record<string, unknown> & { vrank: number }>();
 
   return {
     path: opts.path ?? null,
@@ -1328,18 +1337,37 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
 
   // session_id groups the timeline; hostname disambiguates multi-domain sites;
   // props carries custom-event payloads (e.g. revenue) for display.
+  // page_pulse rows are included: they carry the per-page behavior deltas
+  // (dwell, errors, rage/dead clicks, click targets) the timeline folds into
+  // each pageview. The behavior columns arrived late (migration 0017) — a
+  // partition that predates them falls back to the base column set.
+  const BASE_COLS = `ts, event, session_id, hostname, path, referrer, duration_ms, scroll_depth,
+             had_interaction, props, bot_score, verdict, bot_flags, score_stage`;
   const events: unknown[] = [];
   for (const table of (await eventTables(db, period.startTs, period.endTs)).reverse()) {
     if (events.length >= PROFILE_EVENTS_MAX) break;
-    const rows = await db.prepare(`
-      SELECT ts, event, session_id, hostname, path, referrer, duration_ms, scroll_depth,
-             had_interaction, props, bot_score, verdict, bot_flags, score_stage
-      FROM ${table} WHERE site_id = ? AND visitor_id = ? AND event != 'page_pulse' ORDER BY ts DESC LIMIT ?
-    `).bind(siteId, vid, PROFILE_EVENTS_MAX - events.length).all();
+    const sql = (cols: string) =>
+      `SELECT ${cols} FROM ${table} WHERE site_id = ? AND visitor_id = ? ORDER BY ts DESC LIMIT ?`;
+    let rows;
+    try {
+      rows = await db.prepare(sql(`${BASE_COLS}, err_count, rage_count, dead_count`)).bind(siteId, vid, PROFILE_EVENTS_MAX - events.length).all();
+    } catch {
+      rows = await db.prepare(sql(BASE_COLS)).bind(siteId, vid, PROFILE_EVENTS_MAX - events.length).all();
+    }
     events.push(...rows.results);
   }
 
-  return { profile, sessions: sessions.results, events };
+  // one line of identity context for the journey header (latest pageview wins)
+  let context: Record<string, unknown> | null = null;
+  for (const table of (await eventTables(db, period.startTs, period.endTs)).reverse()) {
+    context = await db.prepare(`
+      SELECT country, region, city, device_type, browser, os, screen_w, screen_h, lang, asn_type
+      FROM ${table} WHERE site_id = ? AND visitor_id = ? AND event = 'pageview' ORDER BY ts DESC LIMIT 1
+    `).bind(siteId, vid).first<Record<string, unknown>>();
+    if (context) break;
+  }
+
+  return { profile, sessions: sessions.results, events, context };
 }
 
 // ---------------------------------------------------------------------------

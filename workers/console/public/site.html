@@ -17,13 +17,33 @@
   header .dl-btn { margin-left: 8px; background: #171a21; color: #cdd3dc; border: 1px solid #313847; border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
   header .dl-btn:hover { background: #1d222c; border-color: #3b4457; color: #e6e8eb; }
   header .dl-btn:disabled { opacity: .6; cursor: default; }
+  @media (max-width: 720px) {
+    header { flex-wrap: wrap; gap: 8px 10px; padding: 10px 14px; }
+    header select.langsel { margin-left: auto; }
+    header .dl-btn { padding: 5px 8px; }
+    .rt { flex-wrap: wrap; }
+    .chart-head, .sec-head { flex-wrap: wrap; }
+  }
   main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
   h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
-  .card .v { font-size: 22px; font-weight: 700; }
-  .card .k { color: #8b93a1; font-size: 12px; }
-  .card .h { color: #6b7280; font-size: 11px; margin-top: 2px; }
+  /* KPI grid: a fixed 6-up (2 rows × 6) on desktop so the two rows always
+     line up; 3-up on tablets, 2-up on phones. Labels never wrap — the long
+     explanation lives in the tooltip (title) instead. */
+  .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .cards.cards-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  @media (max-width: 900px) { .cards.cards-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .cards.cards-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .card .v { font-size: 22px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .k { color: #8b93a1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .h { color: #6b7280; font-size: 11px; margin-top: 2px; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card[title] { cursor: help; }
+  .sec-desc { color: #8b93a1; font-size: 12px; margin: -6px 0 10px; }
+  .more-btn { display: block; width: 100%; margin-top: 8px; background: none; border: 1px dashed #313847; color: #7ab3ff; border-radius: 6px; padding: 7px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .more-btn:hover { background: #1d2230; }
+  td.nowrap { white-space: nowrap; }
   .card.card-warn { border-color: #4a3f1e; background: #241f10; }
   .card.card-warn .v { color: #e8d9a0; }
   .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
@@ -69,9 +89,10 @@
   .switch-pop li .dm { color: #8b93a1; font-size: 12px; }
   .switch-pop .none { color: #8b93a1; padding: 8px 9px; font-size: 13px; }
   .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #aeb6c2; font-size: 13px; }
-  .shadow-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 14px; border: 1px solid #4a3f1e; background: #241f10; color: #e8d9a0; border-radius: 8px; font-size: 13px; }
+  .shadow-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 9px 14px; border: 1px solid #4a3f1e; background: #241f10; color: #e8d9a0; border-radius: 8px; font-size: 13px; }
   .shadow-banner[hidden] { display: none; }
-  .shadow-banner .enforce { margin-left: auto; background: #b45309; border: 0; color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
+  .shadow-banner > span { flex: 1 1 320px; min-width: 0; }
+  .shadow-banner .enforce { margin-left: auto; white-space: nowrap; background: #b45309; border: 0; color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
   .shadow-banner .enforce:hover { background: #92400e; }
   .rt .rt-site { font-weight: 600; color: #e6e8eb; padding-right: 10px; margin-right: 4px; border-right: 1px solid #313847; }
   .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: #e6e8eb; }
@@ -201,7 +222,7 @@
       <option value="this_year" data-i18n="This year">This year</option>
     </optgroup>
   </select>
-  <button id="shareBtn" class="dl-btn" title="Read-only public dashboard link">🔗 <span data-i18n="Share">Share</span></button>
+  <button id="shareBtn" class="dl-btn" title="Read-only public dashboard link">🔗 <span data-i18n="Share link">Share link</span></button>
   <button id="dlBtn" class="dl-btn" title="Download all data for the selected range as JSON">⬇ <span data-i18n="Download data">Download data</span></button>
 </header>
 <main>
@@ -273,6 +294,7 @@
   </div>
 
   <h2 data-i18n="Traffic quality">Traffic quality</h2>
+  <p class="sec-desc" data-i18n="How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.">How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.</p>
   <div class="panel" id="health"></div>
   <div class="grid2">
     <div class="panel" id="quality"></div>
@@ -284,7 +306,8 @@
   <h2 data-i18n="Ad protection">Ad protection</h2>
   <div class="panel" id="adguard"></div>
 
-  <h2 data-i18n="High-score traffic (drill-down)">High-score traffic (drill-down)</h2>
+  <div class="sec-head"><h2 data-i18n="Suspicious visitors">Suspicious visitors</h2><a class="all-btn" id="trafficAll" href="#" data-i18n="All visitors →">All visitors →</a></div>
+  <p class="sec-desc" data-i18n="Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.">Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.</p>
   <div class="panel" id="traffic"></div>
 
   <div class="chart-head">
@@ -306,6 +329,7 @@
 const site = new URLSearchParams(location.search).get('id');
 if (!site) location.href = '/sites.html';
 document.getElementById('visitorsLink').href = `/visitor.html?site=${encodeURIComponent(site)}`;
+document.getElementById('trafficAll').href = `/visitor.html?site=${encodeURIComponent(site)}&verdict=bot`;
 // deep link into the journey finder pre-filtered to one page path
 const visitorsByPath = (path) =>
   `/visitor.html?site=${encodeURIComponent(site)}&path=${encodeURIComponent(path)}`;
@@ -326,21 +350,24 @@ function loadFilters() {
 }
 function saveFilters() { try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch { /* non-fatal */ } }
 function filterQS() { return filters.length ? `&filters=${encodeURIComponent(JSON.stringify(filters))}` : ''; }
-function addFilter(dim, value) {
+// `values` carries every raw key a merged display row stands for (see
+// mergeSources) so the server matches all of them; `value` stays the label.
+function addFilter(dim, value, values) {
   if (!FILTER_UI.has(dim) || value == null) return;
   value = String(value);
   if (filters.some((f) => f.dim === dim && f.value === value)) return;
   filters = filters.filter((f) => f.dim !== dim); // one filter per dimension
-  filters.push({ dim, value });
+  filters.push(values && values.length > 1 ? { dim, value, values } : { dim, value });
   saveFilters(); renderFilters(); load();
 }
 function removeFilter(i) { filters.splice(i, 1); saveFilters(); renderFilters(); load(); }
 function clearFilters() { filters = []; saveFilters(); renderFilters(); load(); }
 function renderFilters() {
   const el = document.getElementById('filters');
+  const label = (f) => f.dim === 'source' ? sourceLabel(f.value) : f.value;
   el.innerHTML = filters.map((f, i) =>
-    `<span class="chip"><span>${esc(FILTER_LABEL[f.dim] || f.dim)}: <b>${esc(f.value)}</b></span><button class="x" data-i="${i}" aria-label="Remove filter" title="Remove">×</button></span>`).join('')
-    + (filters.length > 1 ? '<button class="clear">Clear all</button>' : '');
+    `<span class="chip"><span>${te(FILTER_LABEL[f.dim] || f.dim)}: <b title="${esc((f.values || [f.value]).join(', '))}">${esc(label(f))}</b></span><button class="x" data-i="${i}" aria-label="Remove filter" title="Remove">×</button></span>`).join('')
+    + (filters.length > 1 ? `<button class="clear">${te('Clear all')}</button>` : '');
   el.querySelectorAll('.chip .x').forEach((b) => b.addEventListener('click', () => removeFilter(Number(b.dataset.i))));
   const c = el.querySelector('.clear');
   if (c) c.addEventListener('click', clearFilters);
@@ -386,10 +413,45 @@ const SOURCE_DOMAIN = {
   weibo: 'weibo.com', zhihu: 'zhihu.com', newsletter: '', email: '',
 };
 const GENERIC_ICON = "this.outerHTML='<span class=\\'favi-generic\\'>🔗</span>'";
+// Display-side twin of shared/source.ts canonicalSource(): rows recorded
+// before ingest-time canonicalisation (www.google.com, google.com.hk, t.co …)
+// still read as one platform. Filtering keeps the raw stored key.
+const SOURCE_CANON = [
+  [/(^|\.)google\.[a-z.]+$/, 'google.com'], [/^com\.google\.android\.googlequicksearchbox$/, 'google.com'],
+  [/(^|\.)bing\.com$/, 'bing.com'], [/(^|\.)yahoo\.[a-z.]+$/, 'yahoo.com'], [/(^|\.)duckduckgo\.com$/, 'duckduckgo.com'],
+  [/(^|\.)yandex\.[a-z.]+$/, 'yandex.com'], [/(^|\.)baidu\.com$/, 'baidu.com'],
+  [/^t\.co$/, 'x.com'], [/(^|\.)twitter\.com$/, 'x.com'], [/(^|\.)x\.com$/, 'x.com'],
+  [/(^|\.)facebook\.com$/, 'facebook.com'], [/^fb\.com$/, 'facebook.com'], [/(^|\.)instagram\.com$/, 'instagram.com'],
+  [/(^|\.)linkedin\.com$/, 'linkedin.com'], [/^lnkd\.in$/, 'linkedin.com'], [/(^|\.)reddit\.com$/, 'reddit.com'],
+  [/(^|\.)youtube\.com$/, 'youtube.com'], [/^youtu\.be$/, 'youtube.com'], [/(^|\.)pinterest\.[a-z.]+$/, 'pinterest.com'],
+  [/(^|\.)chatgpt\.com$/, 'chatgpt.com'], [/^chat\.openai\.com$/, 'chatgpt.com'], [/(^|\.)perplexity\.ai$/, 'perplexity.ai'],
+  [/(^|\.)bilibili\.com$/, 'bilibili.com'], [/^b23\.tv$/, 'bilibili.com'], [/(^|\.)weibo\.(com|cn)$/, 'weibo.com'],
+  [/(^|\.)zhihu\.com$/, 'zhihu.com'], [/^t\.me$/, 'telegram.org'],
+];
+const SOURCE_NAME = {
+  'google.com': 'Google', 'bing.com': 'Bing', 'yahoo.com': 'Yahoo', 'duckduckgo.com': 'DuckDuckGo', 'yandex.com': 'Yandex',
+  'baidu.com': 'Baidu', 'x.com': 'X (Twitter)', 'facebook.com': 'Facebook', 'instagram.com': 'Instagram',
+  'linkedin.com': 'LinkedIn', 'reddit.com': 'Reddit', 'youtube.com': 'YouTube', 'pinterest.com': 'Pinterest',
+  'chatgpt.com': 'ChatGPT', 'perplexity.ai': 'Perplexity', 'bilibili.com': 'Bilibili', 'weibo.com': 'Weibo',
+  'zhihu.com': 'Zhihu', 'telegram.org': 'Telegram', 'github.com': 'GitHub', 'news.ycombinator.com': 'Hacker News',
+  'producthunt.com': 'Product Hunt', 'search.brave.com': 'Brave Search', 'claude.ai': 'Claude', 'mail.google.com': 'Gmail',
+};
+function canonicalSource(src) {
+  if (!src || src === '(direct)') return src;
+  let h = src.toLowerCase().replace(/^(www|m|l|lm|amp|mobile)\./, '');
+  if (!h.includes('.') && SOURCE_DOMAIN[h]) h = SOURCE_DOMAIN[h]; // bare utm_source=google
+  for (const [re, canon] of SOURCE_CANON) if (re.test(h)) { h = canon; break; }
+  return h;
+}
+function sourceLabel(src) {
+  if (!src || src === '(direct)') return t('Direct');
+  const c = canonicalSource(src);
+  return SOURCE_NAME[c] || (src.includes('.') ? c : src);
+}
 function sourceIcon(src) {
   if (!src || src === '(direct)') return '<span class="favi-generic" title="Direct / none">↗</span>';
   const key = src.toLowerCase();
-  const domain = src.includes('.') ? src : SOURCE_DOMAIN[key];
+  const domain = src.includes('.') ? canonicalSource(src) : SOURCE_DOMAIN[key];
   if (!domain) return '<span class="favi-generic">🔗</span>';
   return `<img class="favi" loading="lazy" alt="" src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico" onerror="${GENERIC_ICON}">`;
 }
@@ -460,7 +522,7 @@ const CHANNEL_ICON = {
   paid_social: '📣', email: '✉️', ai: '🤖', video: '▶', referral: '🔗',
 };
 const dimConfig = {
-  source:      { label: 'Sources',   headers: ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => sourceIcon(r.key), cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  source:      { label: 'Sources',   headers: ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => sourceIcon(r.key), cells: (r) => [`<span title="${esc(r.key)}">${esc(sourceLabel(r.key))}</span>`, fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
   channel:     { label: 'Channels',  headers: ['Channel', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => `<span class="favi-generic">${CHANNEL_ICON[r.key] || '🔗'}</span>`, cells: (r) => [te(CHANNEL_LABEL[r.key] || r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
   page:        { label: 'Pages',     headers: ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'], val: (r) => r.path, bar: (r) => r.uv, cells: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)] },
   entry_page:  { label: 'Entry',     headers: ['Entry page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
@@ -497,12 +559,30 @@ function breakdownTableHTML(dim, rows, clickable) {
       }).join('') + '</table>';
 }
 
+// Fold rows that canonicalise to the same platform into one (legacy data
+// recorded www.google.com / google.com.hk / google as separate keys). Counts
+// sum; visitors can double-count across variants, which is the lesser evil
+// versus three "Google" rows. `keys` remembers the raw keys for filtering.
+function mergeSources(rows) {
+  const out = new Map();
+  for (const r of rows) {
+    const c = canonicalSource(r.key) || r.key;
+    const m = out.get(c);
+    if (!m) { out.set(c, { ...r, key: c, keys: [r.key] }); continue; }
+    m.keys.push(r.key);
+    for (const k of ['sessions', 'pv', 'pv_clean', 'uv']) if (r[k] != null) m[k] = (Number(m[k]) || 0) + Number(r[k]);
+  }
+  return [...out.values()].sort((a, b) => (Number(b.pv) || 0) - (Number(a.pv) || 0));
+}
+function prepRows(dim, rows) { return dim === 'source' ? mergeSources(rows) : rows; }
+
 function renderBreakdown(elId, dim, rows) {
   const el = document.getElementById(elId);
   const clickable = FILTER_UI.has(dim);
+  rows = prepRows(dim, rows);
   el.innerHTML = rows.length ? breakdownTableHTML(dim, rows, clickable) : `<p class="muted">${te('no data yet')}</p>`;
   if (clickable) el.querySelectorAll('tr.clickable').forEach((tr) =>
-    tr.addEventListener('click', () => addFilter(dim, dimConfig[dim].val(rows[Number(tr.dataset.i)]))));
+    tr.addEventListener('click', () => { const r = rows[Number(tr.dataset.i)]; addFilter(dim, dimConfig[dim].val(r), r.keys); }));
 }
 
 // ── tabbed breakdown panels (Plausible-style dimension switchers)
@@ -537,18 +617,18 @@ async function loadPanel(mount) {
 async function openAll(mount) {
   const dim = panelState[mount];
   const cfg = dimConfig[dim];
-  document.getElementById('modalTitle').textContent = `All ${cfg.label.toLowerCase()}`;
+  document.getElementById('modalTitle').textContent = `${t('All')} · ${t(cfg.label)}`;
   document.getElementById('modalBody').innerHTML = `<p class="muted">${te('loading…')}</p>`;
   document.getElementById('modal').hidden = false;
   const d = await get('breakdown', `&dim=${dim}&limit=100`);
-  const rows = d.rows || [];
+  const rows = prepRows(dim, d.rows || []);
   const clickable = FILTER_UI.has(dim);
   document.getElementById('modalBody').innerHTML = rows.length
     ? breakdownTableHTML(dim, rows, clickable)
-      + (clickable ? '<p class="muted" style="font-size:12px;margin:10px 2px 0">Click a row to filter the dashboard by it.</p>' : '')
+      + (clickable ? `<p class="muted" style="font-size:12px;margin:10px 2px 0">${te('Click a row to filter the dashboard by it.')}</p>` : '')
     : `<p class="muted">${te('no data yet')}</p>`;
   if (clickable) document.getElementById('modalBody').querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => {
-    addFilter(dim, cfg.val(rows[Number(tr.dataset.i)])); closeModal();
+    const r = rows[Number(tr.dataset.i)]; addFilter(dim, cfg.val(r), r.keys); closeModal();
   }));
 }
 document.querySelectorAll('.all-btn').forEach((b) => b.addEventListener('click', () => openAll(b.dataset.panel)));
@@ -759,25 +839,31 @@ function renderCards(o, al) {
   const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
   const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
   const pct = (v) => v == null ? '–' : (v * 100).toFixed(1) + '%';
-  // k (label) and h (sub-label) are UI strings → translated; v is a value.
-  const card = (k, v, h, cls) => `<div class="card${cls ? ' ' + cls : ''}"><div class="v">${v}</div><div class="k">${te(k)}</div>${h ? `<div class="h">${te(h)}</div>` : ''}</div>`;
+  // k (label) and h (sub-label) are UI strings → translated; v is a value;
+  // help is the long explanation, shown as a tooltip so labels stay one line.
+  const card = (k, v, h, help, cls) =>
+    `<div class="card${cls ? ' ' + cls : ''}"${help ? ` title="${esc(t(help))}"` : ''}><div class="v">${v}</div><div class="k">${te(k)}</div><div class="h">${h ? te(h) : ''}</div></div>`;
   // forged search-referrer traffic (the two new signals) + its share of
   // search-referred visits — makes "fake Google" visible without SQL.
   const st = (al && al.stats) || {};
   const fakeN = st.fake_search || 0;
-  const fakeShare = st.search_pv ? (fakeN / st.search_pv * 100).toFixed(1) + '% of search visits' : 'search-referrer forgery';
+  const fakeShare = st.search_pv ? `${(fakeN / st.search_pv * 100).toFixed(1)}% ${t('of search visits')}` : t('of search visits');
+  // Two rows of six: audience volume on top, quality & outcomes below. The
+  // conversion cards always render so the grid never goes ragged — a site
+  // without custom events simply shows a dash.
   document.getElementById('cards').innerHTML =
-    card('Visitors', fmt(o.uv)) + card('Sessions', fmt(o.sessions)) + card('Pageviews', fmt(o.pv)) +
-    card('Pages / visitor', perVisitor) +
-    card('Bounce rate (engaged)', pct(o.bounce_rate), 'GA4 engagement metric') +
-    card('Bounce rate (1-page)', pct(o.bounce_rate_single), 'UA / Plausible style') +
-    card('Engaged time', dur(o.avg_duration_ms), 'Visible dwell, incl. exit page') +
-    card('Visit duration', dur(o.visit_duration_ms), 'UA / Plausible style') +
-    card('Human share', cleanShare + '%') +
-    card('Forged search', fmt(fakeN), fakeShare, fakeN > 0 ? 'card-warn' : '') +
-    // conversions / revenue only appear once the site sends custom events
-    (o.conversions ? card('Conversions', fmt(o.conversions)) : '') +
-    (o.revenue ? card('Revenue', money(o.revenue)) : '');
+    card('Visitors', fmt(o.uv), 'unique people', 'Distinct visitors (by visitor id) in this range, bots and crawlers excluded') +
+    card('Sessions', fmt(o.sessions), 'visits', 'Visits — a new session starts after 30 minutes idle or at midnight') +
+    card('Pageviews', fmt(o.pv), 'all traffic', 'Every recorded pageview, including traffic later judged invalid') +
+    card('Pages / visitor', perVisitor, 'depth', 'Pageviews divided by visitors') +
+    card('Engaged time', dur(o.avg_duration_ms), 'visible dwell', 'Average time the page was actually visible per visit, exit page included (measured, not inferred)') +
+    card('Visit duration', dur(o.visit_duration_ms), 'first → last event', 'Classic session length: first to last event in the visit (Universal Analytics / Plausible definition — exit page counts as 0)') +
+    card('Human share', cleanShare + '%', 'of pageviews', 'Share of pageviews not judged bot or crawler') +
+    card('Bounce (engaged)', pct(o.bounce_rate), 'GA4 style', 'Visits with no engagement: under 10s, no second page, no conversion (GA4 definition)') +
+    card('Bounce (1-page)', pct(o.bounce_rate_single), 'Plausible style', 'Visits that saw exactly one page (Universal Analytics / Plausible definition)') +
+    card('Forged search', fmt(fakeN), fakeShare, 'Visits claiming a Google/Bing referral that the forgery checks rejected', fakeN > 0 ? 'card-warn' : '') +
+    card('Conversions', o.conversions ? fmt(o.conversions) : '–', 'custom events', 'Custom events sent by your site (signup, purchase …) from clean traffic') +
+    card('Revenue', o.revenue ? money(o.revenue) : '–', 'from events with revenue', 'Sum of the revenue property on custom events, in USD');
 }
 const money = (v) => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -1175,20 +1261,7 @@ async function load() {
   // not per event): event/session counts, worst score/verdict, union of evidence.
   const traffic = (async () => {
     const tr = await get('traffic', '&min_score=30&limit=50');
-    document.getElementById('traffic').innerHTML = tr.rows.length
-    ? `<table><tr><th>${te('Visitor')}</th><th class="num">${te('Events')}</th><th class="num">${te('Sessions')}</th><th>${te('Last seen')}</th><th>${te('Where')}</th><th>${te('Agent')}</th><th class="num">${te('Max score')}</th><th>${te('Verdict')}</th><th>${te('Evidence')}</th></tr>` +
-      tr.rows.map((r) => `<tr>
-        <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="Journey timeline">${esc(String(r.visitor_id).slice(0, 10))}…</a></td>
-        <td class="num">${fmt(r.events)}</td>
-        <td class="num">${fmt(r.sessions)}</td>
-        <td>${new Date(r.last_ts).toISOString().slice(5, 16).replace('T', ' ')}</td>
-        <td>${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''}</td>
-        <td>${esc(r.browser ?? '–')}/${esc(r.os ?? '–')}</td>
-        <td class="num">${r.bot_score}</td>
-        <td><span class="badge b-${esc(r.verdict)}">${te(r.verdict)}</span></td>
-        <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
-      </tr>`).join('') + '</table>'
-    : `<p class="muted">${te('nothing above the threshold — looking clean')}</p>`;
+    renderTraffic(tr.rows || [], TRAFFIC_FOLD);
   })();
 
   // UTM breakdown, then re-run the saved funnel for the period (needs UTM done
@@ -1196,6 +1269,34 @@ async function load() {
   const utm = (async () => { await loadUtm(); runFunnel(); })();
 
   await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadVitals(), loadAdguard(), loadCrawlers(), loadEdge()]);
+}
+
+// Suspicious-visitor table: folded to the top rows so the page doesn't grow
+// by fifty rows of evidence; "show all" expands in place.
+const TRAFFIC_FOLD = 12;
+function renderTraffic(rows, fold) {
+  const el = document.getElementById('traffic');
+  if (!rows.length) { el.innerHTML = `<p class="muted">${te('nothing above the threshold — looking clean')}</p>`; return; }
+  const shown = rows.slice(0, fold);
+  el.innerHTML = `<table><tr><th>${te('Visitor')}</th><th class="num">${te('Events')}</th><th class="num">${te('Sessions')}</th><th>${te('Last seen')}</th><th>${te('Where')}</th><th>${te('Agent')}</th><th class="num">${te('Max score')}</th><th>${te('Verdict')}</th><th>${te('Evidence')}</th></tr>` +
+    shown.map((r) => `<tr>
+      <td class="nowrap"><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="${esc(t('Journey timeline'))}">${esc(String(r.visitor_id).slice(0, 8))}…</a></td>
+      <td class="num">${fmt(r.events)}</td>
+      <td class="num">${fmt(r.sessions)}</td>
+      <td class="nowrap muted">${new Date(r.last_ts).toISOString().slice(5, 16).replace('T', ' ')}</td>
+      <td class="nowrap">${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''}</td>
+      <td class="nowrap">${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</td>
+      <td class="num">${r.bot_score}</td>
+      <td><span class="badge b-${esc(r.verdict)}">${te(r.verdict)}</span></td>
+      <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
+    </tr>`).join('') + '</table>'
+    + (rows.length > shown.length
+      ? `<button class="more-btn" id="trafficMore">${te('Show all')} ${rows.length}</button>`
+      : (fold < rows.length + 1 && rows.length > TRAFFIC_FOLD ? `<button class="more-btn" id="trafficLess">${te('Show fewer')}</button>` : ''));
+  const more = document.getElementById('trafficMore');
+  if (more) more.addEventListener('click', () => renderTraffic(rows, rows.length));
+  const less = document.getElementById('trafficLess');
+  if (less) less.addEventListener('click', () => renderTraffic(rows, TRAFFIC_FOLD));
 }
 
 // live "online now" — polls independently of the selected period (always the
@@ -1264,10 +1365,15 @@ function renderShadowBanner(o) {
   const days = Math.ceil((siteShadowUntil - now) / 86400000);
   const blocked = o && o.pv ? (((o.pv - o.clean_count) / o.pv) * 100).toFixed(1) : '0.0';
   el.hidden = false;
-  el.innerHTML = `<span><b>Shadow mode</b> — recording only, ads still load for <b>${days}</b> more day${days === 1 ? '' : 's'}. At the current tier, <b>${blocked}%</b> of pageviews in this range would be blocked once enforcing.</span>`
-    + '<button id="enforceBtn" class="enforce">Enforce now</button>';
+  const SHADOW_EN = `recording only, ads still load for {days} more day${days === 1 ? '' : 's'}. At the current tier, {blocked} of pageviews in this range would be blocked once enforcing.`;
+  const tpl = t('shadow-banner');
+  const body = (tpl === 'shadow-banner' ? SHADOW_EN : tpl)
+    .replace('{days}', `<b>${days}</b>`)
+    .replace('{blocked}', `<b>${esc(blocked)}%</b>`);
+  el.innerHTML = `<span><b>${te('Shadow mode')}</b> — ${body}</span>`
+    + `<button id="enforceBtn" class="enforce">${te('Enforce now')}</button>`;
   document.getElementById('enforceBtn').addEventListener('click', async () => {
-    if (!confirm('Start blocking ads for suspected invalid traffic now? This ends the record-only window and can\'t be undone.')) return;
+    if (!confirm(t('Start blocking ads for suspected invalid traffic now? This ends the record-only window and can\'t be undone.'))) return;
     const r = await guard(await fetch(`/api/sites/${site}/enforce`, { method: 'POST' }));
     if (r.ok) { siteShadowUntil = 0; el.hidden = true; }
   });
@@ -1405,7 +1511,8 @@ async function loadVitals() {
     return `<div class="card" title="${esc(t(VITAL_META[k][1]))}" style="border-left:3px solid ${r[0]}">
       <div class="v">${fmtVital(k, m.p75)}</div>
       <div class="k">${esc(VITAL_META[k][0])} <span class="muted">p75</span></div>
-      <div class="h" style="color:${r[0]}">${te(r[1] || '')}${m.count ? ` <span class="muted">· ${fmt(m.count)} ${te('loads')}</span>` : ''}</div>
+      <div class="h" style="color:${r[0]}">${te(r[1] || '')}</div>
+      <div class="h">${m.count ? `${fmt(m.count)} ${te('loads')}` : ''}</div>
     </div>`;
   }).join('');
   const pages = (d.pages || []).length
@@ -1416,7 +1523,7 @@ async function loadVitals() {
       + '</table>'
     : '';
   el.innerHTML = `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Real-user Core Web Vitals from clean traffic — the same metrics Google Search uses. p75 = 75% of page loads were at least this fast.')}</p>`
-    + `<div class="cards">${tiles}</div>` + pages
+    + `<div class="cards cards-5">${tiles}</div>` + pages
     + `<p class="muted" style="margin:10px 0 0;font-size:11.5px">${te('*INP is approximated from the slowest observed interaction.')}</p>`;
 }
 

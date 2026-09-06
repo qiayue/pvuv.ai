@@ -11,52 +11,81 @@
   header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; }
   header a { color: #7ab3ff; text-decoration: none; }
   header b { font-size: 16px; }
-  header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
+  header .site { color: #8b93a1; font-size: 13px; }
+  header select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
+  header select.langsel { margin-left: auto; }
+  header select#period { margin-left: 8px; }
+  @media (max-width: 720px) { header { flex-wrap: wrap; gap: 8px 10px; padding: 10px 14px; } }
   main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
   h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
   a { color: #7ab3ff; text-decoration: none; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
-  .card .v { font-size: 18px; font-weight: 700; }
-  .card .k { color: #8b93a1; font-size: 12px; }
+  .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .card .v { font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .k { color: #8b93a1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; }
-  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; }
+  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; white-space: nowrap; }
+  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; white-space: nowrap; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #1d2230; }
   .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
   .b-clean { background: #14331f; color: #6ee7a0; } .b-suspect { background: #33290f; color: #fbbf24; }
   .b-bot { background: #331414; color: #f87171; } .b-crawler { background: #1d2733; color: #93b4d6; }
   .muted { color: #8b93a1; }
-  .filter { display: flex; gap: 8px; margin-bottom: 12px; }
-  .filter input { flex: 1; max-width: 420px; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 6px 10px; font: inherit; }
+  .filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .filter input { flex: 1 1 260px; min-width: 0; max-width: 460px; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 6px 10px; font: inherit; }
+  .filter select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 6px 8px; font: inherit; }
   .filter button { background: #1d4ed8; color: #fff; border: 0; border-radius: 6px; padding: 6px 16px; font: inherit; cursor: pointer; }
   .filter button:hover { background: #2563eb; }
-  .hint { font-size: 12px; color: #8b93a1; margin: -6px 0 14px; }
+  .hint { font-size: 12px; color: #8b93a1; margin: 0 0 12px; }
+  .more-btn { display: block; width: 100%; margin-top: 8px; background: none; border: 1px dashed #313847; color: #7ab3ff; border-radius: 6px; padding: 7px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .more-btn:hover { background: #1d2230; }
+  /* journey header */
+  .ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; color: #cdd6e2; }
+  .ctx .flag { font-size: 15px; }
+  .ctx .dc { color: #fbbf24; }
+  .evidence { margin: 8px 0 0; font-size: 12.5px; color: #f3b0b0; }
+  .evidence b { color: #8b93a1; font-weight: 500; }
   /* timeline */
   .session { background: #171a21; border: 1px solid #262b36; border-radius: 8px; margin-bottom: 14px; }
   .session-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #1d222c; font-size: 13px; }
   .session-head b { font-size: 13.5px; }
   .tl { list-style: none; margin: 0; padding: 8px 16px 12px; }
-  .tl li { position: relative; padding: 5px 0 5px 118px; }
+  .tl li { position: relative; padding: 6px 0 6px 118px; }
   .tl li::before { content: ''; position: absolute; left: 88px; top: 0; bottom: 0; width: 2px; background: #262b36; }
-  .tl li::after { content: ''; position: absolute; left: 84px; top: 12px; width: 10px; height: 10px; border-radius: 50%; background: #3b82f6; }
-  .tl li.ev-leave::after { background: #64748b; }
+  .tl li::after { content: ''; position: absolute; left: 84px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: #3b82f6; }
   .tl li.ev-out::after { background: #a78bfa; }
   .tl li.ev-custom::after { background: #34d399; }
+  .tl li.ev-form::after { background: #22d3ee; }
+  .tl li.ev-sys::after { background: #64748b; }
   .tl li.hit { background: #16233a; border-radius: 6px; }
   .tl .t { position: absolute; left: 0; width: 76px; text-align: right; color: #8b93a1; font-variant-numeric: tabular-nums; font-size: 12.5px; padding-top: 1px; }
-  .tl .what { font-weight: 600; }
-  .tl .meta { color: #8b93a1; font-size: 12.5px; }
-  .ev-tag { display: inline-block; min-width: 44px; margin-right: 8px; padding: 0 7px; border-radius: 9px; font-size: 11.5px; text-align: center; background: #1d2733; color: #93b4d6; }
+  .tl .what { font-weight: 600; word-break: break-all; }
+  .tl .meta { display: block; color: #8b93a1; font-size: 12.5px; margin-top: 1px; }
+  .tl .meta .warn { color: #fbbf24; }
+  .tl .meta .err { color: #f87171; }
+  .tl .meta code { background: #0f1115; padding: 0 5px; border-radius: 4px; font-size: 11.5px; color: #cdd6e2; }
+  .ev-tag { display: inline-block; min-width: 44px; margin-right: 8px; padding: 0 7px; border-radius: 9px; font-size: 11.5px; text-align: center; background: #1d2733; color: #93b4d6; vertical-align: 1px; }
+  .ev-custom .ev-tag { background: #143324; color: #6ee7a0; }
+  .ev-form .ev-tag { background: #103038; color: #67e8f9; }
+  .ev-out .ev-tag { background: #2a2140; color: #c4b5fd; }
+  @media (max-width: 560px) {
+    .tl li { padding-left: 70px; }
+    .tl li::before { left: 56px; } .tl li::after { left: 52px; }
+    .tl .t { width: 48px; font-size: 11.5px; }
+  }
 </style>
 </head>
 <body>
 <script src="/i18n.js"></script>
 <header>
-  <a id="back" href="/sites.html" data-i18n="← dashboard">← dashboard</a><b id="title" data-i18n="Visitor journeys">Visitor journeys</b>
-  <select id="lang" aria-label="Language" style="margin-left:auto;background:#171a21;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px"></select>
-  <select id="period" aria-label="Date range" style="margin-left:8px">
+  <a id="back" href="/sites.html" data-i18n="← dashboard">← dashboard</a><b id="title" data-i18n="Visitor journeys">Visitor journeys</b><span class="site" id="siteLabel"></span>
+  <select id="lang" class="langsel" aria-label="Language"></select>
+  <select id="period" aria-label="Date range">
     <option value="today" data-i18n="Today">Today</option>
     <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
     <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
@@ -64,14 +93,21 @@
   </select>
 </header>
 <main>
-  <!-- finder mode: recent visitors, optionally only those who opened a path -->
+  <!-- finder mode: recent visitors, optionally only those who opened a path / of one verdict -->
   <section id="finder" hidden>
     <h2 data-i18n="Find visitors">Find visitors</h2>
     <div class="filter">
-      <input id="path" placeholder="Filter by page path, e.g. /pay — trailing * matches a prefix (/pay*)" data-i18n-ph="Filter by page path, e.g. /pay — trailing * matches a prefix (/pay*)">
+      <input id="path" placeholder="Page path, e.g. /pay — trailing * matches a prefix (/pay*)" data-i18n-ph="Page path, e.g. /pay — trailing * matches a prefix (/pay*)">
+      <select id="verdict" aria-label="Verdict">
+        <option value="" data-i18n="All verdicts">All verdicts</option>
+        <option value="clean" data-i18n="clean">clean</option>
+        <option value="suspect" data-i18n="suspect">suspect</option>
+        <option value="bot" data-i18n="bot">bot</option>
+        <option value="crawler" data-i18n="crawler">crawler</option>
+      </select>
       <button id="apply" data-i18n="Filter">Filter</button>
     </div>
-    <p class="hint" data-i18n="Shows visitors with a pageview matching the path in the selected period; leave empty for all visitors. Click a visitor to see the full journey.">Shows visitors with a pageview matching the path in the selected period; leave empty for all visitors. Click a visitor to see the full journey.</p>
+    <p class="hint" data-i18n="Show visitors who opened a page, or only a verdict class. Click a visitor to replay the full journey.">Show visitors who opened a page, or only a verdict class. Click a visitor to replay the full journey.</p>
     <div class="panel" id="list"><p class="muted" data-i18n="loading…">loading…</p></div>
   </section>
 
@@ -79,6 +115,8 @@
   <section id="journey" hidden>
     <h2 id="vidTitle" data-i18n="Journey">Journey</h2>
     <div class="cards" id="summary"></div>
+    <div class="ctx" id="ctx"></div>
+    <div class="evidence" id="evidence" hidden></div>
     <h2><span data-i18n="Sessions">Sessions</span> <span class="muted" id="trailNote"></span></h2>
     <div id="sessions"></div>
   </section>
@@ -95,36 +133,101 @@ const t = (s) => window.PVI18N.t(s);
 const te = (s) => esc(t(s));
 const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
 const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
-const dt = (ts) => ts == null ? '–' : new Date(ts).toISOString().slice(0, 16).replace('T', ' ');
-const hms = (ts) => new Date(ts).toISOString().slice(11, 19);
 const badge = (v) => `<span class="badge b-${esc(v)}">${te(v)}</span>`;
 const shortId = (id) => `${String(id).slice(0, 8)}…`;
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
 const get = async (p, extra = '') =>
   (await guard(await fetch(`/api/sites/${site}/${p}?period=${document.getElementById('period').value}${extra}`))).json();
 
+// Timestamps render in the SITE's timezone (the one its days are cut on), not
+// the browser's or UTC — "12:09" must mean the same thing here and on the
+// dashboard. Resolved from /api/sites; falls back to UTC.
+let siteTz = 'UTC';
+let siteName = site;
+function fmtParts(ts, opts) {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: siteTz, hourCycle: 'h23', ...opts }).format(new Date(ts)); }
+  catch { return new Date(ts).toISOString(); }
+}
+const dt = (ts) => ts == null ? '–' : fmtParts(ts, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+const day = (ts) => fmtParts(ts, { year: 'numeric', month: '2-digit', day: '2-digit' });
+const hms = (ts) => fmtParts(ts, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+async function loadSiteMeta() {
+  try {
+    const { sites } = await (await guard(await fetch('/api/sites'))).json();
+    const s = (sites || []).find((x) => x.site_id === site);
+    if (s) { siteName = s.name || site; siteTz = s.timezone || 'UTC'; }
+  } catch { /* fall back to the id + UTC */ }
+  document.getElementById('siteLabel').textContent = `${siteName} · ${siteTz}`;
+  document.title = `${t('Visitor journeys')} — ${siteName}`;
+}
+
 // referrer is internal (not a source) when its host is the page's own host —
 // the journey only annotates external arrivals
 const refHost = (r) => { try { return new URL(r).hostname; } catch { return null; } };
 
+// mirrors shared/flags.ts bit definitions (same labels as the dashboard)
+const FLAG_LABELS = {
+  0x0001: 'webdriver', 0x0002: 'automation residue', 0x0004: 'UA/env contradiction',
+  0x0008: 'datacenter ASN', 0x0010: 'Sec-Fetch missing', 0x0020: 'timezone/IP mismatch',
+  0x0040: 'no interaction & no leave', 0x0080: 'software WebGL', 0x0100: 'mechanical timing',
+  0x0200: 'blocklisted cluster', 0x0400: 'honeypot', 0x0800: 'screen/device contradiction',
+  0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
+  0x4000: 'search referrer from datacenter', 0x8000: 'forged search referrer',
+  0x10000: 'headless UA', 0x20000: 'headless window', 0x40000: 'platform/UA mismatch',
+  0x80000: 'synthetic render env', 0x100000: 'HTTP/1 + modern browser',
+  0x200000: 'mechanical pointer', 0x400000: 'session drift',
+};
+const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
+function flagEmoji(cc) {
+  if (!cc || cc.length !== 2 || cc === 'XX') return '';
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+let regionNames;
+function countryLabel(cc) {
+  if (!cc) return '–';
+  try { regionNames = regionNames || new Intl.DisplayNames([window.PVI18N.lang || 'en'], { type: 'region' }); return regionNames.of(cc) || cc; }
+  catch { return cc; }
+}
+
 // -------------------------------- finder ---------------------------------
 
+const LIST_FOLD = 50;
+function syncUrl(path, verdict) {
+  const u = new URL(location.href);
+  if (path) u.searchParams.set('path', path); else u.searchParams.delete('path');
+  if (verdict) u.searchParams.set('verdict', verdict); else u.searchParams.delete('verdict');
+  history.replaceState(null, '', u);
+}
 async function loadList() {
   const el = document.getElementById('list');
-  el.innerHTML = '<p class="muted">loading…</p>';
+  el.innerHTML = `<p class="muted">${te('loading…')}</p>`;
   const path = document.getElementById('path').value.trim();
-  const d = await get('visitors', `&limit=100${path ? `&path=${encodeURIComponent(path)}` : ''}`);
+  const verdict = document.getElementById('verdict').value;
+  syncUrl(path, verdict);
+  const d = await get('visitors', `&limit=300${path ? `&path=${encodeURIComponent(path)}` : ''}${verdict ? `&verdict=${verdict}` : ''}`);
+  renderList(d.rows || [], path, LIST_FOLD);
+}
+function renderList(rows, path, fold) {
+  const el = document.getElementById('list');
+  if (!rows.length) { el.innerHTML = `<p class="muted">${te('no visitors matched in this period')}</p>`; return; }
   const note = path ? ` <span class="muted">(${te('matching')} ${esc(path)})</span>` : '';
-  el.innerHTML = d.rows.length
-    ? `<table><tr><th>${te('Visitor')}</th><th>${te('Last seen')}</th><th>${te('First seen')}</th><th class="num">${te('Pageviews')}${note}</th><th class="num">${te('Sessions')}</th><th>${te('Where')}</th><th>${te('Device')}</th><th>${te('Verdict')}</th></tr>` +
-      d.rows.map((r) => `<tr>
-        <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}${path ? `&path=${encodeURIComponent(path)}` : ''}">${esc(shortId(r.visitor_id))}</a></td>
-        <td>${dt(r.last_ts)}</td><td>${dt(r.first_ts)}</td>
-        <td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.sessions)}</td>
-        <td>${esc(r.country ?? '–')}</td><td>${esc(r.device_type ?? '–')}</td>
-        <td>${badge(r.verdict)}</td>
-      </tr>`).join('') + '</table>'
-    : `<p class="muted">${te('no visitors matched in this period')}</p>`;
+  const shown = rows.slice(0, fold);
+  const link = (r) => `/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}${path ? `&path=${encodeURIComponent(path)}` : ''}`;
+  el.innerHTML = `<table><tr><th>${te('Visitor')}</th><th>${te('Last seen')}</th><th>${te('First seen')}</th><th class="num">${te('Pageviews')}${note}</th><th class="num">${te('Sessions')}</th><th class="num">${te('Goals')}</th><th>${te('Where')}</th><th>${te('Device')}</th><th>${te('Verdict')}</th></tr>` +
+    shown.map((r) => `<tr class="clickable" data-href="${esc(link(r))}">
+      <td><a href="${esc(link(r))}">${esc(shortId(r.visitor_id))}</a></td>
+      <td class="muted">${dt(r.last_ts)}</td><td class="muted">${dt(r.first_ts)}</td>
+      <td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.sessions)}</td>
+      <td class="num">${r.goals ? `<b>${fmt(r.goals)}</b>` : '<span class="muted">–</span>'}</td>
+      <td>${flagEmoji(r.country)} ${esc(r.country ?? '–')}</td>
+      <td>${esc(r.device_type ?? '–')} <span class="muted">· ${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</span></td>
+      <td>${badge(r.verdict)}</td>
+    </tr>`).join('') + '</table>'
+    + (rows.length > shown.length ? `<button class="more-btn" id="listMore">${te('Show all')} ${rows.length}${rows.length >= 300 ? '+' : ''}</button>` : '');
+  el.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (e.target.tagName !== 'A') location.href = tr.dataset.href; }));
+  const more = document.getElementById('listMore');
+  if (more) more.addEventListener('click', () => renderList(rows, path, rows.length));
 }
 
 // -------------------------------- journey --------------------------------
@@ -135,53 +238,104 @@ const pathHit = (p) => {
   if (!hitPath || !p) return false;
   return hitPath.endsWith('*') ? p.startsWith(hitPath.slice(0, -1)) : p === hitPath;
 };
+const parseProps = (s) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 
-function eventLine(ev, isSessionFirst) {
-  const cls = ev.event === 'page_leave' ? 'ev-leave' : ev.event === 'outbound_click' ? 'ev-out'
-    : ev.event !== 'pageview' ? 'ev-custom' : '';
-  const tag = ev.event === 'pageview' ? te('page') : ev.event === 'page_leave' ? te('leave')
-    : ev.event === 'outbound_click' ? te('out') : esc(ev.event);
-  let props = null;
-  try { props = ev.props ? JSON.parse(ev.props) : null; } catch { /* display raw-less */ }
+/** Fold a session's raw rows into timeline lines: each pageview becomes one
+ *  line that absorbs the page_pulse / page_leave deltas reported for it
+ *  (dwell sums, scroll is a max, error/rage/dead counts sum, click targets
+ *  merge); custom, form and outbound events stay as their own lines. */
+function foldSession(events) {
+  const lines = [];
+  let cur = null;
+  const newPage = (ev) => {
+    cur = { kind: 'page', ev, dwell: 0, scroll: null, err: 0, rage: 0, dead: 0, ck: new Map(), errMsgs: [], verdict: ev.verdict };
+    lines.push(cur);
+  };
+  for (const ev of events) {
+    if (ev.event === 'pageview') { newPage(ev); continue; }
+    if (ev.event === 'page_pulse' || ev.event === 'page_leave') {
+      if (!cur || cur.ev.path !== ev.path) newPage({ ...ev, event: 'pageview', synthetic: true });
+      if (ev.duration_ms) cur.dwell += ev.duration_ms;
+      if (ev.scroll_depth != null) cur.scroll = Math.max(cur.scroll ?? 0, ev.scroll_depth);
+      cur.err += ev.err_count || 0; cur.rage += ev.rage_count || 0; cur.dead += ev.dead_count || 0;
+      const p = parseProps(ev.props);
+      if (p && Array.isArray(p.ck)) for (const c of p.ck) if (c && c.s) cur.ck.set(c.s, (cur.ck.get(c.s) || 0) + (c.n || 1));
+      if (p && Array.isArray(p.err)) for (const e of p.err) if (e && e.m) cur.errMsgs.push(`${e.m}${e.n > 1 ? ` ×${e.n}` : ''}`);
+      if (ev.verdict && ev.verdict !== 'clean' && cur.verdict === 'clean') cur.verdict = ev.verdict;
+      continue;
+    }
+    lines.push({ kind: 'event', ev });
+  }
+  return lines;
+}
 
+function pageLine(line, isSessionFirst) {
+  const { ev } = line;
   const meta = [];
-  if (ev.event === 'page_leave') {
-    if (ev.duration_ms != null) meta.push(`${t('stayed')} ${dur(ev.duration_ms)}`);
-    if (ev.scroll_depth != null) meta.push(`${t('scrolled')} ${ev.scroll_depth}%`);
+  if (line.dwell > 0) meta.push(`${t('stayed')} ${dur(line.dwell)}`);
+  if (line.scroll != null) meta.push(`${t('scrolled')} ${line.scroll}%`);
+  if (line.ck.size) {
+    const top = [...line.ck.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([s, n]) => `<code>${esc(s)}</code>${n > 1 ? `×${n}` : ''}`).join(' ');
+    const total = [...line.ck.values()].reduce((a, b) => a + b, 0);
+    meta.push(`${total} ${t('clicks')} ${top}`);
   }
-  if (ev.event === 'outbound_click' && props?.href) meta.push(`→ ${esc(String(props.href))}`);
-  if (ev.event !== 'pageview' && ev.event !== 'page_leave' && ev.event !== 'outbound_click' && props) {
-    meta.push(esc(Object.entries(props).slice(0, 4).map(([k, v]) => `${k}=${v}`).join(' ')));
-  }
+  if (line.err) meta.push(`<span class="err" title="${esc(line.errMsgs.join('\n'))}">⚠ ${line.err} ${t('JS errors')}</span>`);
+  if (line.rage) meta.push(`<span class="warn">${line.rage} ${t('rage clicks')}</span>`);
+  if (line.dead) meta.push(`<span class="warn">${line.dead} ${t('dead clicks')}</span>`);
   // annotate where the session came from, on its first pageview only
   if (isSessionFirst && ev.referrer) {
     const h = refHost(ev.referrer);
     if (h && h !== ev.hostname) meta.push(`${t('from')} ${esc(h)}`);
   }
-  if (ev.verdict && ev.verdict !== 'clean') meta.push(badge(ev.verdict));
+  if (line.verdict && line.verdict !== 'clean') meta.push(badge(line.verdict));
+  return `<li class="${pathHit(ev.path) ? 'hit' : ''}">
+    <span class="t">${hms(ev.ts)}</span>
+    <span class="ev-tag">${te('page')}</span><span class="what">${esc(ev.path ?? '')}</span>
+    ${meta.length ? `<span class="meta">${meta.join(' · ')}</span>` : ''}
+  </li>`;
+}
 
-  const what = ev.event === 'outbound_click' && props?.href ? '' : esc(ev.path ?? '');
+function eventLine(ev) {
+  const props = parseProps(ev.props);
+  const isForm = ev.event === 'form_start' || ev.event === 'form_submit';
+  const cls = ev.event === 'outbound_click' ? 'ev-out' : isForm ? 'ev-form' : ev.event === 'identify' ? 'ev-sys' : 'ev-custom';
+  const tag = ev.event === 'outbound_click' ? te('out') : ev.event === 'form_start' ? te('form') : ev.event === 'form_submit' ? te('submit') : esc(ev.event);
+  const meta = [];
+  let what = esc(ev.path ?? '');
+  if (ev.event === 'outbound_click' && props?.href) what = `→ ${esc(String(props.href))}`;
+  else if (isForm && props?.form) meta.push(`<code>${esc(String(props.form))}</code>`);
+  else if (props) {
+    const shown = Object.entries(props).filter(([k]) => !['ck', 'err', 'mm', 'form'].includes(k)).slice(0, 4);
+    if (shown.length) meta.push(esc(shown.map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' ')));
+  }
+  if (ev.verdict && ev.verdict !== 'clean') meta.push(badge(ev.verdict));
   return `<li class="${cls}${pathHit(ev.path) ? ' hit' : ''}">
     <span class="t">${hms(ev.ts)}</span>
     <span class="ev-tag">${tag}</span><span class="what">${what}</span>
-    ${meta.length ? ` <span class="meta">${meta.join(' · ')}</span>` : ''}
+    ${meta.length ? `<span class="meta">${meta.join(' · ')}</span>` : ''}
   </li>`;
 }
 
 function sessionBlock(sid, events, info) {
-  const first = events[0];
-  const day = new Date(first.ts).toISOString().slice(0, 10);
-  const head = [`<b>${day}</b>`, `<span class="muted">${hms(first.ts)}–${hms(events[events.length - 1].ts)}</span>`];
+  const first = events[0], last = events[events.length - 1];
+  const head = [`<b>${day(first.ts)}</b>`, `<span class="muted">${hms(first.ts)}–${hms(last.ts)}</span>`];
   if (info) {
-    head.push(`${te('source:')} <b>${esc(info.source ?? '(direct)')}</b>${info.medium ? ` / ${esc(info.medium)}` : ''}`);
+    head.push(`${te('source:')} <b>${info.source ? esc(String(info.source).replace(/^www\./, '')) : te('Direct')}</b>${info.medium ? ` / ${esc(info.medium)}` : ''}`);
     head.push(`${fmt(info.pageviews)} ${te('pages')}`);
     if (info.duration_ms != null) head.push(dur(info.duration_ms));
     if (info.is_bounce) head.push(`<span class="muted">${te('bounced')}</span>`);
     head.push(badge(info.verdict ?? 'clean'));
   }
+  const lines = foldSession(events);
+  let firstPageSeen = false;
+  const html = lines.map((l) => {
+    if (l.kind === 'page') { const h = pageLine(l, !firstPageSeen); firstPageSeen = true; return h; }
+    return eventLine(l.ev);
+  }).join('');
   return `<div class="session">
     <div class="session-head">${head.join('<span class="muted"> · </span>')}</div>
-    <ul class="tl">${events.map((ev, i) => eventLine(ev, i === 0)).join('')}</ul>
+    <ul class="tl">${html}</ul>
   </div>`;
 }
 
@@ -191,28 +345,52 @@ async function loadJourney() {
   const p = d.profile || {};
   const events = (d.events || []).slice();
   const sessionInfo = new Map((d.sessions || []).map((s) => [s.session_id, s]));
+  const pvInPeriod = events.filter((e) => e.event === 'pageview').length;
+  const sessionsInPeriod = new Set(events.map((e) => e.session_id)).size;
 
   document.getElementById('summary').innerHTML = [
-    ['First seen', dt(p.first_seen)],
-    ['Last seen', dt(p.last_seen)],
-    ['Events (lifetime)', fmt(p.events_count)],
-    ['Sessions shown', fmt((d.sessions || []).length)],
+    // date as the big number, clock time folded into the label — a full
+    // "YYYY-MM-DD HH:MM" never fits a six-up card
+    [`First seen${p.first_seen ? ` · ${hms(p.first_seen).slice(0, 5)}` : ''}`, p.first_seen ? day(p.first_seen) : '–'],
+    [`Last seen${p.last_seen ? ` · ${hms(p.last_seen).slice(0, 5)}` : ''}`, p.last_seen ? day(p.last_seen) : '–'],
+    ['Pageviews in period', fmt(pvInPeriod)],
+    ['Sessions', `${fmt(sessionsInPeriod)}${p.sessions_count ? ` <span class="muted" style="font-size:12px">/ ${fmt(p.sessions_count)}</span>` : ''}`],
     ['Worst verdict', p.verdict ? badge(p.verdict) : '–'],
     ['Bot score', p.bot_score ?? '–'],
-  ].map(([k, v]) => `<div class="card"><div class="v">${v}</div><div class="k">${te(k)}</div></div>`).join('');
+  ].map(([k, v]) => {
+    const [base, extra] = k.split(' · ');
+    return `<div class="card"><div class="v">${v}</div><div class="k">${te(base)}${extra ? ` · ${esc(extra)}` : ''}</div></div>`;
+  }).join('');
+
+  // identity context: where / what / how big — one glance, no table
+  const c = d.context || {};
+  const ctx = [];
+  if (c.country) ctx.push(`<span><span class="flag">${flagEmoji(c.country)}</span> ${esc(countryLabel(c.country))}${c.city ? ` · ${esc(c.city)}` : c.region ? ` · ${esc(c.region)}` : ''}</span>`);
+  if (c.browser || c.os) ctx.push(`<span>${esc(c.browser ?? '–')} / ${esc(c.os ?? '–')}</span>`);
+  if (c.device_type) ctx.push(`<span>${esc(c.device_type)}${c.screen_w ? ` ${c.screen_w}×${c.screen_h}` : ''}</span>`);
+  if (c.lang) ctx.push(`<span>${esc(c.lang)}</span>`);
+  if (c.asn_type === 'datacenter') ctx.push(`<span class="dc">⚠ ${te('datacenter network')}</span>`);
+  document.getElementById('ctx').innerHTML = ctx.join('<span class="muted">·</span>');
+
+  // union of the evidence bits across the period's events
+  const bits = events.reduce((a, e) => a | (e.bot_flags || 0), 0);
+  const ev = document.getElementById('evidence');
+  ev.hidden = !bits;
+  if (bits) ev.innerHTML = `<b>${te('Evidence')}:</b> ${flagNames(bits).map(esc).join(', ')}`;
 
   // group the trail by session; blocks newest-first, events chronological inside
   const groups = new Map();
-  for (const ev of events) {
-    if (!groups.has(ev.session_id)) groups.set(ev.session_id, []);
-    groups.get(ev.session_id).push(ev);
+  for (const e of events) {
+    if (!groups.has(e.session_id)) groups.set(e.session_id, []);
+    groups.get(e.session_id).push(e);
   }
   const ordered = [...groups.entries()]
     .map(([sid, list]) => [sid, list.sort((a, b) => a.ts - b.ts)])
     .sort((a, b) => b[1][b[1].length - 1].ts - a[1][a[1].length - 1].ts);
 
+  const shownEvents = events.filter((e) => e.event !== 'page_pulse').length;
   document.getElementById('trailNote').textContent =
-    events.length ? `— ${events.length} ${t('events in this period')}${events.length >= 300 ? ' ' + t('(capped at 300 — narrow the period for more)') : ''}` : '';
+    events.length ? `— ${shownEvents} ${t('events in this period')}${events.length >= 300 ? ' ' + t('(capped at 300 — narrow the period for more)') : ''} · ${t('times in')} ${siteTz}` : '';
   document.getElementById('sessions').innerHTML = ordered.length
     ? ordered.map(([sid, list]) => sessionBlock(sid, list, sessionInfo.get(sid))).join('')
     : `<p class="muted">${te('no events in the selected period — try a longer range')}</p>`;
@@ -222,21 +400,25 @@ async function loadJourney() {
 
 const mode = vid ? 'journey' : 'finder';
 document.getElementById(mode).hidden = false;
-if (mode === 'finder' && qs.get('path')) document.getElementById('path').value = qs.get('path');
+if (mode === 'finder') {
+  if (qs.get('path')) document.getElementById('path').value = qs.get('path');
+  if (qs.get('verdict')) document.getElementById('verdict').value = qs.get('verdict');
+}
 
 const reload = () => (mode === 'journey' ? loadJourney() : loadList());
 document.getElementById('period').addEventListener('change', reload);
 if (mode === 'finder') {
   document.getElementById('apply').addEventListener('click', loadList);
+  document.getElementById('verdict').addEventListener('change', loadList);
   document.getElementById('path').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadList(); });
 }
 
 // language switcher
 window.PVI18N.mountSelect(document.getElementById('lang'));
 window.PVI18N.applyStatic();
-document.addEventListener('pvuv:lang', () => { window.PVI18N.applyStatic(); reload(); });
+document.addEventListener('pvuv:lang', () => { window.PVI18N.applyStatic(); regionNames = null; loadSiteMeta(); reload(); });
 
-reload();
+loadSiteMeta().then(reload);
 </script>
 </body>
 </html>

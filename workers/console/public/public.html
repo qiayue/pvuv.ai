@@ -15,11 +15,15 @@
   header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
   main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
   h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; }
-  .card .v { font-size: 20px; font-weight: 700; }
-  .card .k { color: #8b93a1; font-size: 12px; }
-  .card .h { color: #8b93a1; font-size: 11.5px; margin-top: 2px; }
+  .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  .cards.cards-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  @media (max-width: 900px) { .cards, .cards.cards-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .cards, .cards.cards-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .card .v { font-size: 20px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .k { color: #8b93a1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .h { color: #8b93a1; font-size: 11.5px; margin-top: 2px; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card[title] { cursor: help; }
   .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
@@ -132,11 +136,12 @@ async function load() {
       get('breakdown', '&dim=page&limit=10'), get('breakdown', '&dim=channel&limit=10'),
     ]);
     const cleanShare = o.pv ? ((o.clean_count + o.suspect_count) / o.pv * 100).toFixed(1) + '%' : '–';
-    const card = (k, v, h) => `<div class="card"><div class="v">${v}</div><div class="k">${te(k)}</div>${h ? `<div class="h">${te(h)}</div>` : ''}</div>`;
+    const card = (k, v, h, help) => `<div class="card"${help ? ` title="${esc(t(help))}"` : ''}><div class="v">${v}</div><div class="k">${te(k)}</div><div class="h">${h ? te(h) : ''}</div></div>`;
     document.getElementById('cards').innerHTML =
-      card('Visitors', fmt(o.uv)) + card('Pageviews', fmt(o.pv)) + card('Sessions', fmt(o.sessions)) +
-      card('Bounce rate (engaged)', pct(o.bounce_rate)) + card('Engaged time', dur(o.avg_duration_ms)) +
-      card('Human share', cleanShare, 'after invalid-traffic filtering');
+      card('Visitors', fmt(o.uv), 'unique people') + card('Pageviews', fmt(o.pv), 'all traffic') + card('Sessions', fmt(o.sessions), 'visits') +
+      card('Bounce (engaged)', pct(o.bounce_rate), 'GA4 style', 'Visits with no engagement: under 10s, no second page, no conversion (GA4 definition)') +
+      card('Engaged time', dur(o.avg_duration_ms), 'visible dwell', 'Average time the page was actually visible per visit') +
+      card('Human share', cleanShare, 'of pageviews', 'Share of pageviews not judged bot or crawler');
     lineChart(ts.points || []);
     barTable('pages', ['Path', 'PV', 'Visitors'],
       (pages.rows || []).map((r) => [esc(r.path), fmt(r.pv), fmt(r.uv)]));
@@ -151,7 +156,7 @@ async function load() {
     const sec = document.getElementById('vitalsSec');
     if (!d || !d.samples) { sec.hidden = true; return; }
     sec.hidden = false;
-    document.getElementById('vitals').innerHTML = `<div class="cards">` + Object.keys(VITAL_META).map((k) => {
+    document.getElementById('vitals').innerHTML = `<div class="cards cards-5">` + Object.keys(VITAL_META).map((k) => {
       const m = (d.metrics || {})[k] || {};
       const color = RATING_COLOR[m.rating] || '#8b93a1';
       return `<div class="card" style="border-left:3px solid ${color}"><div class="v">${fmtVital(k, m.p75)}</div><div class="k">${esc(VITAL_META[k])} <span class="muted">p75</span></div></div>`;

@@ -10,6 +10,7 @@
 import type { IncomingEvent, EventRow } from '../../../shared/events';
 import { classifyAsn, type AsnType } from '../../../shared/asn';
 import { hmacSign } from '../../../shared/ids';
+import { canonicalSource } from '../../../shared/source';
 
 // ---------------------------------------------------------------------------
 // UA parsing (deliberately small — coarse buckets are enough for analytics;
@@ -283,7 +284,7 @@ export async function enrichEvent(
   // debugging) but never attribute an internal hop as a traffic source —
   // ref_domain is what feeds sessions.source downstream.
   const rd = refDomain(typeof ev.r === 'string' ? ev.r : undefined);
-  const ref_domain = rd && isInternalRef(rd, urlInfo.hostname, allowedDomains) ? null : rd;
+  const ref_domain = rd && isInternalRef(rd, urlInfo.hostname, allowedDomains) ? null : canonicalSource(rd);
 
   return {
     eid,

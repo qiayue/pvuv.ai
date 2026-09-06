@@ -89,7 +89,11 @@ function rowHtml(status, label, detail, fix) {
 function setRows(el, rows) { $(el).innerHTML = rows.join('') || '<div class="row"><span class="detail">—</span></div>'; }
 
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
-const defaultIngest = () => `https://in.${location.hostname.replace(/^(www|console)\./, '')}`;
+// production: in.<apex>; local wrangler dev has no subdomains — point at the
+// ingest worker's default dev port instead of a nonsensical "in.127.0.0.1"
+const defaultIngest = () => /^(localhost|127\.0\.0\.1|\[::1\]|\d+\.\d+\.\d+\.\d+)$/.test(location.hostname)
+  ? `http://${location.hostname}:8787`
+  : `https://in.${location.hostname.replace(/^(www|console)\./, '')}`;
 
 async function run() {
   worst = 'ok';

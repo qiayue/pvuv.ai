@@ -725,6 +725,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (resource === 'visitors' && !subId) {
       return json(await visitorsList(env.DB, siteId, period, {
         path: q.get('path'),
+        verdict: q.get('verdict'),
         limit: parseInt(q.get('limit') ?? '50', 10),
       }));
     }
@@ -909,6 +910,10 @@ function parseFilters(raw: string | null): Filter[] {
     return arr
       .filter((f) => f && typeof f.dim === 'string' && typeof f.value === 'string' && FILTERABLE.has(f.dim))
       .slice(0, 8)
-      .map((f) => ({ dim: f.dim, value: f.value }));
+      .map((f) => {
+        const values = Array.isArray(f.values)
+          ? f.values.filter((v: unknown) => typeof v === 'string').slice(0, 20) as string[] : [];
+        return values.length ? { dim: f.dim, value: f.value, values } : { dim: f.dim, value: f.value };
+      });
   } catch { return []; }
 }
