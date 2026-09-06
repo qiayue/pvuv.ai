@@ -4,74 +4,58 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sites — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid #262b36; }
-  header b { font-size: 17px; }
-  .brand { font-size: 17px; font-weight: 700; display: inline-flex; align-items: center; white-space: nowrap; }
-  header a, header button { white-space: nowrap; }
-  @media (max-width: 560px) { header { padding: 10px 14px; gap: 8px; } .brand { font-size: 15px; } }
   .brand img.logo { height: 28px; display: block; }
-  header button { background: none; border: 1px solid #313847; color: #8b93a1; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-  main { max-width: 960px; margin: 28px auto; padding: 0 16px; }
-  h2 { font-size: 16px; margin: 26px 0 10px; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .head h2 { margin: 0; }
   .toolbar { display: flex; align-items: center; gap: 8px; }
-  .toolbar select, .btn { height: 30px; border: 1px solid #313847; border-radius: 7px; background: #171a21; color: #cdd3dc;
-                          font: inherit; font-size: 13px; cursor: pointer; }
-  .toolbar select { padding: 0 8px; }
-  .btn { padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
-  .btn:hover { background: #1d222c; border-color: #3b4457; color: #e6e8eb; }
-  .btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-  .btn.primary:hover { background: #1d4ed8; }
-  .btn.icon { width: 30px; padding: 0; justify-content: center; font-size: 15px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
-  .scard { display: block; background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 16px; text-decoration: none; color: inherit; }
-  .scard:hover { border-color: #3b4457; background: #191d26; }
+  .scards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
+  .scard { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; color: inherit; transition: border-color .12s, background .12s, transform .12s; }
+  .scard:hover { border-color: var(--border-3); background: #191d26; text-decoration: none; transform: translateY(-1px); }
   .scard .name { font-weight: 700; font-size: 15px; }
-  .scard .dom { color: #8b93a1; font-size: 12px; margin-top: 2px; word-break: break-all; }
+  .scard .dom { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
   .scard .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
   .scard .stat .v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .scard .stat .k { color: #8b93a1; font-size: 11px; }
-  .scard .foot { color: #8b93a1; font-size: 11.5px; margin-top: 12px; display: flex; justify-content: space-between; }
-  .scard .badge { color: #6ee7a0; }
-  .panel { margin-top: 16px; background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 18px; }
-  .panel[hidden] { display: none; }
+  .scard .stat .k { color: var(--muted); font-size: 11px; }
+  .scard .foot { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .scard .foot .spacer { flex: 1; }
+  .panel.form { margin-top: 16px; border-radius: var(--radius-lg); padding: 18px; }
   .panel .phead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .panel .phead h3 { margin: 0; font-size: 14px; }
-  .panel .close { background: none; border: 0; color: #8b93a1; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 6px; }
-  .panel .close:hover { color: #e6e8eb; }
+  .panel .close { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .panel .close:hover { color: var(--text); background: var(--surface-2); }
   form.create { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
-  form.create label { font-size: 13px; color: #8b93a1; display: block; }
-  form.create input, form.create select { width: 100%; padding: 8px 9px; margin-top: 3px; border-radius: 6px; border: 1px solid #313847;
-                background: #0f1115; color: inherit; font: inherit; }
-  form.create button { grid-column: span 2; justify-self: start; padding: 8px 18px; border: 0; border-radius: 7px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }
+  form.create label { font-size: 13px; color: var(--muted); display: block; }
+  form.create input, form.create select, form.create textarea { width: 100%; margin-top: 3px; background-color: var(--bg); }
+  form.create button[type="submit"], form.create button.act { grid-column: span 2; justify-self: start; }
+  form.create button { min-height: 32px; padding: 5px 16px; border: 1px solid var(--accent-2); border-radius: var(--radius-sm); background: var(--accent-2); color: #fff; font-weight: 600; }
+  form.create button:hover { background: var(--accent-3); border-color: var(--accent-3); }
+  form.create button[type="button"] { background: var(--surface); border-color: var(--border-2); color: var(--text-2); font-weight: 500; }
+  form.create button[type="button"]:hover { background: var(--surface-2); border-color: var(--border-3); color: var(--text); }
+  form.create button.danger { background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad-text); }
+  form.create .actions { grid-column: span 2; display: flex; gap: 8px; flex-wrap: wrap; }
+  form.create .section-title { grid-column: span 2; margin: 4px 0 -4px; }
+  form.create .section-title strong { font-size: 13px; color: #c7cdd8; }
+  form.create .section-title span { font-size: 12px; color: var(--muted); }
+  form.create .subform { grid-column: span 2; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }
   .full { grid-column: span 2; }
-  .snippet { display: none; margin-top: 14px; background: #0c1117; border: 1px solid #2b3a2e; border-radius: 8px; padding: 14px; }
-  .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; }
-  .err { color: #f87171; font-size: 13px; grid-column: span 2; min-height: 1em; margin: 0; }
-  @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create button, .err, .full { grid-column: span 1; } }
-  #ranking { overflow-x: auto; }
-  #ranking table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .snippet { display: none; margin-top: 14px; background: #0c1117; border: 1px solid #2b3a2e; border-radius: var(--radius); padding: 14px; }
+  .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; font-family: var(--mono); }
+  .err { color: var(--bad); font-size: 13px; grid-column: span 2; min-height: 1em; margin: 0; }
+  .helpbox { font-size: 12px; color: var(--muted); background: #0c1117; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
+  @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create button[type="submit"], form.create .actions, form.create .section-title, form.create .subform, .err, .full { grid-column: span 1; } }
   #ranking th { white-space: nowrap; }
-  #ranking th, #ranking td { padding: 8px 10px; border-bottom: 1px solid #1e2530; }
-  #ranking th { text-align: left; color: #8b93a1; font-size: 12px; font-weight: 500; }
-  #ranking td.num, #ranking th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  #ranking a { color: #7ab3ff; text-decoration: none; }
-  #ranking a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 <script src="/i18n.js"></script>
 <header>
   <span class="brand" id="brand">pvuv.ai</span>
-  <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
-    <select id="lang" aria-label="Language" style="background:#171a21;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px;font:inherit"></select>
-    <a href="/health.html" id="selfcheckLink" style="color:#7ab3ff;text-decoration:none;font-size:13px" data-i18n="Self-check">Self-check</a>
-    <button id="logout" data-i18n="Sign out">Sign out</button>
+  <div class="hdr-right">
+    <select id="lang" aria-label="Language"></select>
+    <a href="/health.html" id="selfcheckLink" class="btn" data-i18n="Self-check">Self-check</a>
+    <button id="logout" class="btn" data-i18n="Sign out">Sign out</button>
   </div>
 </header>
 <main>
@@ -96,22 +80,22 @@
         </optgroup>
       </select>
       <button class="btn primary" id="btnAdd">＋ <span data-i18n="New site">New site</span></button>
-      <button class="btn icon" id="btnSettings" title="Homepage settings" data-i18n-title="Homepage settings" aria-label="Homepage settings">⚙</button>
+      <button class="btn icon" id="btnSettings" title="Settings" data-i18n-title="Settings" aria-label="Settings">⚙</button>
     </div>
   </div>
-  <div id="sites" data-i18n="loading…">loading…</div>
+  <div id="sites"><p class="loading" data-i18n="loading…">loading…</p></div>
 
   <section id="rankingSection" hidden style="margin-top:24px">
     <div class="head">
       <h2 data-i18n="Site ranking · clean traffic">Site ranking · clean traffic</h2>
       <span style="font-size:12px;color:#8b93a1" data-i18n="ranking-help">Ranked by external clean pageviews — bots &amp; crawlers excluded, mutual visits between your own sites don't count.</span>
     </div>
-    <div class="panel" id="ranking">loading…</div>
+    <div class="panel" id="ranking"><p class="loading" data-i18n="loading…">loading…</p></div>
   </section>
 
   <datalist id="tzlist"></datalist>
 
-  <section class="panel" id="addPanel" hidden>
+  <section class="panel form" id="addPanel" hidden>
     <div class="phead"><h3 data-i18n="Add a site">Add a site</h3><button class="close" data-close="addPanel" aria-label="Close">×</button></div>
     <form class="create" id="create">
       <div><label><span data-i18n="Site name">Site name</span><input id="name" required placeholder="My Blog" data-i18n-ph="My Blog"></label></div>
@@ -139,7 +123,7 @@
     </div>
   </section>
 
-  <section class="panel" id="homePanel" hidden>
+  <section class="panel form" id="homePanel" hidden>
     <div class="phead"><h3 data-i18n="Site & branding">Site &amp; branding</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
     <form class="create" id="homeSettings">
       <div><label><span data-i18n="Brand name (header + homepage)">Brand name (header + homepage)</span><input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
@@ -199,16 +183,16 @@
       <div class="full"><label><span data-i18n="Directory JSON file">Directory JSON file</span>
         <input id="botdirFile" type="file" accept=".json,application/json"></label></div>
       <div class="full"><label><span data-i18n="…or paste the JSON">…or paste the JSON</span>
-        <textarea id="botdirText" rows="4" style="width:100%;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:8px;font:12px/1.4 ui-monospace,monospace" placeholder='[{"name":"Googlebot","category":"Search"}, …]'></textarea></label></div>
+        <textarea id="botdirText" rows="4" style="font:12px/1.4 var(--mono)" placeholder='[{"name":"Googlebot","category":"Search"}, …]'></textarea></label></div>
       <p class="err" id="botdirMsg"></p>
       <div class="full" id="botdirState" style="font-size:12px;color:#8b93a1"></div>
-      <button type="submit" data-i18n="Import directory">Import directory</button>
-      <button type="button" id="botdirClear" style="margin-left:8px;background:#241010;border-color:#5a2020" data-i18n="Remove">Remove</button>
+      <div class="actions"><button type="submit" data-i18n="Import directory">Import directory</button>
+      <button type="button" id="botdirClear" class="danger" data-i18n="Remove">Remove</button></div>
     </form>
     <form class="create" id="cfSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Cloudflare edge requests">Cloudflare edge requests</strong>
         <span style="font-size:12px;color:#8b93a1" data-i18n="cf-help"> — optional, advanced. The tracking script only sees visitors whose browser ran JavaScript. AI crawlers and scrapers fetch your HTML and leave, so they never appear. Cloudflare saw all of them: add a read-only API token and the daily job pulls those request counts, so your dashboard can show what the script missed. Leave it empty and nothing changes.</span></div>
-      <div class="full" style="font-size:12px;color:#8b93a1;background:#0c1117;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:4px">
+      <div class="full helpbox" style="margin-bottom:4px">
         <span data-i18n="cf-steps">In the Cloudflare dashboard: <b>My Profile → API Tokens → Create Token → Create Custom Token</b>. Give it exactly these two permissions, both read-only:</span>
         <div style="margin:6px 0 6px 0;font-family:ui-monospace,monospace;color:#c7cdd8">Zone · Zone · Read<br>Zone · Analytics · Read</div>
         <span data-i18n="cf-steps2">Under <i>Zone Resources</i> choose the zones your sites are on (or all zones in the account), then create the token and paste it below.</span>
@@ -218,9 +202,9 @@
         <input id="cfToken" type="password" maxlength="200" autocomplete="off" placeholder="••••••••••••••••"></label></div>
       <p class="err" id="cfMsg"></p>
       <div class="full" id="cfState" style="font-size:12px;color:#8b93a1"></div>
-      <button type="submit" data-i18n="Save & check">Save &amp; check</button>
-      <button type="button" id="cfTest" style="margin-left:8px" data-i18n="Re-check">Re-check</button>
-      <button type="button" id="cfClear" style="margin-left:8px;background:#241010;border-color:#5a2020" data-i18n="Remove">Remove</button>
+      <div class="actions"><button type="submit" data-i18n="Save & check">Save &amp; check</button>
+      <button type="button" id="cfTest" data-i18n="Re-check">Re-check</button>
+      <button type="button" id="cfClear" class="danger" data-i18n="Remove">Remove</button></div>
     </form>
   </section>
 </main>
@@ -255,13 +239,13 @@ async function loadSites() {
   const { sites } = await r.json();
   const el = document.getElementById('sites');
   if (!sites.length) {
-    el.innerHTML = `<p style="color:#8b93a1">${te('No sites yet — use the “＋ New site” button to add one.')}<br>`
+    el.innerHTML = `<p class="empty">${te('No sites yet — use the “＋ New site” button to add one.')}<br>`
       + `${te('Just deployed?')} <a href="/health.html" style="color:#7ab3ff;text-decoration:none">${te('Run the self-check ↗')}</a></p>`;
     return;
   }
   // one card per site, each showing its own overview so all sites' numbers
   // are visible at a glance on this page; click a card for the full dashboard
-  el.innerHTML = '<div class="cards">' + sites.map((s) => `
+  el.innerHTML = '<div class="scards">' + sites.map((s) => `
     <a class="scard" href="/site.html?id=${esc(s.site_id)}" data-id="${esc(s.site_id)}">
       <div class="name">${esc(s.name)}</div>
       <div class="dom">${esc(JSON.parse(s.allowed_domains).join(', '))}</div>
@@ -270,7 +254,7 @@ async function loadSites() {
         <div class="stat"><div class="v">…</div><div class="k">${te('Visitors')}</div></div>
         <div class="stat"><div class="v">…</div><div class="k">${te('Sessions')}</div></div>
       </div>
-      <div class="foot"><span>${esc(s.timezone || 'UTC')} · adguard: ${esc(s.adguard_mode)}</span><span class="badge" id="hs-${esc(s.site_id)}"></span></div>
+      <div class="foot"><span class="tag" title="${te('Timezone')}">🕒 ${esc(s.timezone || 'UTC')}</span><span class="tag" title="${te('Ad protection mode')}">🛡 ${te(s.adguard_mode || 'off')}</span><span class="spacer"></span><span class="tag good" id="hs-${esc(s.site_id)}"></span></div>
     </a>`).join('') + '</div>';
 
   // fetch each site's overview in parallel and fill its card
@@ -282,7 +266,9 @@ async function loadSites() {
         <div class="stat"><div class="v">${fmt(o.pv)}</div><div class="k">${te('Pageviews')}</div></div>
         <div class="stat"><div class="v">${fmt(o.uv)}</div><div class="k">${te('Visitors')}</div></div>
         <div class="stat"><div class="v">${fmt(o.sessions)}</div><div class="k">${te('Sessions')}</div></div>`;
-      document.getElementById('hs-' + s.site_id).textContent = o.pv ? human + '% ' + t('human') : t('no data yet');
+      const hs = document.getElementById('hs-' + s.site_id);
+      hs.textContent = o.pv ? human + '% ' + t('human') : t('no data yet');
+      hs.className = 'tag ' + (o.pv ? (human >= 90 ? 'good' : human >= 70 ? 'warn' : 'bad') : '');
     } catch {
       document.getElementById('hs-' + s.site_id).textContent = '';
     }

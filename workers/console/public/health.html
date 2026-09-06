@@ -4,42 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Self-check — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.6 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
-  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; }
-  header a { color: #7ab3ff; text-decoration: none; }
-  header b { font-size: 16px; }
-  main { max-width: 780px; margin: 24px auto; padding: 0 16px; }
-  p.lead { color: #8b93a1; }
-  .step { background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 16px 18px; margin: 14px 0; }
-  .step h2 { font-size: 15px; margin: 0 0 4px; }
-  .step .hint { color: #8b93a1; font-size: 13px; margin: 0 0 12px; }
+  body { font-size: 15px; line-height: 1.6; }
+  p.lead { color: var(--muted); }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; margin: 14px 0; }
+  .step h2 { font-size: 15px; margin: 0 0 4px; color: var(--text); }
+  .step .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
   #env, #ingest, #e2e, #verdict { display: flex; flex-direction: column; }
   .row { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-top: 1px solid #1d222c; }
   .row:first-of-type { border-top: 0; }
   .ico { flex: none; width: 20px; text-align: center; font-weight: 700; }
-  .ok { color: #34d399; } .warn { color: #fbbf24; } .fail { color: #f87171; } .pending { color: #64748b; }
+  .ok { color: var(--good); } .warn { color: var(--warn); } .fail { color: var(--bad); } .pending { color: #64748b; }
   .row .body { flex: 1; }
   .row .label { font-weight: 600; }
-  .row .detail { color: #8b93a1; font-size: 13px; }
-  .row .fix { color: #fbbf24; font-size: 13px; margin-top: 2px; }
-  button { padding: 9px 18px; border: 0; border-radius: 7px; background: #3b82f6; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-  button:hover { background: #2f6fd6; } button:disabled { opacity: .5; cursor: default; }
-  input { padding: 8px 10px; border-radius: 6px; border: 1px solid #313847; background: #0f1115; color: inherit; font: inherit; width: 320px; max-width: 100%; }
-  label.small { display: block; color: #8b93a1; font-size: 13px; margin: 4px 0; }
-  .summary { border-radius: 10px; padding: 16px 18px; margin: 14px 0; font-weight: 600; }
-  .summary.good { background: #12331f; color: #6ee7a0; border: 1px solid #1f5136; }
-  .summary.bad { background: #331616; color: #f9a8a8; border: 1px solid #5b2626; }
-  code { background: #0c1117; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
-  .kv { font-size: 13px; color: #8b93a1; margin-top: 8px; }
-  a.doc { color: #7ab3ff; }
+  .row .detail { color: var(--muted); font-size: 13px; }
+  .row .fix { color: var(--warn); font-size: 13px; margin-top: 2px; }
+  input#ingestUrl { width: 320px; max-width: 100%; background: var(--bg); }
+  label.small { display: block; color: var(--muted); font-size: 13px; margin: 4px 0; }
+  .summary { border-radius: var(--radius-lg); padding: 16px 18px; margin: 14px 0; font-weight: 600; }
+  .summary.good { background: #12331f; color: var(--good-text); border: 1px solid #1f5136; }
+  .summary.bad { background: #331616; color: var(--bad-text); border: 1px solid var(--bad-border); }
+  .kv { font-size: 13px; color: var(--muted); margin-top: 8px; }
 </style>
 </head>
 <body>
 <header><a href="/sites.html">← console</a><b>Deployment self-check</b></header>
-<main>
+<main class="narrow">
   <p class="lead">This runs each part of your deployment end to end and tells you what works and what to fix. Nothing here touches your real sites' data — the live test uses a hidden <code>__pvuv_selftest</code> site.</p>
 
   <div class="step">
@@ -69,7 +60,7 @@
   </div>
 
   <div id="summary"></div>
-  <p><button id="run">Run self-check</button></p>
+  <p><button id="run" class="btn primary" style="min-height:38px;padding:8px 18px">Run self-check</button></p>
   <p class="kv">Trouble? See the <a class="doc" href="https://github.com/qiayue/pvuv.ai/blob/main/DEPLOY.md#troubleshooting">deployment troubleshooting guide</a>.</p>
 </main>
 <script>

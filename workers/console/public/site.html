@@ -4,190 +4,97 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
-  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; }
-  header a { color: #7ab3ff; text-decoration: none; }
-  header b { font-size: 16px; }
-  header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
-  header select.langsel { margin-left: auto; }
-  header select#period { margin-left: 8px; }
-  header .dl-btn { margin-left: 8px; background: #171a21; color: #cdd3dc; border: 1px solid #313847; border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
-  header .dl-btn:hover { background: #1d222c; border-color: #3b4457; color: #e6e8eb; }
-  header .dl-btn:disabled { opacity: .6; cursor: default; }
-  @media (max-width: 720px) {
-    header { flex-wrap: wrap; gap: 8px 10px; padding: 10px 14px; }
-    header select.langsel { margin-left: auto; }
-    header .dl-btn { padding: 5px 8px; }
-    .rt { flex-wrap: wrap; }
-    .chart-head, .sec-head { flex-wrap: wrap; }
-  }
-  main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
-  h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
-  /* KPI grid: a fixed 6-up (2 rows × 6) on desktop so the two rows always
-     line up; 3-up on tablets, 2-up on phones. Labels never wrap — the long
-     explanation lives in the tooltip (title) instead. */
-  .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-  @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 560px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .cards.cards-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  @media (max-width: 900px) { .cards.cards-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 560px) { .cards.cards-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 14px; min-width: 0; }
-  .card .v { font-size: 22px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .k { color: #8b93a1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .h { color: #6b7280; font-size: 11px; margin-top: 2px; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card[title] { cursor: help; }
-  .sec-desc { color: #8b93a1; font-size: 12px; margin: -6px 0 10px; }
-  .more-btn { display: block; width: 100%; margin-top: 8px; background: none; border: 1px dashed #313847; color: #7ab3ff; border-radius: 6px; padding: 7px; font: inherit; font-size: 12.5px; cursor: pointer; }
-  .more-btn:hover { background: #1d2230; }
-  td.nowrap { white-space: nowrap; }
-  .card.card-warn { border-color: #4a3f1e; background: #241f10; }
-  .card.card-warn .v { color: #e8d9a0; }
-  .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; }
-  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
-  .b-clean { background: #14331f; color: #6ee7a0; } .b-suspect { background: #33290f; color: #fbbf24; }
-  .b-bot { background: #331414; color: #f87171; } .b-crawler { background: #1d2733; color: #93b4d6; }
-  .flags { color: #8b93a1; font-size: 12px; }
-  svg text { fill: #8b93a1; font-size: 10px; }
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: #aeb6c2; margin-top: 8px; }
-  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
-  .muted { color: #8b93a1; }
-  tr.clickable { cursor: pointer; }
-  tr.clickable:hover { background: #1d2230; }
-  .drill { color: #8b93a1; font-size: 11px; opacity: 0; transition: opacity .1s; }
-  tr.clickable:hover .drill { opacity: 1; }
-  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
-  .modal[hidden] { display: none; }
-  .modal-box { background: #171a21; border: 1px solid #313847; border-radius: 10px; width: 660px; max-width: 100%; max-height: 82vh; display: flex; flex-direction: column; }
-  .modal-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid #262b36; }
-  .modal-head b { font-size: 14px; }
-  .modal-x { margin-left: auto; background: none; border: 0; color: #8b93a1; font-size: 22px; line-height: 1; cursor: pointer; }
-  .modal-body { padding: 10px 16px 16px; overflow: auto; }
-  .modal-body a { color: #7ab3ff; text-decoration: none; word-break: break-all; }
-  .gbtn { display: inline-block; margin: 14px 2px 0; padding: 8px 13px; border: 1px solid #313847; border-radius: 8px; font-size: 13px; }
-  .gbtn:hover { background: #1d2230; border-color: #3b4457; }
-  .switcher { position: relative; }
-  .title-btn { font: 700 16px system-ui, sans-serif; color: #e6e8eb; background: none; border: 0; cursor: pointer; padding: 4px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 7px; }
-  .title-btn:hover { background: #171a21; }
-  .title-btn .caret { color: #8b93a1; font-size: 11px; font-weight: 400; }
-  .switch-pop { position: absolute; top: 100%; left: 0; margin-top: 6px; width: 300px; max-width: 80vw; background: #171a21; border: 1px solid #313847; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 30; padding: 8px; }
-  .switch-pop input { width: 100%; box-sizing: border-box; background: #0f1115; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 7px 9px; font: inherit; margin-bottom: 6px; }
-  .switch-pop ul { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
-  .switch-pop li { padding: 7px 9px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
-  .switch-pop li:hover, .switch-pop li.active { background: #222834; }
-  .switch-pop li .nm { font-weight: 600; }
-  .switch-pop li.current .nm::after { content: ' ✓'; color: #7ab3ff; }
-  .switch-pop li .dm { color: #8b93a1; font-size: 12px; }
-  .switch-pop .none { color: #8b93a1; padding: 8px 9px; font-size: 13px; }
-  .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #aeb6c2; font-size: 13px; }
-  .shadow-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 9px 14px; border: 1px solid #4a3f1e; background: #241f10; color: #e8d9a0; border-radius: 8px; font-size: 13px; }
-  .shadow-banner[hidden] { display: none; }
-  .shadow-banner > span { flex: 1 1 320px; min-width: 0; }
-  .shadow-banner .enforce { margin-left: auto; white-space: nowrap; background: #b45309; border: 0; color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
-  .shadow-banner .enforce:hover { background: #92400e; }
-  .rt .rt-site { font-weight: 600; color: #e6e8eb; padding-right: 10px; margin-right: 4px; border-right: 1px solid #313847; }
-  .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: #e6e8eb; }
-  .rt .pulse { width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 1.8s infinite; }
+  /* page-specific: realtime strip, shadow banner, site switcher, chart tooltip,
+     traffic-health strip, funnel, AI report prose */
+  .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--text-3); font-size: 13px; flex-wrap: wrap; }
+  .rt .rt-site { font-weight: 600; color: var(--text); padding-right: 10px; margin-right: 4px; border-right: 1px solid var(--border-2); }
+  .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--text); }
+  .rt .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 1.8s infinite; }
   @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
   .rt svg { display: block; }
-  .chart-head { display: flex; align-items: center; gap: 12px; margin: 26px 0 10px; }
-  .chart-head h2 { margin: 0; }
-  .chart-ctrls { margin-left: auto; display: flex; gap: 8px; }
-  .chart-ctrls select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; font: inherit; }
-  .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 26px 0 10px; }
-  .sec-head h2 { margin: 0; }
-  .sec-head .tabs { margin-left: auto; }
-  .tabs { display: inline-flex; gap: 1px; flex-wrap: wrap; }
-  .tabs button { background: none; border: 0; color: #8b93a1; font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 7px; border-radius: 5px; }
-  .tabs button:hover { color: #cdd6e2; }
-  .tabs button.active { color: #7ab3ff; font-weight: 600; }
-  .all-btn { background: none; border: 0; color: #7ab3ff; font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 4px; }
-  .all-btn:hover { text-decoration: underline; }
-  /* proportion bar behind the first column (Plausible-style) */
-  td.lead { position: relative; }
-  td.lead .bar { position: absolute; left: 0; top: 3px; bottom: 3px; background: rgba(59,130,246,.13); border-radius: 3px; z-index: 0; }
-  td.lead .lead-in { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-  td.lead .lead-in > .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .favi { width: 16px; height: 16px; border-radius: 3px; flex: 0 0 auto; object-fit: contain; }
-  .favi-generic { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: #8b93a1; font-size: 12px; }
-  .flag { flex: 0 0 auto; font-size: 14px; }
+  .shadow-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 9px 14px; border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-text); border-radius: var(--radius); font-size: 13px; }
+  .shadow-banner[hidden] { display: none; }
+  .shadow-banner > span { flex: 1 1 320px; min-width: 0; }
+  .shadow-banner .enforce { margin-left: auto; }
+  .switcher { position: relative; }
+  .title-btn { font: 700 16px var(--font); color: var(--text); background: none; border: 0; padding: 4px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 7px; }
+  .title-btn:hover { background: var(--surface-2); }
+  .title-btn .caret { color: var(--muted); font-size: 11px; font-weight: 400; }
+  .switch-pop { position: absolute; top: 100%; left: 0; margin-top: 6px; width: 300px; max-width: 80vw; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 30; padding: 8px; }
+  .switch-pop input { width: 100%; background: var(--bg); margin-bottom: 6px; }
+  .switch-pop ul { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+  .switch-pop li { padding: 7px 9px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+  .switch-pop li:hover, .switch-pop li.active { background: var(--surface-3); }
+  .switch-pop li .nm { font-weight: 600; }
+  .switch-pop li.current .nm::after { content: ' ✓'; color: var(--link); }
+  .switch-pop li .dm { color: var(--muted); font-size: 12px; }
+  .switch-pop .none { color: var(--muted); padding: 8px 9px; font-size: 13px; }
+  .flags { color: var(--muted); font-size: 12px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-3); margin-top: 8px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .gbtn { display: inline-block; margin: 14px 2px 0; padding: 8px 13px; border: 1px solid var(--border-2); border-radius: var(--radius); font-size: 13px; }
+  .gbtn:hover { background: var(--surface-2); border-color: var(--border-3); text-decoration: none; }
   .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 2px; }
   .filters:empty { display: none; }
-  .chip { display: inline-flex; align-items: center; gap: 7px; background: #1c2431; border: 1px solid #2f3a4d; color: #cdd6e2; border-radius: 14px; padding: 3px 6px 3px 11px; font-size: 12.5px; }
-  .chip b { font-weight: 600; color: #e6e8eb; }
-  .chip .x { background: #313d50; border: 0; color: #cdd6e2; width: 17px; height: 17px; border-radius: 50%; cursor: pointer; line-height: 1; font-size: 13px; padding: 0; }
-  .chip .x:hover { background: #47566e; color: #fff; }
-  .filters .clear { background: none; border: 0; color: #8b93a1; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; }
+  .filters .clear { background: none; border: 0; color: var(--muted); font-size: 12px; text-decoration: underline; }
   .alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
   .alerts:empty { display: none; }
-  .alert { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 8px; border: 1px solid; font-size: 13px; }
+  .alert { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid; font-size: 13px; }
   .alert .ico { flex: 0 0 auto; }
   .alert .body b { display: block; margin-bottom: 1px; }
   .alert .body span { opacity: .85; }
-  .alert-warning { border-color: #4a3f1e; background: #241f10; color: #e8d9a0; }
-  .alert-critical { border-color: #5a2020; background: #241010; color: #f3b0b0; }
+  .alert-warning { border-color: var(--warn-border); background: var(--warn-bg); color: var(--warn-text); }
+  .alert-critical { border-color: var(--bad-border); background: var(--bad-bg); color: var(--bad-text); }
   .anomalies { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
   .anomalies:empty { display: none; }
-  /* chart hover readout: a crosshair + tooltip that follows the pointer, so any
-     x-position reveals that bucket's numbers (the 2.5px dots were unhittable) */
+  .anomaly-hd { font-size: 12px; color: var(--muted); }
+  .anomaly { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 7px; border: 1px solid #2a3550; background: #141a26; color: var(--text-2); font-size: 12.5px; }
+  .anomaly .ico { flex: 0 0 auto; }
+  .anomaly .day { color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  /* chart hover readout: crosshair + tooltip following the pointer */
   #chart { position: relative; }
-  .tt { position: absolute; z-index: 5; pointer-events: none; white-space: nowrap;
-        background: #0f1115; border: 1px solid #313847; border-radius: 6px;
-        padding: 7px 9px; font-size: 12px; line-height: 1.45;
-        box-shadow: 0 6px 18px rgba(0,0,0,.55); transform: translate(-50%, -100%); }
+  .tt { position: absolute; z-index: 5; pointer-events: none; white-space: nowrap; background: var(--bg); border: 1px solid var(--border-2); border-radius: 6px; padding: 7px 9px; font-size: 12px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,.55); transform: translate(-50%, -100%); }
   .tt[hidden] { display: none; }
-  .tt .tl { color: #8b93a1; margin-bottom: 2px; }
+  .tt .tl { color: var(--muted); margin-bottom: 2px; }
   .tt .tv { font-weight: 600; }
-  .tt .ti { color: #f87171; }
-  .tt .tp { color: #8b93a1; font-style: italic; }
-  /* traffic-health strip: every monitored ratio stays visible with its distance
-     to the alert line, so nothing is invisible just because it isn't tripping */
+  .tt .ti { color: var(--bad); }
+  .tt .tp { color: var(--muted); font-style: italic; }
+  /* traffic-health strip */
   .health { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-  .hm { border: 1px solid #262b36; border-radius: 8px; padding: 10px 12px; }
-  .hm .hl { font-size: 12px; color: #8b93a1; display: flex; justify-content: space-between; gap: 8px; }
-  .hm .hv { font-size: 20px; font-weight: 600; margin: 3px 0 6px; }
-  .hm .sub { font-size: 11px; color: #8b93a1; }
+  .hm { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+  .hm .hl { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  .hm .hv { font-size: 20px; font-weight: 600; margin: 3px 0 6px; font-variant-numeric: tabular-nums; }
+  .hm .sub { font-size: 11px; color: var(--muted); }
   .hbar { height: 4px; border-radius: 3px; background: #21262f; overflow: hidden; position: relative; }
   .hbar i { display: block; height: 100%; border-radius: 3px; }
-  .hbar .lim { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #6b7280; }
-  .hm.ok   .hv { color: #6ee7a0; } .hm.ok   .hbar i { background: #34d399; }
-  .hm.near .hv { color: #fbbf24; } .hm.near .hbar i { background: #fbbf24; }
-  .hm.over .hv { color: #f87171; } .hm.over .hbar i { background: #f87171; }
-  .hm.over { border-color: #5a2020; }
-  .anomaly-hd { font-size: 12px; color: #8b93a1; }
-  .anomaly { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 7px; border: 1px solid #2a3550; background: #141a26; color: #cdd6e2; font-size: 12.5px; }
-  .anomaly .ico { flex: 0 0 auto; }
-  .anomaly .day { color: #8b93a1; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
-  .fbtn { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
-  .fbtn:hover { background: #1d2230; }
+  .hbar .lim { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--muted-2); }
+  .hm.ok   .hv { color: var(--good-text); } .hm.ok   .hbar i { background: var(--good); }
+  .hm.near .hv { color: var(--warn); } .hm.near .hbar i { background: var(--warn); }
+  .hm.over .hv { color: var(--bad); } .hm.over .hbar i { background: var(--bad); }
+  .hm.over { border-color: var(--bad-border); }
+  /* funnel */
   .fstep { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
-  .fstep .fnum { color: #8b93a1; width: 16px; flex: 0 0 auto; }
-  .fstep select, .fstep input { background: #0f1115; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; font: inherit; }
+  .fstep .fnum { color: var(--muted); width: 16px; flex: 0 0 auto; }
+  .fstep select, .fstep input { background-color: var(--bg); }
   .fstep input { flex: 1; min-width: 0; }
-  .fstep .fx { background: #313d50; border: 0; color: #cdd6e2; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; flex: 0 0 auto; }
+  .fstep .fx { background: #313d50; border: 0; color: var(--text-2); width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto; }
   .fstep .fx:hover { background: #47566e; }
   .frow { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
   .fbar-wrap { position: relative; flex: 1; height: 30px; background: #141a26; border-radius: 6px; overflow: hidden; }
   .fbar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(59,130,246,.35); }
   .flabel { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12.5px; white-space: nowrap; }
   .fstat { flex: 0 0 auto; min-width: 118px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
-  .ai-md { font-size: 13.5px; line-height: 1.65; color: #cdd6e2; }
+  .fhint { color: var(--muted); font-size: 12px; margin: 8px 2px 0; }
+  /* AI report prose */
+  .ai-md { font-size: 13.5px; line-height: 1.65; color: var(--text-2); }
   .ai-md h3 { font-size: 14px; margin: 16px 0 6px; color: #e7ecf3; }
   .ai-md h3:first-child { margin-top: 0; }
   .ai-md p { margin: 6px 0; }
   .ai-md ul { margin: 6px 0; padding-left: 20px; }
   .ai-md li { margin: 3px 0; }
   .ai-md strong { color: #e7ecf3; }
-  .ai-md code { background: #171a21; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -204,7 +111,8 @@
     </div>
   </div>
   <a id="visitorsLink" href="#" data-i18n="visitors →">visitors →</a>
-  <select id="lang" class="langsel" aria-label="Language"></select>
+  <div class="hdr-right">
+  <select id="lang" aria-label="Language"></select>
   <select id="period" aria-label="Date range">
     <optgroup label="Rolling" data-i18n-label="Rolling">
       <option value="24h" data-i18n="Last 24 hours">Last 24 hours</option>
@@ -222,18 +130,20 @@
       <option value="this_year" data-i18n="This year">This year</option>
     </optgroup>
   </select>
-  <button id="shareBtn" class="dl-btn" title="Read-only public dashboard link">🔗 <span data-i18n="Share link">Share link</span></button>
-  <button id="dlBtn" class="dl-btn" title="Download all data for the selected range as JSON">⬇ <span data-i18n="Download data">Download data</span></button>
+  <button id="shareBtn" class="btn" title="Read-only public dashboard link">🔗 <span data-i18n="Share link">Share link</span></button>
+  <button id="dlBtn" class="btn" title="Download all data for the selected range as JSON">⬇ <span data-i18n="Download data">Download data</span></button>
+  </div>
 </header>
 <main>
+  <nav class="secnav" aria-label="Sections"><ul id="secnav"></ul></nav>
   <div class="rt" id="realtime"></div>
   <div class="shadow-banner" id="shadowBanner" hidden></div>
   <div class="alerts" id="alerts"></div>
   <div class="anomalies" id="anomalies"></div>
   <div class="filters" id="filters"></div>
-  <div class="cards" id="cards"></div>
+  <div class="cards" id="cards" data-sec="overview"></div>
 
-  <div class="chart-head">
+  <div class="chart-head" data-sec="trend">
     <h2 id="chartTitle">Pageviews</h2>
     <div class="chart-ctrls">
       <select id="metric" aria-label="Metric"></select>
@@ -242,21 +152,21 @@
   </div>
   <div class="panel" id="chart"></div>
 
-  <div class="grid2">
+  <div class="grid2" data-sec="sources">
     <div><div class="sec-head"><h2 data-i18n="Top sources">Top sources</h2><span class="tabs" data-tabs="sources"></span><button class="all-btn" data-panel="sources" data-i18n="All →">All →</button></div><div class="panel" id="sources"></div></div>
     <div><div class="sec-head"><h2 data-i18n="Pages">Pages</h2><span class="tabs" data-tabs="pages"></span><button class="all-btn" data-panel="pages" data-i18n="All →">All →</button></div><div class="panel" id="pages"></div></div>
   </div>
-  <div class="grid2">
+  <div class="grid2" data-sec="audience">
     <div><div class="sec-head"><h2 data-i18n="Locations">Locations</h2><span class="tabs" data-tabs="countries"></span><button class="all-btn" data-panel="countries" data-i18n="All →">All →</button></div><div class="panel" id="countries"></div></div>
     <div><div class="sec-head"><h2 data-i18n="Devices">Devices</h2><span class="tabs" data-tabs="devices"></span><button class="all-btn" data-panel="devices" data-i18n="All →">All →</button></div><div class="panel" id="devices"></div></div>
   </div>
 
-  <div id="vitalsSec" hidden>
+  <div id="vitalsSec" hidden data-sec="vitals">
     <h2 data-i18n="Web Vitals">Web Vitals</h2>
     <div class="panel" id="vitals"></div>
   </div>
 
-  <div class="chart-head">
+  <div class="chart-head" data-sec="campaigns">
     <h2 data-i18n="Campaigns (UTM)">Campaigns (UTM)</h2>
     <div class="chart-ctrls">
       <select id="utmDim" aria-label="UTM dimension">
@@ -272,7 +182,7 @@
   </div>
   <div class="panel" id="utm"></div>
 
-  <div id="goalsSection" hidden>
+  <div id="goalsSection" hidden data-sec="goals">
     <h2 data-i18n="Goals (custom events)">Goals (custom events)</h2>
     <div class="panel" id="goals"></div>
   </div>
@@ -281,11 +191,11 @@
     <div class="panel" id="ctit"></div>
   </div>
 
-  <div class="chart-head">
+  <div class="chart-head" data-sec="funnel">
     <h2 data-i18n="Funnel">Funnel</h2>
     <div class="chart-ctrls">
-      <button id="funnelAdd" class="fbtn" data-i18n="+ step">+ step</button>
-      <button id="funnelRun" class="fbtn" data-i18n="Run">Run</button>
+      <button id="funnelAdd" class="btn" data-i18n="+ step">+ step</button>
+      <button id="funnelRun" class="btn primary" data-i18n="Run">Run</button>
     </div>
   </div>
   <div class="panel">
@@ -293,7 +203,7 @@
     <div id="funnelResult"></div>
   </div>
 
-  <h2 data-i18n="Traffic quality">Traffic quality</h2>
+  <h2 data-i18n="Traffic quality" data-sec="quality">Traffic quality</h2>
   <p class="sec-desc" data-i18n="How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.">How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.</p>
   <div class="panel" id="health"></div>
   <div class="grid2">
@@ -303,17 +213,17 @@
   <div id="crawlerSec" hidden><div class="sec-head"><h2 data-i18n="Crawlers by category">Crawlers by category</h2></div><div class="panel" id="crawlers"></div></div>
   <div id="edgeSec" hidden><div class="sec-head"><h2 data-i18n="What the script never saw">What the script never saw</h2></div><div class="panel" id="edge"></div></div>
 
-  <h2 data-i18n="Ad protection">Ad protection</h2>
+  <h2 data-i18n="Ad protection" data-sec="adguard">Ad protection</h2>
   <div class="panel" id="adguard"></div>
 
-  <div class="sec-head"><h2 data-i18n="Suspicious visitors">Suspicious visitors</h2><a class="all-btn" id="trafficAll" href="#" data-i18n="All visitors →">All visitors →</a></div>
+  <div class="sec-head" data-sec="suspicious"><h2 data-i18n="Suspicious visitors">Suspicious visitors</h2><a class="all-btn" id="trafficAll" href="#" data-i18n="All visitors →">All visitors →</a></div>
   <p class="sec-desc" data-i18n="Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.">Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.</p>
   <div class="panel" id="traffic"></div>
 
-  <div class="chart-head">
+  <div class="chart-head" data-sec="ai">
     <h2 data-i18n="AI report">AI report</h2>
     <div class="chart-ctrls">
-      <button id="aiGen" class="fbtn" data-i18n="Generate">Generate</button>
+      <button id="aiGen" class="btn primary" data-i18n="Generate">Generate</button>
     </div>
   </div>
   <div class="panel" id="aiReport"></div>
@@ -618,7 +528,7 @@ async function openAll(mount) {
   const dim = panelState[mount];
   const cfg = dimConfig[dim];
   document.getElementById('modalTitle').textContent = `${t('All')} · ${t(cfg.label)}`;
-  document.getElementById('modalBody').innerHTML = `<p class="muted">${te('loading…')}</p>`;
+  document.getElementById('modalBody').innerHTML = `<p class="loading">${te('loading…')}</p>`;
   document.getElementById('modal').hidden = false;
   const d = await get('breakdown', `&dim=${dim}&limit=100`);
   const rows = prepRows(dim, d.rows || []);
@@ -1291,6 +1201,7 @@ async function load() {
   const utm = (async () => { await loadUtm(); runFunnel(); })();
 
   await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadVitals(), loadAdguard(), loadCrawlers(), loadEdge()]);
+  renderSecNav();
 }
 
 // Suspicious-visitor table: folded to the top rows so the page doesn't grow
@@ -1392,7 +1303,7 @@ function renderShadowBanner(o) {
     .replace('{days}', `<b>${days}</b>`)
     .replace('{blocked}', `<b>${esc(blocked)}%</b>`);
   el.innerHTML = `<span><b>${te('Shadow mode')}</b> — ${body}</span>`
-    + `<button id="enforceBtn" class="enforce">${te('Enforce now')}</button>`;
+    + `<button id="enforceBtn" class="btn warn enforce">${te('Enforce now')}</button>`;
   document.getElementById('enforceBtn').addEventListener('click', async () => {
     if (!confirm(t('Start blocking ads for suspected invalid traffic now? This ends the record-only window and can\'t be undone.'))) return;
     const r = await guard(await fetch(`/api/sites/${site}/enforce`, { method: 'POST' }));
@@ -1485,7 +1396,7 @@ function renderFunnelSteps() {
 async function runFunnel() {
   const valid = funnelSteps.filter((s) => s.value && s.value.trim());
   const out = document.getElementById('funnelResult');
-  if (valid.length < 2) { out.innerHTML = '<p class="muted" style="margin:10px 2px 0">Add at least 2 steps with a value, then Run.</p>'; return; }
+  if (valid.length < 2) { out.innerHTML = `<p class="fhint">${te('Add at least 2 steps with a value, then Run.')}</p>`; return; }
   let steps = [];
   try { steps = (await get('funnel', `&steps=${encodeURIComponent(JSON.stringify(valid))}`)).steps || []; } catch { out.innerHTML = `<p class="muted">${te('funnel failed')}</p>`; return; }
   const top = steps[0] ? steps[0].visitors : 0;
@@ -1498,7 +1409,9 @@ async function runFunnel() {
     return `<div class="frow"><div class="fbar-wrap"><div class="fbar" style="width:${Math.max(pctTop, 1).toFixed(1)}%"></div>`
       + `<span class="flabel">${i + 1}. ${esc(label)}</span></div>`
       + `<div class="fstat"><b>${fmt(v)}</b> <span class="muted">${pctTop.toFixed(0)}%${i > 0 ? ` · −${drop.toFixed(0)}%` : ''}</span></div></div>`;
-  }).join('') + '</div>';
+  }).join('') + '</div>'
+    + (funnelSuggested ? `<p class="fhint">${te('Suggested from your homepage and first goal — edit the steps freely; your edits are remembered.')}</p>` : '');
+  funnelSuggested = false;
 }
 document.getElementById('funnelAdd').addEventListener('click', () => { if (funnelSteps.length < 8) { funnelSteps.push({ type: 'event', value: '' }); saveFunnel(); renderFunnelSteps(); } });
 document.getElementById('funnelRun').addEventListener('click', runFunnel);
@@ -1560,11 +1473,11 @@ function renderShareModal() {
     body.innerHTML = `<p style="margin:4px 0 10px">${te('Sharing is ON — anyone with this link can view a read-only dashboard (aggregates only, no visitor-level data).')}</p>
       <div style="display:flex;gap:8px;margin-bottom:14px">
         <input id="shareUrl" readonly value="${esc(shareUrl)}" style="flex:1;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:7px 9px;font:12.5px ui-monospace,monospace">
-        <button id="shareCopy" class="fbtn">${te('Copy')}</button>
+        <button id="shareCopy" class="btn">${te('Copy')}</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button id="shareRotate" class="fbtn">${te('Rotate link')}</button>
-        <button id="shareOff" class="fbtn" style="color:#f87171">${te('Disable sharing')}</button>
+        <button id="shareRotate" class="btn">${te('Rotate link')}</button>
+        <button id="shareOff" class="btn danger">${te('Disable sharing')}</button>
       </div>`;
     document.getElementById('shareCopy').addEventListener('click', async () => {
       const inp = document.getElementById('shareUrl');
@@ -1576,7 +1489,7 @@ function renderShareModal() {
     document.getElementById('shareOff').addEventListener('click', () => setShare(false));
   } else {
     body.innerHTML = `<p style="margin:4px 0 14px">${te('Create a read-only public link for this site — overview, trend, top pages, channels, quality and Web Vitals. No visitor-level data is exposed, and you can revoke the link at any time.')}</p>
-      <button id="shareOn" class="fbtn">${te('Enable sharing')}</button>`;
+      <button id="shareOn" class="btn primary">${te('Enable sharing')}</button>`;
     document.getElementById('shareOn').addEventListener('click', () => setShare(true));
   }
   document.getElementById('modal').hidden = false;
@@ -1605,7 +1518,16 @@ async function loadGoals() {
   sec.hidden = false;
   renderBreakdown('goals', 'goal', rows);
   loadCtit(true);
+  // first visit: the default funnel is "/ → (event)". Fill the event with the
+  // site's first goal and run it, so the section shows a result instead of a
+  // "add a step" prompt. Only touches an untouched default (never a saved one).
+  const untouched = funnelSteps.length === 2 && funnelSteps[0].type === 'page' && funnelSteps[0].value === '/'
+    && funnelSteps[1].type === 'event' && !funnelSteps[1].value && !localStorage.getItem(FUNNEL_KEY);
+  if (untouched && rows[0] && rows[0].key) {
+    funnelSteps[1].value = rows[0].key; renderFunnelSteps(); funnelSuggested = true; runFunnel();
+  }
 }
+let funnelSuggested = false;
 
 // Conversion-timing distribution (CTIT): how long after the session started
 // each goal event fired. Fraud shapes: a 0–10s spike = conversions faster than
@@ -1645,6 +1567,32 @@ loadFilters();
 renderFilters();
 buildTabs();
 renderFunnelSteps();
+
+// ── section nav: one pill per visible section; the active pill follows the
+// scroll position. Hidden sections (no goals / no vitals yet) are skipped, so
+// the nav always reflects what the page actually shows.
+const SEC_LABEL = { overview: 'Overview', trend: 'Trend', sources: 'Sources', audience: 'Audience', vitals: 'Web Vitals', campaigns: 'Campaigns', goals: 'Goals', funnel: 'Funnel', quality: 'Traffic quality', adguard: 'Ad protection', suspicious: 'Suspicious', ai: 'AI report' };
+function renderSecNav() {
+  const ul = document.getElementById('secnav');
+  const secs = [...document.querySelectorAll('[data-sec]')].filter((el) => !el.hidden && el.offsetParent !== null);
+  ul.innerHTML = secs.map((el) => `<li><a href="#${el.dataset.sec}" data-target="${el.dataset.sec}">${te(SEC_LABEL[el.dataset.sec] || el.dataset.sec)}</a></li>`).join('');
+  ul.querySelectorAll('a').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    const target = document.querySelector(`[data-sec="${a.dataset.target}"]`);
+    if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); history.replaceState(null, '', '#' + a.dataset.target); }
+  }));
+  updateSecNav();
+}
+function updateSecNav() {
+  const secs = [...document.querySelectorAll('[data-sec]')].filter((el) => !el.hidden && el.offsetParent !== null);
+  const line = 55 + 48 + 20; // header + nav + slack
+  let current = secs[0];
+  for (const el of secs) { if (el.getBoundingClientRect().top <= line) current = el; }
+  document.querySelectorAll('#secnav a').forEach((a) => a.classList.toggle('active', current && a.dataset.target === current.dataset.sec));
+}
+let secNavTick = false;
+window.addEventListener('scroll', () => { if (!secNavTick) { secNavTick = true; requestAnimationFrame(() => { updateSecNav(); secNavTick = false; }); } }, { passive: true });
+renderSecNav();
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();

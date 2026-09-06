@@ -5,51 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Analytics — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
-  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; flex-wrap: wrap; }
-  header b { font-size: 16px; }
-  header .pub { font-size: 11.5px; color: #8b93a1; border: 1px solid #313847; border-radius: 10px; padding: 1px 8px; }
-  header select { margin-left: auto; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
-  main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
-  h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
-  .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-  .cards.cards-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  @media (max-width: 900px) { .cards, .cards.cards-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 560px) { .cards, .cards.cards-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 14px; min-width: 0; }
-  .card .v { font-size: 20px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .k { color: #8b93a1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .h { color: #8b93a1; font-size: 11.5px; margin-top: 2px; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card[title] { cursor: help; }
-  .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; }
-  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .muted { color: #8b93a1; }
-  svg text { fill: #8b93a1; font-size: 10px; }
-  footer { text-align: center; color: #8b93a1; font-size: 12.5px; padding: 22px 0 30px; }
+  header .pub { font-size: 11.5px; color: var(--muted); border: 1px solid var(--border-2); border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+  .card .v { font-size: 20px; }
+  footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 22px 0 30px; }
   footer a { color: inherit; }
-  .err { max-width: 560px; margin: 80px auto; text-align: center; color: #aeb6c2; }
+  .err { max-width: 560px; margin: 80px auto; text-align: center; color: var(--text-3); }
 </style>
 </head>
 <body>
 <script src="/i18n.js"></script>
 <header>
   <b id="siteName">…</b><span class="pub" data-i18n="public dashboard">public dashboard</span>
-  <select id="period" aria-label="Date range">
-    <option value="today" data-i18n="Today">Today</option>
-    <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
-    <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
-    <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
-    <option value="this_month" data-i18n="This month">This month</option>
-    <option value="last_month" data-i18n="Last month">Last month</option>
-  </select>
+  <div class="hdr-right">
+    <select id="period" aria-label="Date range">
+      <option value="today" data-i18n="Today">Today</option>
+      <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+      <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
+      <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
+      <option value="this_month" data-i18n="This month">This month</option>
+      <option value="last_month" data-i18n="Last month">Last month</option>
+    </select>
+  </div>
 </header>
 <main id="main" hidden>
   <div class="cards" id="cards"></div>

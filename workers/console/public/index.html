@@ -19,21 +19,16 @@
   imposes no attribution requirement, so keep it to support the project or
   remove it freely (see README "Attribution (optional)").
 -->
+<link rel="stylesheet" href="/console.css">
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 16px/1.6 system-ui, sans-serif; background: #0f1115; color: #e6e8eb;
-         min-height: 100vh; display: grid; grid-template-rows: 1fr auto; }
-  main { display: grid; place-items: center; padding: 40px 16px; }
+  body { font-size: 16px; line-height: 1.6; min-height: 100vh; display: grid; grid-template-rows: 1fr auto; }
+  main { display: grid; place-items: center; padding: 40px 16px; margin: 0 auto; }
   .box { max-width: 480px; text-align: center; }
   h1 { font-size: 26px; margin: 0 0 10px; }
-  p { color: #8b93a1; margin: 0 0 26px; }
-  a.btn { display: inline-block; padding: 10px 26px; border-radius: 8px; background: #3b82f6;
-          color: #fff; text-decoration: none; font-weight: 600; }
-  a.btn:hover { background: #2f6fd6; }
-  footer { padding: 18px; text-align: center; font-size: 12.5px; color: #8b93a1;
-           border-top: 1px solid #1d222c; }
-  footer a { color: #8b93a1; }
+  p { color: var(--muted); margin: 0 0 26px; }
+  a.btn.big { padding: 10px 26px; min-height: 42px; font-size: 15px; border-radius: var(--radius); }
+  footer { padding: 18px; text-align: center; font-size: 12.5px; color: var(--muted); border-top: 1px solid #1d222c; }
+  footer a { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -41,7 +36,7 @@
   <div class="box">
     <h1>{{name}}</h1>
     <p>{{description}}</p>
-    <a class="btn" href="/login.html">Sign in</a>
+    <a class="btn primary big" href="/login.html">Sign in</a>
   </div>
 </main>
 <footer>

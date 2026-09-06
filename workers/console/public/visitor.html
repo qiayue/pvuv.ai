@@ -4,73 +4,40 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Visitor journeys — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8eb; }
-  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #262b36; }
-  header a { color: #7ab3ff; text-decoration: none; }
-  header b { font-size: 16px; }
-  header .site { color: #8b93a1; font-size: 13px; }
-  header select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 5px 8px; }
-  header select.langsel { margin-left: auto; }
-  header select#period { margin-left: 8px; }
-  @media (max-width: 720px) { header { flex-wrap: wrap; gap: 8px 10px; padding: 10px 14px; } }
-  main { max-width: 1060px; margin: 22px auto; padding: 0 16px; }
-  h2 { font-size: 15px; margin: 26px 0 10px; color: #aeb6c2; }
-  a { color: #7ab3ff; text-decoration: none; }
-  .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-  @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 560px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 12px 14px; min-width: 0; }
-  .card .v { font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .k { color: #8b93a1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .panel { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: #8b93a1; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid #262b36; white-space: nowrap; }
-  td { padding: 5px 8px; border-bottom: 1px solid #1d222c; white-space: nowrap; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  tr.clickable { cursor: pointer; }
-  tr.clickable:hover { background: #1d2230; }
-  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
-  .b-clean { background: #14331f; color: #6ee7a0; } .b-suspect { background: #33290f; color: #fbbf24; }
-  .b-bot { background: #331414; color: #f87171; } .b-crawler { background: #1d2733; color: #93b4d6; }
-  .muted { color: #8b93a1; }
+  .card .v { font-size: 18px; }
+  td { white-space: nowrap; }
   .filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-  .filter input { flex: 1 1 260px; min-width: 0; max-width: 460px; background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 6px 10px; font: inherit; }
-  .filter select { background: #171a21; color: inherit; border: 1px solid #313847; border-radius: 6px; padding: 6px 8px; font: inherit; }
-  .filter button { background: #1d4ed8; color: #fff; border: 0; border-radius: 6px; padding: 6px 16px; font: inherit; cursor: pointer; }
-  .filter button:hover { background: #2563eb; }
-  .hint { font-size: 12px; color: #8b93a1; margin: 0 0 12px; }
-  .more-btn { display: block; width: 100%; margin-top: 8px; background: none; border: 1px dashed #313847; color: #7ab3ff; border-radius: 6px; padding: 7px; font: inherit; font-size: 12.5px; cursor: pointer; }
-  .more-btn:hover { background: #1d2230; }
+  .filter input { flex: 1 1 260px; min-width: 0; max-width: 460px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
   /* journey header */
-  .ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; color: #cdd6e2; }
+  .ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; color: var(--text-2); }
   .ctx .flag { font-size: 15px; }
-  .ctx .dc { color: #fbbf24; }
-  .evidence { margin: 8px 0 0; font-size: 12.5px; color: #f3b0b0; }
-  .evidence b { color: #8b93a1; font-weight: 500; }
+  .ctx .dc { color: var(--warn); }
+  .evidence { margin: 8px 0 0; font-size: 12.5px; color: var(--bad-text); }
+  .evidence b { color: var(--muted); font-weight: 500; }
   /* timeline */
-  .session { background: #171a21; border: 1px solid #262b36; border-radius: 8px; margin-bottom: 14px; }
+  .session { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
   .session-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #1d222c; font-size: 13px; }
   .session-head b { font-size: 13.5px; }
   .tl { list-style: none; margin: 0; padding: 8px 16px 12px; }
   .tl li { position: relative; padding: 6px 0 6px 118px; }
-  .tl li::before { content: ''; position: absolute; left: 88px; top: 0; bottom: 0; width: 2px; background: #262b36; }
-  .tl li::after { content: ''; position: absolute; left: 84px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: #3b82f6; }
+  .tl li::before { content: ''; position: absolute; left: 88px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .tl li::after { content: ''; position: absolute; left: 84px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
   .tl li.ev-out::after { background: #a78bfa; }
-  .tl li.ev-custom::after { background: #34d399; }
+  .tl li.ev-custom::after { background: var(--good); }
   .tl li.ev-form::after { background: #22d3ee; }
   .tl li.ev-sys::after { background: #64748b; }
   .tl li.hit { background: #16233a; border-radius: 6px; }
-  .tl .t { position: absolute; left: 0; width: 76px; text-align: right; color: #8b93a1; font-variant-numeric: tabular-nums; font-size: 12.5px; padding-top: 1px; }
+  .tl .t { position: absolute; left: 0; width: 76px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; padding-top: 1px; }
   .tl .what { font-weight: 600; word-break: break-all; }
-  .tl .meta { display: block; color: #8b93a1; font-size: 12.5px; margin-top: 1px; }
-  .tl .meta .warn { color: #fbbf24; }
-  .tl .meta .err { color: #f87171; }
-  .tl .meta code { background: #0f1115; padding: 0 5px; border-radius: 4px; font-size: 11.5px; color: #cdd6e2; }
-  .ev-tag { display: inline-block; min-width: 44px; margin-right: 8px; padding: 0 7px; border-radius: 9px; font-size: 11.5px; text-align: center; background: #1d2733; color: #93b4d6; vertical-align: 1px; }
-  .ev-custom .ev-tag { background: #143324; color: #6ee7a0; }
+  .tl .meta { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .tl .meta .warn { color: var(--warn); }
+  .tl .meta .err { color: var(--bad); }
+  .tl .meta code { background: var(--bg); padding: 0 5px; border-radius: 4px; font-size: 11.5px; color: var(--text-2); }
+  .ev-tag { display: inline-block; min-width: 44px; margin-right: 8px; padding: 0 7px; border-radius: 9px; font-size: 11.5px; text-align: center; background: var(--info-bg); color: var(--info); vertical-align: 1px; }
+  .ev-custom .ev-tag { background: #143324; color: var(--good-text); }
   .ev-form .ev-tag { background: #103038; color: #67e8f9; }
   .ev-out .ev-tag { background: #2a2140; color: #c4b5fd; }
   @media (max-width: 560px) {
@@ -83,14 +50,16 @@
 <body>
 <script src="/i18n.js"></script>
 <header>
-  <a id="back" href="/sites.html" data-i18n="← dashboard">← dashboard</a><b id="title" data-i18n="Visitor journeys">Visitor journeys</b><span class="site" id="siteLabel"></span>
-  <select id="lang" class="langsel" aria-label="Language"></select>
-  <select id="period" aria-label="Date range">
-    <option value="today" data-i18n="Today">Today</option>
-    <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
-    <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
-    <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
-  </select>
+  <a id="back" href="/sites.html" data-i18n="← dashboard">← dashboard</a><b id="title" data-i18n="Visitor journeys">Visitor journeys</b><span class="sub" id="siteLabel"></span>
+  <div class="hdr-right">
+    <select id="lang" aria-label="Language"></select>
+    <select id="period" aria-label="Date range">
+      <option value="today" data-i18n="Today">Today</option>
+      <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+      <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
+      <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
+    </select>
+  </div>
 </header>
 <main>
   <!-- finder mode: recent visitors, optionally only those who opened a path / of one verdict -->
@@ -105,10 +74,10 @@
         <option value="bot" data-i18n="bot">bot</option>
         <option value="crawler" data-i18n="crawler">crawler</option>
       </select>
-      <button id="apply" data-i18n="Filter">Filter</button>
+      <button id="apply" class="btn primary" data-i18n="Filter">Filter</button>
     </div>
     <p class="hint" data-i18n="Show visitors who opened a page, or only a verdict class. Click a visitor to replay the full journey.">Show visitors who opened a page, or only a verdict class. Click a visitor to replay the full journey.</p>
-    <div class="panel" id="list"><p class="muted" data-i18n="loading…">loading…</p></div>
+    <div class="panel" id="list"><p class="loading" data-i18n="loading…">loading…</p></div>
   </section>
 
   <!-- journey mode: one visitor's trail, grouped by session, chronological -->
@@ -201,7 +170,7 @@ function syncUrl(path, verdict) {
 }
 async function loadList() {
   const el = document.getElementById('list');
-  el.innerHTML = `<p class="muted">${te('loading…')}</p>`;
+  el.innerHTML = `<p class="loading">${te('loading…')}</p>`;
   const path = document.getElementById('path').value.trim();
   const verdict = document.getElementById('verdict').value;
   syncUrl(path, verdict);
