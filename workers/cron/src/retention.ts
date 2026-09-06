@@ -44,9 +44,15 @@ export interface RetentionSummary {
   errors: string[];
 }
 
-function windowDays(key: 'raw_events_days' | 'pulse_events_days' | 'bot_events_days' | 'profiles_idle_days'): number {
+/** A key that is absent from the deployer's config.local.toml (written before
+ *  it existed) falls back to the shipped default — silently keeping those rows
+ *  forever is exactly the failure this job exists to prevent. An explicit 0
+ *  still means "keep forever". */
+const DEFAULT_WINDOWS = { raw_events_days: 90, pulse_events_days: 14, bot_events_days: 30, profiles_idle_days: 180 } as const;
+function windowDays(key: keyof typeof DEFAULT_WINDOWS): number {
   const v = (CONFIG.retention as Record<string, unknown>)[key];
-  return typeof v === 'number' && v > 0 ? v : 0;
+  if (typeof v === 'number') return v > 0 ? v : 0;
+  return DEFAULT_WINDOWS[key];
 }
 
 /** Batched DELETE by rowid; returns rows deleted and whether the cap was hit. */

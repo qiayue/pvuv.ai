@@ -198,7 +198,7 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
 ## 8. 构建并托管 SDK
 
 ```bash
-npm run build:sdk                                   # → sdk/dist/f.js（gzip 后约 3 KB）
+npm run build:sdk                                   # → sdk/dist/f.js（gzip 后约 6.5 KB）
 cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:console
 ```
@@ -231,8 +231,12 @@ npm run deploy:console
 ```
 
 `data-api` 必须指向你的上报域名——SDK 内置默认值是参考域名 `in.pvuv.ai`，所以
-自部署**务必带上 `data-api`**（console 会按你的控制台域名自动生成，若你的
-上报域名不同请手动调整）。
+自部署**务必带上 `data-api`**（console 按 `workers/console/wrangler.toml [vars]`
+里的 `INGEST_HOST` 生成，若你的上报域名不同请手动调整）。
+
+4. 打开这个新站点的仪表盘。在第一个事件到达之前，它显示的是**首次接入面板**而不是
+   一堆空图表：同一段嵌入代码 + 复制按钮、自检入口，以及一个实时探测。第一个浏览
+   事件一落库，页面会自动切换成仪表盘。
 
 ## 10. 验证
 
@@ -258,7 +262,8 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 然后访问一个已嵌入代码的页面，在浏览器开发者工具里确认 `POST /in` 返回 **204**。
 数据出现的时间线：
 
-- **立即**：console 的 High-score traffic 钻取列表能看到事件（它直接读原始事件表）。
+- **立即**：首次接入面板切换为仪表盘；「可疑访客」表和**访客轨迹**（页头的
+  `访客 →`）能看到事件——两者都直接读原始事件表。
 - **一小时内**：指标卡/趋势图/各维度表填充——它们读预聚合表，cron 每小时
   `:05` 重算。
 - **次日**：每日任务（03:30 UTC）产出群体聚簇封禁、基线 + 分布形态异常
@@ -271,11 +276,76 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 | 计划 | 任务 |
 |---|---|
 | `5 * * * *`（每小时） | 从原始事件 + 会话重算最近几天的日 rollup，让卡片/图表保持新鲜、刚结束的一天定稿。 |
-| `30 3 * * *`（每天） | 群体/批量分析（指纹簇、IP 段簇、cookie 重置农场 → KV 黑名单 + 批量重判）、基线**与分布形态**异常检测 → `anomaly_reports`，然后清理早于 `[retention].raw_events_days` 的原始事件/会话，最后——仅当你配置了令牌时——拉取 Cloudflare 边缘请求数（见下文）。 |
+| `30 3 * * *`（每天） | 群体/批量分析（指纹簇、IP 段簇、cookie 重置农场、会话内身份漂移、二部图分数传播 → KV 黑名单 + 批量重判）、基线**与分布形态**异常检测 → `anomaly_reports`，然后执行**保留清理**（见下一节），最后——仅当你配置了令牌时——拉取 Cloudflare 边缘请求数（见下文）。 |
 
 所有阈值都从你的 config 读取（`config.example.toml` / `config.local.toml` 里的
 `[population]`、`[anomaly]`、`[distribution]`、`[retention]`），不硬编码——调完
 记得重新生成 config（`npm run config:gen`）并重新部署 `cron`。
+
+## 存储与保留（把 D1 控制在合理大小）
+
+D1 单库上限 10 GB。如果什么都不清理，几个站点几个月就能涨到几 GB。先知道是什么在涨：
+
+| 表 | 是什么 | 占用 |
+|---|---|---|
+| `events_YYYYMM` | 全部原始事件，按 UTC 月分区，每个分区 8 个索引 | **含索引约 0.8 KB/行**。一次浏览会产生 2–5 行：pageview、一条 `page_leave`，加上周期性的 `page_pulse` 行为心跳。测试站点上机器人流量往往占大多数行。 |
+| `sessions` | 每次访问一行 | ≈ 0.4 KB |
+| `visitor_profiles` | 每个出现过的访客 ID 一行（跨访问打分用） | ≈ 0.3 KB——不清理会无限增长 |
+| `rollup_*` | 仪表盘读取的预聚合数字 | 很小；**永久保留** |
+
+仪表盘上的一切（指标卡、趋势、各维度、流量质量、排名）都来自汇总表，原始行只服务于
+下钻：访客轨迹、可疑访客表、漏斗、以及异常检测里的设备/落地页检查。`config.local.toml`
+里的保留窗口决定这些能回看多久：
+
+```toml
+[retention]
+raw_events_days    = 90    # 整月分区在超过该天数后整体 DROP
+pulse_events_days  = 14    # page_pulse 行为心跳：更早修剪——汇总任务一小时内就已消费
+bot_events_days    = 30    # 判定为机器人/爬虫的原始行；已计入统计，仅供下钻
+profiles_idle_days = 180   # 超过这么久没出现的访客档案
+```
+
+`0` 表示该项永久保留。旧的 `config.local.toml` 里如果缺少某个键，就按上面的值执行，
+所以只升级代码就已经开始修剪。改动后重新生成并部署：
+
+```bash
+npm run config:gen && npm run deploy:cron && npm run deploy:console
+```
+
+每日任务（03:30 UTC）把超过 `raw_events_days` 的整月分区一条语句删掉，其余按每批
+5,000 行修剪（每表每晚最多 20 万行），大量积压会在几个晚上内消化完，不会撞到 D1
+的单查询预算。
+
+**在哪看、怎么手动跑：** ⚙ 设置 →「**存储与保留**」列出每个分区的行数、心跳行、
+机器人行和预估大小，以及当前生效的窗口，并有「**立即清理**」按钮（和 cron 跑的
+是同一个任务，可反复点）。精确的数据库大小用：
+
+```bash
+npx wrangler d1 info pvuv-db
+```
+
+**已经涨到几 GB 了？** 先把 `bot_events_days` 调到 7–14、`pulse_events_days` 调到
+3–7——测试站或机器人多的站，行数主要在这两块——然后点几次「立即清理」，或等每晚
+任务。显示的大小可能滞后：SQLite 会先把释放的页标记为可复用，文件不会立刻缩小。
+如果你需要下钻回看超过 90 天，先看面板里各分区的大小再上调 `raw_events_days`——
+趋势图等任何时间范围本来就由汇总表覆盖。
+
+## 控制台里有什么
+
+- **站点列表**——每个站点一张卡，显示所选范围内的浏览量/访客/会话、时区和广告
+  防护模式；跨站点的清洗流量排名；⚙ 设置（品牌、默认时区、AI 报告、API 令牌、
+  爬虫目录、Cloudflare 边缘请求、存储）。
+- **仪表盘**——粘性区块导航（概览 · 趋势 · 来源 · 受众 · 核心网页指标 · 广告
+  系列 · 目标 · 漏斗 · 流量质量 · 广告防护 · 可疑访客 · AI 报告）。点任意一行
+  （来源、页面、国家、设备、UTM）即可筛选整个仪表盘；来源按平台折叠（所有
+  Google 域名合并为一行「Google」）。渠道（GA4 式分组）、来自干净流量的核心网页
+  指标、带转化时延分布的目标、会用第一个目标自动预填的漏斗，以及广告防护的影子
+  模式横幅。
+- **访客轨迹**（`访客 →`）——按页面路径或判定查找访客，然后把某个访客的会话按
+  时间线回放：每个页面的停留、滚动深度、点击了哪些元素、JS 报错、暴躁/无效点击，
+  加上自定义事件、表单和外链点击。时间按站点时区显示。
+- **分享链接**——只读公开仪表盘（仅汇总数据，无访客级信息），令牌可轮换。
+- **自检**——`/health.html`，端到端走一遍整个部署。
 
 ## Google / GitHub 登录(必需)
 
@@ -488,6 +558,9 @@ curl -H "Authorization: Bearer $API_TOKEN" \
 | AI 报告「LLM request failed (401/404)」 | 所选厂商的 API key / base URL / 模型名不对——重新核对 AI 设置 |
 | 新的机器人信号一直不触发 | 部署前没重新生成 config——先 `npm run config:gen`（或 `npm install`）再重部署 `ingest`/`cron` |
 | 异常 / 分布告警条空 | 每日任务 03:30（UTC cron）才跑，且需要几天基线数据才会告警 |
+| 仪表盘一直停在「等待第一次访问」 | 该站点没有任何事件到达 D1：`data-api` 写错、页面 `Origin` 不在站点域名里，或 consumer 没部署——自检能定位到具体一步 |
+| 排名里 External / Internal 显示 `—` | 这两列来自 `rollup_source_daily`，由每小时任务填充——过了整点 05 分再看 |
+| D1 数据库持续增长 / 接近 10 GB | 原始 `events_YYYYMM` 行（机器人流量 + 行为心跳）。调低 `[retention]` 窗口，重部署 `cron` + `console`，再到 ⚙ 设置 → 存储 →「立即清理」——见「存储与保留」 |
 
 ## 本地开发
 
@@ -529,6 +602,15 @@ npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:all            # ingest + consumer + api + console + cron
 npm run deploy:proxy          # 仅当你用了第一方反代
 ```
+
+本次升级需要注意：
+
+- **迁移 0016–0018**（渠道 + 网页指标 + 公开令牌、行为信号列、传输层指纹）用上面的
+  命令应用即可；consumer 和每小时 cron 还会自动修复旧的月分区，不需要手动 `ALTER TABLE`。
+- **保留策略新增三个窗口**（`pulse_events_days`、`bot_events_days`、`profiles_idle_days`）。
+  从 `config.example.toml` 把它们复制进你的 `config.local.toml`；没复制之前按内置默认值执行。
+- **SDK 变大了**（行为心跳、网页指标、表单/报错信号）：按上面步骤重建并复制 `f.js`——
+  旧 loader 仍能工作，只是上报的信息更少。
 
 两个最容易踩的坑：
 

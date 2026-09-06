@@ -213,7 +213,7 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
 ## 8. Build and host the SDK
 
 ```bash
-npm run build:sdk                                   # → sdk/dist/f.js (~3 KB gzipped)
+npm run build:sdk                                   # → sdk/dist/f.js (~6.5 KB gzipped)
 cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:console
 ```
@@ -250,8 +250,13 @@ npm run deploy:console
 
 `data-api` must point at your ingest host — the SDK's built-in default is the
 reference domain `in.pvuv.ai`, so self-hosted deployments should always set
-it (the console generates it from your console hostname; adjust it if your
-ingest host differs).
+it (the console generates it from `INGEST_HOST` in
+`workers/console/wrangler.toml [vars]`; adjust it if your ingest host differs).
+
+4. Open the new site's dashboard. Until its first event arrives it shows a
+   **first-run panel** instead of empty charts: the same snippet with a copy
+   button, a link to the self-check, and a live probe. The moment the first
+   pageview lands, the page switches to the dashboard by itself.
 
 ## 10. Verify
 
@@ -279,8 +284,9 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 Then visit a page that has the snippet and check, in the browser dev tools,
 that `POST /in` returns **204**. Data timeline:
 
-- **Immediately**: events appear in the console's *High-score traffic*
-  drill-down (it reads raw events).
+- **Immediately**: the first-run panel flips to the dashboard; events appear
+  in *Suspicious visitors* and in **Visitor journeys** (`visitors →` in the
+  header) — both read raw events.
 - **Within the hour**: metric cards / charts / breakdowns fill in — they read
   the pre-aggregated rollups, which the cron worker recomputes at `:05` every
   hour.
@@ -296,12 +302,92 @@ beyond deploying it:
 | Schedule | Job |
 |---|---|
 | `5 * * * *` (hourly) | Recompute the recent daily rollups from raw events + sessions, so cards/charts stay fresh and the just-closed day settles. |
-| `30 3 * * *` (daily) | Population/batch analysis (fingerprint & IP-segment clusters, cookie-reset farms → KV blocklist + batch re-verdict), baseline **and distribution-shape** anomaly detection → `anomaly_reports`, then retention purge of raw events/sessions older than `[retention].raw_events_days`, and finally — only if you configured one — the Cloudflare edge-request pull (see below). |
+| `30 3 * * *` (daily) | Population/batch analysis (fingerprint & IP-segment clusters, cookie-reset farms, session identity drift, bipartite score propagation → KV blocklist + batch re-verdict), baseline **and distribution-shape** anomaly detection → `anomaly_reports`, then the **retention purge** (next section), and finally — only if you configured one — the Cloudflare edge-request pull (see below). |
 
 All thresholds are read from your config (`[population]`, `[anomaly]`,
 `[distribution]`, `[retention]` in `config.example.toml` / `config.local.toml`),
 never hardcoded — so regenerate the config (`npm run config:gen`) and redeploy
 `cron` after any tuning.
+
+## Storage & retention (keep D1 small)
+
+D1 databases are capped at 10 GB, and a few sites can reach several GB in a
+matter of months if nothing is pruned. Know what grows:
+
+| Table | What it is | Footprint |
+|---|---|---|
+| `events_YYYYMM` | every raw event, one partition per UTC month, 8 indexes each | ≈ 0.8 KB per row **including indexes**. A pageview produces 2–5 rows: the pageview, one `page_leave`, and periodic `page_pulse` behavior heartbeats. Bot traffic on a test site is often the majority of rows. |
+| `sessions` | one row per visit | ≈ 0.4 KB |
+| `visitor_profiles` | one row per visitor id ever seen (cross-visit scoring) | ≈ 0.3 KB — grows forever without pruning |
+| `rollup_*` | the pre-aggregated numbers the dashboards read | tiny; **kept forever** |
+
+Everything the dashboard shows (cards, charts, breakdowns, quality, ranking)
+comes from the rollups, so raw rows are only needed for the drill-downs:
+visitor journeys, the suspicious-visitors table, the funnel and the
+anomaly detector's device/entry-page checks. The retention windows in
+`config.local.toml` decide how far back those reach:
+
+```toml
+[retention]
+raw_events_days    = 90    # whole monthly partitions are DROPped once the month is past this
+pulse_events_days  = 14    # page_pulse heartbeats: trimmed early — rollups consumed them within the hour
+bot_events_days    = 30    # raw rows of bot/crawler-judged traffic; already counted, drill-down only
+profiles_idle_days = 180   # visitor_profiles not seen for this long
+```
+
+`0` means keep forever for that pass. A key that is missing from an older
+`config.local.toml` uses the value shown above, so upgrading alone already
+starts trimming. Regenerate and redeploy after changing them:
+
+```bash
+npm run config:gen && npm run deploy:cron && npm run deploy:console
+```
+
+The daily job (03:30 UTC) drops whole months past `raw_events_days` in one
+statement and trims the rest in batches of 5,000 rows (up to 200k rows per
+table per night), so a large backlog is worked off over a few nights without
+hitting D1's per-query budget.
+
+**See it and run it by hand:** ⚙ Settings → **Storage & retention** lists
+every partition with its row count, heartbeat rows, bot rows and an
+estimated size, plus the active windows, and has a **Run purge now** button
+(the same job the cron runs; safe to click repeatedly). The exact database
+size is:
+
+```bash
+npx wrangler d1 info pvuv-db
+```
+
+**Already at several GB?** Lower `bot_events_days` (7–14) and
+`pulse_events_days` (3–7) first — on test or bot-heavy sites that is where
+the rows are — then click *Run purge now* a few times, or wait for the
+nightly runs. The reported size may lag: SQLite marks freed pages for reuse
+before the file shrinks. If you need dashboards to reach further back than
+90 days, raise `raw_events_days` only after checking the partition sizes
+the panel shows — the rollups already cover any range for the charts.
+
+## What the console shows
+
+- **Sites** — one card per site with pageviews/visitors/sessions for the
+  selected range, timezone and ad-guard mode; the clean-traffic ranking
+  across your sites; ⚙ Settings (branding, default timezone, AI reports,
+  API tokens, crawler directory, Cloudflare edge requests, storage).
+- **Dashboard** — sticky section nav (Overview · Trend · Sources · Audience ·
+  Web Vitals · Campaigns · Goals · Funnel · Traffic quality · Ad protection ·
+  Suspicious · AI report). Click any row (source, page, country, device, UTM)
+  to filter the whole dashboard; sources are folded per platform (all Google
+  hosts read as one "Google" row). Channels (GA4-style grouping), Core Web
+  Vitals from clean traffic, goals with conversion-timing distribution, a
+  funnel that pre-fills from your first goal, and the shadow-mode banner for
+  ad protection.
+- **Visitor journeys** (`visitors →`) — find visitors by page path or
+  verdict, then replay one visitor's sessions as a timeline: each page with
+  dwell, scroll depth, clicked elements, JS errors, rage/dead clicks, plus
+  custom events, forms and outbound clicks. Times are shown in the site's
+  timezone.
+- **Share link** — a read-only public dashboard (aggregates only, no
+  visitor-level data) with a rotatable token.
+- **Self-check** — `/health.html`, walks the whole deployment end to end.
 
 ## Google / GitHub login (required)
 
@@ -542,6 +628,9 @@ home page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
 | AI report "LLM request failed (401/404)" | Wrong API key, base URL, or model name for the chosen provider — recheck the AI settings |
 | New bot signals never fire | Config not regenerated before deploy — run `npm run config:gen` (or `npm install`) then redeploy `ingest`/`cron` |
 | Anomaly / distribution strip empty | The daily job runs at 03:30 site-local-ish (UTC cron); needs a few days of baseline before it flags |
+| Dashboard stays on "Waiting for the first visit" | No event has reached D1 for that site: wrong `data-api`, page `Origin` not in the site's domains, or the consumer isn't deployed — the self-check pins it down |
+| Ranking shows `—` for External / Internal | Those two columns come from `rollup_source_daily`, filled by the hourly job — check back after `:05` |
+| D1 database keeps growing / approaching 10 GB | Raw `events_YYYYMM` rows (bot traffic + behavior heartbeats). Lower `[retention]` windows, redeploy `cron` + `console`, then ⚙ Settings → Storage → *Run purge now* — see *Storage & retention* |
 
 ## Local development
 
@@ -584,6 +673,19 @@ npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:all            # ingest + consumer + api + console + cron
 npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
 ```
+
+Notes for this release:
+
+- **Migrations 0016–0018** (channel + web vitals + public token, behavior
+  signal columns, transport fingerprint) apply with the command above; the
+  consumer and hourly cron also self-heal older monthly partitions, so no
+  manual `ALTER TABLE` is needed.
+- **Retention got three new windows** (`pulse_events_days`, `bot_events_days`,
+  `profiles_idle_days`). Copy them into your `config.local.toml` from
+  `config.example.toml`; until you do, the shipped defaults apply.
+- **The SDK grew** (behavior heartbeats, web vitals, form/error signals):
+  rebuild and recopy `f.js` as shown — old loaders keep working, they just
+  report less.
 
 Two things people miss:
 
