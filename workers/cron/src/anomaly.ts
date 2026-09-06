@@ -32,8 +32,11 @@ interface Finding { dimension: string; baseline: number; actual: number; deviati
 interface TopRow { top_sig: string; top: number; total: number }
 
 const mean = (a: number[]): number => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
-const mk = (dimension: string, kind: 'spike' | 'drop' | 'concentration', baseline: number, actual: number, deviation: number, message: string): Finding =>
-  ({ dimension, baseline, actual, deviation, evidence: JSON.stringify({ kind, message }) });
+// `extra` carries structured fields (top value, unit, …) so the console can
+// re-phrase the finding in the viewer's language instead of showing this
+// English `message` verbatim.
+const mk = (dimension: string, kind: 'spike' | 'drop' | 'concentration', baseline: number, actual: number, deviation: number, message: string, extra: Record<string, unknown> = {}): Finding =>
+  ({ dimension, baseline, actual, deviation, evidence: JSON.stringify({ kind, message, ...extra }) });
 
 export async function runAnomalyDetection(env: { DB: D1Database }, now = Date.now()): Promise<void> {
   const C = { ...ANOMALY_DEFAULTS, ...(CONFIG.anomaly ?? {}) };
@@ -196,5 +199,6 @@ function concentrationFinding(
   const bShare = base.top / base.total;
   if (tShare < D.top_share_floor || tShare - bShare < D.top_share_jump) return null;
   return mk(`dist:${dim}`, 'concentration', bShare, tShare, bShare ? tShare / bShare : 0,
-    `${label}: “${today.top_sig}” is ${Math.round(tShare * 100)}% of clean ${unit} vs ${Math.round(bShare * 100)}% baseline`);
+    `${label}: “${today.top_sig}” is ${Math.round(tShare * 100)}% of clean ${unit} vs ${Math.round(bShare * 100)}% baseline`,
+    { top_sig: today.top_sig, unit, dim });
 }

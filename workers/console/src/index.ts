@@ -32,6 +32,7 @@ import {
 import { isValidTimezone } from '../../../shared/tz';
 import { zoneForDomains } from '../../../shared/cfedge';
 import { readCfToken, verifyCfToken, CF_TOKEN_KEY, CF_STATUS_KEY } from '../../cron/src/edge';
+import { runRetentionPurge, storageReport } from '../../cron/src/retention';
 import { CONFIG } from '../../../shared/config.gen';
 import { LlmError } from './llm';
 import { generateReport, type ReportLang } from './report';
@@ -481,6 +482,18 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
+  // Storage & retention (§16): row counts per raw partition + the configured
+  // windows, and a manual "purge now" that runs the same job the daily cron
+  // does. Counts scan the partitions (one COUNT per month), so this is only
+  // fetched when the settings panel opens.
+  if (request.method === 'GET' && path === '/api/storage') {
+    return json(await storageReport(env.DB));
+  }
+  if (request.method === 'POST' && path === '/api/storage/purge') {
+    const summary = await runRetentionPurge({ DB: env.DB });
+    return json({ ok: summary.errors.length === 0, ...summary });
+  }
+
   // Cloudflare edge requests (§6.7) — OPTIONAL, advanced. A read-only
   // Cloudflare API token lets the daily cron pull how many requests Cloudflare
   // actually served, which the JS beacon cannot see: anything that fetches HTML
@@ -592,7 +605,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/sites') {
     if (request.method === 'GET') {
       const rows = await env.DB.prepare(
-        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status, shadow_until, public_token FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
+        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status, shadow_until, public_token, EXISTS(SELECT 1 FROM visitor_profiles vp WHERE vp.site_id = sites.site_id) AS has_data FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
       ).bind(user).all();
       return json({ sites: rows.results });
     }

@@ -998,11 +998,13 @@ export async function anomalies(db: D1Database, siteId: string, limit = 40) {
     .all<{ day: string; dimension: string; baseline: number; actual: number; deviation: number; evidence: string }>();
   return {
     anomalies: rows.results.map((r) => {
-      let ev: { kind?: string; message?: string } = {};
+      let ev: { kind?: string; message?: string; top_sig?: string; unit?: string; dim?: string } = {};
       try { ev = JSON.parse(r.evidence || '{}'); } catch { /* malformed → fall back to dimension */ }
       return {
         day: r.day, dimension: r.dimension, baseline: r.baseline, actual: r.actual,
         deviation: r.deviation, kind: ev.kind ?? 'spike', message: ev.message ?? r.dimension,
+        // structured extras (distribution findings) — lets the console localise
+        top_sig: ev.top_sig ?? null, unit: ev.unit ?? null,
       };
     }),
   };

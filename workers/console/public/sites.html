@@ -206,6 +206,14 @@
       <button type="button" id="cfTest" data-i18n="Re-check">Re-check</button>
       <button type="button" id="cfClear" class="danger" data-i18n="Remove">Remove</button></div>
     </form>
+    <form class="create" id="storageSettings" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px" onsubmit="return false">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Storage & retention">Storage &amp; retention</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="storage-help"> — raw event rows are what fills the D1 database (roughly 0.8 KB each with indexes; a pageview produces several once behavior heartbeats are counted). Dashboards read from rollups that are kept forever; the windows below only decide how far back visitor journeys and the suspicious-visitor drill-down reach. Set them in <code>config.local.toml [retention]</code>, then redeploy the cron and console workers.</span></div>
+      <div class="full" id="storageState"><p class="loading" data-i18n="loading…">loading…</p></div>
+      <div class="actions"><button type="button" id="storagePurge" data-i18n="Run purge now">Run purge now</button>
+        <button type="button" id="storageRefresh" data-i18n="Refresh">Refresh</button></div>
+      <p class="err" id="storageMsg"></p>
+    </form>
   </section>
 </main>
 <script>
@@ -226,7 +234,7 @@ function togglePanel(id) {
   if (!opened.hidden) opened.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 document.getElementById('btnAdd').addEventListener('click', () => togglePanel('addPanel'));
-document.getElementById('btnSettings').addEventListener('click', () => { togglePanel('homePanel'); loadTokens(); });
+document.getElementById('btnSettings').addEventListener('click', () => { togglePanel('homePanel'); loadTokens(); loadStorage(); });
 document.querySelectorAll('.panel .close').forEach((b) =>
   b.addEventListener('click', () => { document.getElementById(b.dataset.close).hidden = true; }));
 
@@ -291,11 +299,16 @@ async function loadRanking() {
   catch { sec.hidden = true; return; }
   if (sites.length < 2) { sec.hidden = true; return; }
   sec.hidden = false;
+  // external/internal come from rollup_source_daily, which the hourly job
+  // fills; right after deploying (or on a brand-new hour) it is empty while
+  // clean_pv already has live numbers — show a dash instead of a misleading 0
+  const pending = sites.every((s) => !s.external_pv && !s.internal_pv) && sites.some((s) => s.clean_pv > 0);
+  const dash = `<span class="muted" title="${te('populated by the hourly rollup — check back after :05')}">—</span>`;
   const body = sites.map((s, i) => `<tr>
     <td style="color:#8b93a1">${i + 1}</td>
     <td><a href="/site.html?id=${esc(s.site_id)}">${esc(s.name)}</a></td>
-    <td class="num"><b>${fmt(s.external_pv)}</b></td>
-    <td class="num" style="color:#8b93a1">${fmt(s.internal_pv)}</td>
+    <td class="num"><b>${pending ? dash : fmt(s.external_pv)}</b></td>
+    <td class="num" style="color:#8b93a1">${pending ? dash : fmt(s.internal_pv)}</td>
     <td class="num">${fmt(s.clean_pv)}</td>
     <td class="num" style="color:#8b93a1">${fmt(s.pv)}</td>
     <td class="num">${s.quality_score}%</td>
@@ -486,6 +499,41 @@ document.getElementById('tokenSettings').addEventListener('submit', async (e) =>
   document.getElementById('tokNew').hidden = false;
   document.getElementById('tokName').value = '';
   loadTokens();
+});
+
+// --- storage & retention -----------------------------------------------------
+const mb = (x) => x >= 1024 ? (x / 1024).toFixed(2) + ' GB' : x.toFixed(1) + ' MB';
+async function loadStorage() {
+  const box = document.getElementById('storageState');
+  box.innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  let d;
+  try { d = await (await guard(await fetch('/api/storage'))).json(); } catch { box.innerHTML = `<p class="muted">${te('failed')}</p>`; return; }
+  const r = d.retention || {};
+  const win = (v) => v ? `${v} ${t('days')}` : t('keep forever');
+  const rows = (d.partitions || []).slice().reverse().map((p) => `<tr><td>${esc(p.table.replace('events_', '').replace(/^(\d{4})(\d{2})$/, '$1-$2'))}</td>
+      <td class="num">${fmt(p.rows)}</td><td class="num muted">${fmt(p.pulse_rows)}</td><td class="num muted">${fmt(p.bot_rows)}</td><td class="num">≈ ${mb(p.est_mb)}</td></tr>`).join('');
+  box.innerHTML = `
+    <div class="cards cards-4" style="margin-bottom:12px">
+      <div class="card"><div class="v">≈ ${mb(d.est_total_mb)}</div><div class="k">${te('Estimated size')}</div><div class="h">${te('exact: wrangler d1 info')}</div></div>
+      <div class="card"><div class="v">${fmt(d.total_events)}</div><div class="k">${te('Raw event rows')}</div><div class="h">${(d.partitions || []).length} ${te('monthly partitions')}</div></div>
+      <div class="card"><div class="v">${fmt(d.sessions)}</div><div class="k">${te('Sessions')}</div><div class="h">${te('kept')} ${win(r.raw_events_days)}</div></div>
+      <div class="card"><div class="v">${fmt(d.profiles)}</div><div class="k">${te('Visitor profiles')}</div><div class="h">${te('idle limit')} ${win(r.profiles_idle_days)}</div></div>
+    </div>
+    <table><tr><th>${te('Month')}</th><th class="num">${te('Rows')}</th><th class="num">${te('heartbeats')}</th><th class="num">${te('bot / crawler')}</th><th class="num">${te('Est. size')}</th></tr>${rows || `<tr><td colspan="5" class="muted">${te('no data yet')}</td></tr>`}</table>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">${te('Windows:')} ${te('raw events')} <b>${win(r.raw_events_days)}</b> · ${te('heartbeats')} <b>${win(r.pulse_events_days)}</b> · ${te('bot / crawler')} <b>${win(r.bot_events_days)}</b> · ${te('idle profiles')} <b>${win(r.profiles_idle_days)}</b>. ${te('The daily job applies them at 03:30 UTC; whole months past the raw window are dropped at once, the rest is trimmed in batches.')}</p>`;
+}
+document.getElementById('storageRefresh').addEventListener('click', loadStorage);
+document.getElementById('storagePurge').addEventListener('click', async () => {
+  const msg = document.getElementById('storageMsg'); const btn = document.getElementById('storagePurge');
+  if (!confirm(t('Run the retention purge now? Raw rows outside the configured windows are deleted permanently; dashboards are unaffected.'))) return;
+  btn.disabled = true; msg.style.color = ''; msg.textContent = t('purging…');
+  try {
+    const d = await (await guard(await fetch('/api/storage/purge', { method: 'POST' }))).json();
+    msg.textContent = `${t('Done:')} ${d.dropped_partitions.length} ${t('partitions dropped')}, ${fmt(d.pulse_rows_deleted)} ${t('heartbeats')}, ${fmt(d.bot_rows_deleted)} ${t('bot / crawler')}, ${fmt(d.sessions_deleted)} ${t('sessions')}, ${fmt(d.profiles_deleted)} ${t('profiles')}${d.more_pending ? ` — ${t('more remains; run again or let the nightly job continue')}` : ''}${d.errors && d.errors.length ? ` · ${d.errors.join(' | ')}` : ''}`;
+    msg.style.color = d.ok ? '#6ee7a0' : '';
+    loadStorage();
+  } catch { msg.textContent = t('failed'); }
+  btn.disabled = false;
 });
 
 async function loadBotdir() {

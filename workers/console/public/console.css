@@ -177,6 +177,13 @@ td.lead .lead-in > .txt { overflow: hidden; text-overflow: ellipsis; white-space
 .chip .x { background: #313d50; border: 0; color: var(--text-2); width: 17px; height: 17px; border-radius: 50%; line-height: 1; font-size: 13px; padding: 0; }
 .chip .x:hover { background: #47566e; color: #fff; }
 
+/* mobile record cards (replace wide tables under 720px; pages opt in with .mtable/.mcards) */
+.mcard { display: grid; gap: 3px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; font-size: 13px; color: var(--text); }
+.mcard:hover { background: var(--surface-2); text-decoration: none; }
+.mcard .row { display: flex; justify-content: space-between; gap: 8px; align-items: center; min-width: 0; }
+.mcard .row > span, .mcard .row > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcard .row.muted { font-size: 12.5px; }
+
 /* notices */
 .notice { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); font-size: 13px; }
 .notice.warn { border-color: var(--warn-border); background: var(--warn-bg); color: var(--warn-text); }

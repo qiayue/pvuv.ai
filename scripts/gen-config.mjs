@@ -65,7 +65,7 @@ export interface ScoringConfig {
   distribution?: Record<string, number>;
   blocklist: { default_ttl_days: number; hard_signal_permanent: boolean; share_bare_ip: boolean };
   adguard: { default_mode: string; verdict_timeout_ms: number; shadow_days: number };
-  retention: { raw_events_days: number };
+  retention: { raw_events_days: number; pulse_events_days?: number; bot_events_days?: number; profiles_idle_days?: number };
 }
 
 export const CONFIG: ScoringConfig = `;

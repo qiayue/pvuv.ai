@@ -87,6 +87,14 @@
   .flabel { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12.5px; white-space: nowrap; }
   .fstat { flex: 0 0 auto; min-width: 118px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
   .fhint { color: var(--muted); font-size: 12px; margin: 8px 2px 0; }
+  /* first-run */
+  .onboard { margin: 0 0 18px; border-color: #2a3550; background: #141a26; }
+  .onboard pre { margin: 0; background: #0c1117; border: 1px solid #2b3a2e; border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; word-break: break-all; font: 12.5px/1.5 var(--mono); color: #9ece9e; }
+  body.onboarding main > :not(#onboard):not(.secnav) { display: none; }
+  body.onboarding .secnav { visibility: hidden; }
+  /* mobile: suspicious-visitor cards replace the wide table */
+  .mcards { display: none; }
+  @media (max-width: 720px) { .mtable { display: none; } .mcards { display: block; } }
   /* AI report prose */
   .ai-md { font-size: 13.5px; line-height: 1.65; color: var(--text-2); }
   .ai-md h3 { font-size: 14px; margin: 16px 0 6px; color: #e7ecf3; }
@@ -136,6 +144,18 @@
 </header>
 <main>
   <nav class="secnav" aria-label="Sections"><ul id="secnav"></ul></nav>
+  <!-- first-run state: shown instead of the dashboard until the site has recorded a single event -->
+  <section class="onboard panel" id="onboard" hidden>
+    <h2 style="margin:0 0 6px;color:var(--text)" data-i18n="Waiting for the first visit">Waiting for the first visit</h2>
+    <p class="muted" style="margin:0 0 14px" data-i18n="onboard-help">This site has not recorded any event yet. Add the snippet below to every page (before <code>&lt;/head&gt;</code> or at the end of <code>&lt;body&gt;</code>), open your site once, and this page switches to the dashboard by itself.</p>
+    <pre id="onboardSnippet"></pre>
+    <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+      <button class="btn" id="onboardCopy" data-i18n="Copy snippet">Copy snippet</button>
+      <a class="btn" href="/health.html" data-i18n="Run self-check ↗">Run self-check ↗</a>
+      <span class="loading" id="onboardProbe" data-i18n="listening for events…">listening for events…</span>
+    </div>
+    <p class="muted" style="font-size:12px;margin:14px 0 0" data-i18n="onboard-note">The snippet is the same one the site list shows after creation. <b>data-api</b> must be your ingest host; <b>data-adguard</b> only matters if you protect ads.</p>
+  </section>
   <div class="rt" id="realtime"></div>
   <div class="shadow-banner" id="shadowBanner" hidden></div>
   <div class="alerts" id="alerts"></div>
@@ -981,6 +1001,10 @@ function anomalyText(a) {
     return fill('anom-pv-drop', 'Pageviews fell to {pct}% of the recent average ({from} → {to})', { pct: Math.round(ratio * 100), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
   if (a.dimension === 'invalid_share')
     return fill('anom-invalid', 'Invalid traffic {now}% of pageviews vs {base}% baseline', { now: Math.round(a.actual * 100), base: Math.round(a.baseline * 100) });
+  if (String(a.dimension).startsWith('dist:') && a.top_sig)
+    return fill('anom-dist', '{what}: “{top}” is {now}% of clean {unit} vs {base}% baseline', {
+      what: t(a.dimension === 'dist:device' ? 'Clean traffic collapsed onto one device profile' : 'Clean visits concentrated on one landing page'),
+      top: a.top_sig, now: Math.round(a.actual * 100), base: Math.round(a.baseline * 100), unit: t(a.unit || 'pageviews') });
   if (String(a.dimension).startsWith('source:'))
     return fill('anom-source', 'Traffic from “{src}” {x}× its recent average ({from} → {to} visitors)', { src: sourceLabel(a.dimension.slice(7)), x: x(ratio), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
   return a.message;
@@ -1211,7 +1235,7 @@ function renderTraffic(rows, fold) {
   const el = document.getElementById('traffic');
   if (!rows.length) { el.innerHTML = `<p class="muted">${te('nothing above the threshold — looking clean')}</p>`; return; }
   const shown = rows.slice(0, fold);
-  el.innerHTML = `<table><tr><th>${te('Visitor')}</th><th class="num">${te('Events')}</th><th class="num">${te('Sessions')}</th><th>${te('Last seen')}</th><th>${te('Where')}</th><th>${te('Agent')}</th><th class="num">${te('Max score')}</th><th>${te('Verdict')}</th><th>${te('Evidence')}</th></tr>` +
+  el.innerHTML = `<table class="mtable"><tr><th>${te('Visitor')}</th><th class="num">${te('Events')}</th><th class="num">${te('Sessions')}</th><th>${te('Last seen')}</th><th>${te('Where')}</th><th>${te('Agent')}</th><th class="num">${te('Max score')}</th><th>${te('Verdict')}</th><th>${te('Evidence')}</th></tr>` +
     shown.map((r) => `<tr>
       <td class="nowrap"><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="${esc(t('Journey timeline'))}">${esc(String(r.visitor_id).slice(0, 8))}…</a></td>
       <td class="num">${fmt(r.events)}</td>
@@ -1223,6 +1247,11 @@ function renderTraffic(rows, fold) {
       <td><span class="badge b-${esc(r.verdict)}">${te(r.verdict)}</span></td>
       <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
     </tr>`).join('') + '</table>'
+    + `<div class="mcards">${shown.map((r) => `<a class="mcard" href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}">
+      <div class="row"><b>${esc(String(r.visitor_id).slice(0, 8))}…</b><span class="badge b-${esc(r.verdict)}">${te(r.verdict)}</span></div>
+      <div class="row muted"><span>${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''} · ${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</span><span>${te('Max score')} ${r.bot_score}</span></div>
+      <div class="row muted"><span>${fmt(r.events)} ${te('Events')} · ${fmt(r.sessions)} ${te('Sessions')}</span><span>${new Date(r.last_ts).toISOString().slice(5, 16).replace('T', ' ')}</span></div>
+      <div class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</div></a>`).join('')}</div>`
     + (rows.length > shown.length
       ? `<button class="more-btn" id="trafficMore">${te('Show all')} ${rows.length}</button>`
       : (fold < rows.length + 1 && rows.length > TRAFFIC_FOLD ? `<button class="more-btn" id="trafficLess">${te('Show fewer')}</button>` : ''));
@@ -1287,6 +1316,35 @@ async function loadSiteName() {
   } catch { /* fall back to the id */ }
   document.getElementById('titleText').textContent = siteName;
   setTitle();
+  const me = allSites.find((x) => x.site_id === site);
+  if (me && me.has_data === 0) startOnboarding(me);
+}
+
+// ── first-run: no event recorded yet → snippet + live probe instead of an
+// empty dashboard. Polls /realtime every 5s; the first pageview reloads.
+let onboardTimer = null;
+async function startOnboarding(s) {
+  document.body.classList.add('onboarding');
+  document.getElementById('onboard').hidden = false;
+  let ingestHost = '';
+  try { ingestHost = ((await (await fetch('/api/me')).json()).ingest_host) || ''; } catch { /* fall through */ }
+  ingestHost = ingestHost || 'in.' + location.hostname.replace(/^(www|console)\./, '');
+  const attrs = [`data-site="${s.site_id}"`, `data-api="https://${ingestHost}"`];
+  if (s.adguard_mode && s.adguard_mode !== 'off') attrs.push(`data-adguard="${s.adguard_mode}"`);
+  if (s.adclient) attrs.push(`data-adclient="${s.adclient}"`);
+  const code = `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+  document.getElementById('onboardSnippet').textContent = code;
+  document.getElementById('onboardCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(code); document.getElementById('onboardCopy').textContent = t('Copied'); } catch { /* clipboard blocked */ }
+  };
+  const probe = async () => {
+    try {
+      const d = await (await fetch(`/api/sites/${site}/realtime`)).json();
+      if ((d.pageviews || 0) > 0 || (d.online || 0) > 0) { location.reload(); return; }
+    } catch { /* keep listening */ }
+    onboardTimer = setTimeout(probe, 5000);
+  };
+  probe();
 }
 
 // shadow mode (§7): while record-only, ads still load — show days left + the

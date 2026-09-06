@@ -8,6 +8,8 @@
 <style>
   .card .v { font-size: 18px; }
   td { white-space: nowrap; }
+  .mcards { display: none; }
+  @media (max-width: 720px) { .mtable { display: none; } .mcards { display: block; } }
   .filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
   .filter input { flex: 1 1 260px; min-width: 0; max-width: 460px; }
   .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
@@ -183,7 +185,7 @@ function renderList(rows, path, fold) {
   const note = path ? ` <span class="muted">(${te('matching')} ${esc(path)})</span>` : '';
   const shown = rows.slice(0, fold);
   const link = (r) => `/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}${path ? `&path=${encodeURIComponent(path)}` : ''}`;
-  el.innerHTML = `<table><tr><th>${te('Visitor')}</th><th>${te('Last seen')}</th><th>${te('First seen')}</th><th class="num">${te('Pageviews')}${note}</th><th class="num">${te('Sessions')}</th><th class="num">${te('Goals')}</th><th>${te('Where')}</th><th>${te('Device')}</th><th>${te('Verdict')}</th></tr>` +
+  el.innerHTML = `<table class="mtable"><tr><th>${te('Visitor')}</th><th>${te('Last seen')}</th><th>${te('First seen')}</th><th class="num">${te('Pageviews')}${note}</th><th class="num">${te('Sessions')}</th><th class="num">${te('Goals')}</th><th>${te('Where')}</th><th>${te('Device')}</th><th>${te('Verdict')}</th></tr>` +
     shown.map((r) => `<tr class="clickable" data-href="${esc(link(r))}">
       <td><a href="${esc(link(r))}">${esc(shortId(r.visitor_id))}</a></td>
       <td class="muted">${dt(r.last_ts)}</td><td class="muted">${dt(r.first_ts)}</td>
@@ -193,6 +195,10 @@ function renderList(rows, path, fold) {
       <td>${esc(r.device_type ?? '–')} <span class="muted">· ${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</span></td>
       <td>${badge(r.verdict)}</td>
     </tr>`).join('') + '</table>'
+    + `<div class="mcards">${shown.map((r) => `<a class="mcard" href="${esc(link(r))}">
+      <div class="row"><b>${esc(shortId(r.visitor_id))}</b>${badge(r.verdict)}</div>
+      <div class="row muted"><span>${flagEmoji(r.country)} ${esc(r.country ?? '–')} · ${esc(r.device_type ?? '–')} · ${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</span></div>
+      <div class="row muted"><span>${fmt(r.pv)} ${te('Pageviews')} · ${fmt(r.sessions)} ${te('Sessions')}${r.goals ? ` · <b>${fmt(r.goals)}</b> ${te('Goals')}` : ''}</span><span>${dt(r.last_ts)}</span></div></a>`).join('')}</div>`
     + (rows.length > shown.length ? `<button class="more-btn" id="listMore">${te('Show all')} ${rows.length}${rows.length >= 300 ? '+' : ''}</button>` : '');
   el.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (e.target.tagName !== 'A') location.href = tr.dataset.href; }));
   const more = document.getElementById('listMore');

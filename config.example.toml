@@ -154,4 +154,12 @@ shadow_days                = 7           # new sites: record-only before enforci
 # Data retention
 # ------------------------------------------------------------------
 [retention]
-raw_events_days            = 90     # raw events kept for drill-down; older -> aggregates only
+# Storage is dominated by raw event rows (~0.8 KB each incl. indexes; a
+# pageview now produces 2–5 rows once page_pulse/page_leave are counted).
+# Rollups keep every number on the dashboard forever; these windows only
+# decide how far back the raw drill-down (visitor journeys, suspicious
+# visitors) reaches. 0 = keep forever for that pass.
+raw_events_days            = 90     # whole monthly partitions dropped once the month is past this
+pulse_events_days          = 14     # page_pulse rows (behavior heartbeats) trimmed earlier — rollups consumed them within the hour
+bot_events_days            = 30     # raw rows of bot/crawler-judged traffic; already counted, drill-down only
+profiles_idle_days         = 180    # visitor_profiles not seen for this long are dropped (they only aid cross-visit scoring while active)
