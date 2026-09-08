@@ -173,7 +173,15 @@ function tablesFor(startTs: number, endTs: number, existing: Set<string>): strin
 
 interface Union { sql: string; binds: unknown[] }
 function unionOver(tables: string[], cols: string, startTs: number, endTs: number, extra = ''): Union {
-  const parts = tables.map((t) => `SELECT ${cols} FROM ${t} WHERE ts > ? AND ts <= ?${extra ? ` AND ${extra}` : ''}`);
+  // `site_id IN (SELECT site_id FROM sites)` is not a filter — ingest only
+  // accepts events for a registered site, so it selects the same rows. It is
+  // there for the PLAN: the partition index is (site_id, ts), so a predicate
+  // on ts alone cannot use it and every window scan degraded into a full scan
+  // of the whole MONTH (measured: 2.45M rows read, 12.2s in one statement, for
+  // a one-day window). With the leading column supplied, SQLite seeks the
+  // window once per site instead.
+  const parts = tables.map((t) =>
+    `SELECT ${cols} FROM ${t} WHERE site_id IN (SELECT site_id FROM sites) AND ts > ? AND ts <= ?${extra ? ` AND ${extra}` : ''}`);
   return { sql: `(${parts.join(' UNION ALL ')})`, binds: tables.flatMap(() => [startTs, endTs]) };
 }
 
@@ -253,27 +261,32 @@ async function updateProfiles(
     WHERE vp.site_id = w.site_id AND vp.visitor_id = w.visitor_id
   `).bind(...uv.binds);
 
-  // derived CV in one pass (sqrt is available in D1's SQLite build)
+  // Derived CV in one pass (sqrt is available in D1's SQLite build). Only the
+  // profiles the fold above could have touched: an event in this window also
+  // moved that visitor's last_seen past the window start, so the guard is a
+  // superset of the folded rows and can never miss one — while stopping this
+  // from rewriting every profile the instance has ever recorded, every night.
   const cv = db.prepare(`
     UPDATE visitor_profiles SET interval_cv =
       CASE WHEN interval_n > 0 AND COALESCE(interval_mean, 0) > 0
            THEN sqrt(MAX(interval_m2, 0) / interval_n) / interval_mean END
-    WHERE interval_n > 0
-  `);
+    WHERE interval_n > 0 AND last_seen > ?
+  `).bind(startTs);
 
   // sessions_count: sessions whose started_at falls in the window — each
-  // session counted exactly once because started_at never changes.
+  // session counted exactly once because started_at never changes. Counted
+  // once for the whole window and joined; as two correlated subqueries (an
+  // EXISTS guard and a COUNT, per profile row) this scanned every profile and
+  // probed sessions twice for each — the same shape that made the bounce
+  // rollup the heaviest statement in the database.
   const sess = db.prepare(`
-    UPDATE visitor_profiles SET sessions_count = sessions_count + (
-      SELECT COUNT(*) FROM sessions s
-      WHERE s.site_id = visitor_profiles.site_id AND s.visitor_id = visitor_profiles.visitor_id
-        AND s.started_at > ?1 AND s.started_at <= ?2
-    )
-    WHERE EXISTS (
-      SELECT 1 FROM sessions s2
-      WHERE s2.site_id = visitor_profiles.site_id AND s2.visitor_id = visitor_profiles.visitor_id
-        AND s2.started_at > ?1 AND s2.started_at <= ?2
-    )
+    UPDATE visitor_profiles SET sessions_count = sessions_count + w.n
+    FROM (
+      SELECT site_id, visitor_id, COUNT(*) AS n FROM sessions
+      WHERE site_id IN (SELECT site_id FROM sites) AND started_at > ?1 AND started_at <= ?2
+      GROUP BY site_id, visitor_id
+    ) AS w
+    WHERE visitor_profiles.site_id = w.site_id AND visitor_profiles.visitor_id = w.visitor_id
   `).bind(startTs, endTs);
 
   await db.batch([merge, cv, sess]); // atomic: the whole fold commits or none of it
