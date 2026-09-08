@@ -48,6 +48,7 @@ synthetic_env          = 0        # 0x80000 DISABLED (evidence-only) — product
 http1_modern_browser   = 0        # 0x100000 evidence-only until validated on live traffic — modern Chromium UA speaking HTTP/1.x to the edge (real Chrome >=90 negotiates h2/h3; HTTP/1 + modern UA is typical of curl/python-tls behind a spoofed UA). Recorded in bot_flags; corporate MITM proxies can downgrade real users, so validate the false-positive profile (check the fired-signals panel against verdicts/geo) before setting a weight (suggested 10-15 once clean).
 mouse_mechanical       = 10       # 0x200000 per tell (max 3): near-constant pointer speed, zero-curvature paths, clicks with no nearby movement. Desktop mouse only; trackpads still show human variance. Behavioral (not env-only) but modest per-tell — validate against the fired-signals panel before raising.
 session_drift          = 30       # 0x400000 browser family / OS / language changed WITHIN one session_id — impossible for a real visitor (the sid cookie lives in one browser); a replayed cookie or a farm rotating environments (FP-Inconsistent temporal check: ~3% FP in the IMC 2025 study). Applied by the daily batch.
+unidentified_desktop   = 15       # 0x800000 desktop device + unrecognised browser family + unidentifiable OS, all three at once. Real desktop browsers are one of six families; the combination measured 0.1% of 244k pageviews of healthy traffic across 10 production sites, against 29.9% on a site under a scraping campaign. Environment-derived (corroboration only, never a verdict on its own) and scoped to desktop, so an in-app webview on a known mobile OS is untouched.
 
 [trust_credits]
 # Subtracted from bot_score (make legit traffic look cleaner).
@@ -124,6 +125,8 @@ ip24_share_threshold       = 0.30   # a /24 contributing >= 30% of site traffic 
 ip24_min_events            = 100    # ...but only when the /24 sent >= N pageviews (small sites: noise guard)
 cookie_reset_min_visitors  = 10     # same fp+/24 cycling through >= N one-shot visitor_ids -> cookie-reset farm
 cookie_reset_epv_max       = 1.5    # ...where avg events per visitor_id <= this ("each appearing once")
+oneshot_min_visitors       = 200    # network/transport node (/24, ASN or TLS fingerprint) cycling >= N one-shot visitor_ids -> farm. Needs no fingerprint and no pre-existing bot label, which is what lets it break the seed deadlock the graph propagation cannot start without. Coarser key than cookie_reset's fp+/24, hence the far higher bar.
+oneshot_epv_max            = 1.5    # ...where avg events per visitor_id <= this. A real visitor sends at least pageview + page_leave, so <=1.5 means the node's visitors each appeared once and never returned.
 interval_cv_bot_ceiling    = 0.20   # per-visitor interval CV <= this -> mechanical
 interval_min_n             = 20     # ...only judged once a visitor has >= N measured intervals
 max_clusters_per_run       = 50     # safety cap: top-N clusters (by members) re-verdicted per daily run

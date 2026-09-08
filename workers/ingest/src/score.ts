@@ -39,6 +39,8 @@ export interface ScoreInput {
   ipTimezone: string | undefined;
   /** OS parsed from UA — sensor signals are Android-only (§4.6) */
   os: string;
+  /** browser family parsed from UA; 'other' = matched no known family */
+  browser: string;
   deviceType: string;
   hadInteraction: boolean;
   isPageLeave: boolean;
@@ -118,6 +120,16 @@ export function scoreRealtime(input: ScoreInput): ScoreResult {
   // --- server-side signals (§6.1) ---
   if (input.asnType === 'datacenter') fire('DATACENTER_ASN');
   if (input.headlessUA) fire('HEADLESS_UA'); // self-declared automation runtime
+
+  // A desktop UA that names no known browser family AND no identifiable OS.
+  // parseUA falls back to 'other'/'unknown' only when the string contains none
+  // of chrome/safari/firefox/edge/opera — which every real desktop browser
+  // does, including the Chromium-based Chinese ones. Scoped to desktop on
+  // purpose: 'other' on a known mobile OS is an ordinary in-app webview and is
+  // common in real traffic.
+  if (input.deviceType === 'desktop' && input.browser === 'other' && input.os === 'unknown') {
+    fire('UNIDENTIFIED_DESKTOP');
+  }
 
   // transport/UA contradiction: real Chromium ≥90 negotiates h2/h3 with the
   // edge; HTTP/1.x under a modern Chrome UA is typical of curl/python-tls

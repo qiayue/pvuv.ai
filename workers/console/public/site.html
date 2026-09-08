@@ -460,6 +460,7 @@ const SIGNAL_INFO = {
   HTTP1_MODERN_BROWSER: ['HTTP/1 with modern browser', 'Claims a modern Chrome but spoke HTTP/1.x to the edge — real Chrome negotiates HTTP/2/3; typical of scripted TLS stacks behind a spoofed UA (corporate proxies can also cause this)'],
   MOUSE_MECHANICAL: ['Mechanical pointer', 'Pointer moved with machine-like dynamics: constant speed, zero curvature, or clicks landing with no nearby movement'],
   SESSION_DRIFT: ['Session identity drift', 'Browser family, OS or language changed within one session — impossible for a real visitor; a replayed session cookie or an environment-rotating farm'],
+  UNIDENTIFIED_DESKTOP: ['Unidentifiable desktop', 'A desktop device whose user agent names no known browser family and no identifiable OS. Real desktop browsers are one of six families (including the Chromium-based Chinese ones); the three conditions together measured 0.1% of healthy traffic'],
 };
 const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
 const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];
@@ -480,25 +481,25 @@ const CHANNEL_ICON = {
   paid_social: '📣', email: '✉️', ai: '🤖', video: '▶', referral: '🔗',
 };
 const dimConfig = {
-  source:      { label: 'Sources',   headers: ['Source', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => sourceIcon(r.key), cells: (r) => [`<span title="${esc(r.key)}">${esc(sourceLabel(r.key))}</span>`, fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
-  channel:     { label: 'Channels',  headers: ['Channel', 'Sessions', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => `<span class="favi-generic">${CHANNEL_ICON[r.key] || '🔗'}</span>`, cells: (r) => [te(CHANNEL_LABEL[r.key] || r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
-  page:        { label: 'Pages',     headers: ['Path', 'PV', 'PV clean', 'Visitors', 'Bounces'], val: (r) => r.path, bar: (r) => r.uv, cells: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)] },
+  source:      { label: 'Sources',   note: '* Sessions that STARTED in this period, from session-level attribution. The Sessions card above counts sessions that recorded a pageview, so the two differ by sessions that only sent behaviour beacons — almost entirely bots.', headers: ['Source', 'Sessions*', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => sourceIcon(r.key), cells: (r) => [`<span title="${esc(r.key)}">${esc(sourceLabel(r.key))}</span>`, fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  channel:     { label: 'Channels',  note: '* Sessions that STARTED in this period, from session-level attribution. The Sessions card above counts sessions that recorded a pageview, so the two differ by sessions that only sent behaviour beacons — almost entirely bots.', headers: ['Channel', 'Sessions*', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => `<span class="favi-generic">${CHANNEL_ICON[r.key] || '🔗'}</span>`, cells: (r) => [te(CHANNEL_LABEL[r.key] || r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  page:        { label: 'Pages',     headers: ['Path', 'PV', 'Non-bot PV', 'Visitors', 'Bounces'], val: (r) => r.path, bar: (r) => r.uv, cells: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)] },
   entry_page:  { label: 'Entry',     headers: ['Entry page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
   exit_page:   { label: 'Exit',      headers: ['Exit page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
-  country:     { label: 'Countries', headers: ['Country', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => flagEmoji(r.key), cells: (r) => [esc(countryLabel(r.key)), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
-  region:      { label: 'Regions',   headers: ['Region', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
-  city:        { label: 'Cities',    headers: ['City', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
-  browser:     { label: 'Browser',   headers: ['Browser', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
-  os:          { label: 'OS',        headers: ['OS', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
-  device:      { label: 'Device',    headers: ['Device', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
-  size:        { label: 'Size',      headers: ['Screen', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
-  utm_medium:   { label: 'Medium',   headers: ['Medium', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
-  utm_campaign: { label: 'Campaign', headers: ['Campaign', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
-  utm_term:     { label: 'Term',     headers: ['Term', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
-  utm_content:  { label: 'Content',  headers: ['Content', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
-  ft_source:    { label: 'FT source',   headers: ['First-touch source', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
-  ft_medium:    { label: 'FT medium',   headers: ['First-touch medium', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
-  ft_campaign:  { label: 'FT campaign', headers: ['First-touch campaign', 'PV', 'PV clean', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  country:     { label: 'Countries', headers: ['Country', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => flagEmoji(r.key), cells: (r) => [esc(countryLabel(r.key)), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  region:      { label: 'Regions',   headers: ['Region', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  city:        { label: 'Cities',    headers: ['City', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  browser:     { label: 'Browser',   headers: ['Browser', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  os:          { label: 'OS',        headers: ['OS', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  device:      { label: 'Device',    headers: ['Device', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  size:        { label: 'Size',      headers: ['Screen', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  utm_medium:   { label: 'Medium',   headers: ['Medium', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_campaign: { label: 'Campaign', headers: ['Campaign', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_term:     { label: 'Term',     headers: ['Term', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_content:  { label: 'Content',  headers: ['Content', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_source:    { label: 'FT source',   headers: ['First-touch source', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_medium:    { label: 'FT medium',   headers: ['First-touch medium', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_campaign:  { label: 'FT campaign', headers: ['First-touch campaign', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
   goal: { label: 'Goals', headers: ['Event', 'Fires', 'Visitors', 'Revenue'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.pv), fmt(r.uv), r.revenue ? money(r.revenue) : '–'] },
 };
 
@@ -514,7 +515,8 @@ function breakdownTableHTML(dim, rows, clickable) {
         const lead = `<td class="lead"><span class="bar" style="width:${pct.toFixed(1)}%"></span>`
           + `<span class="lead-in">${icon}<span class="txt">${cells[0]}</span>${clickable ? `<span class="drill">${te('+ filter')}</span>` : ''}</span></td>`;
         return `<tr${clickable ? ' class="clickable"' : ''} data-i="${idx}">${lead}${cells.slice(1).map((c) => `<td class="num">${c}</td>`).join('')}</tr>`;
-      }).join('') + '</table>';
+      }).join('') + '</table>'
+    + (cfg.note ? `<p class="muted" style="margin:8px 0 0;font-size:11.5px">${te(cfg.note)}</p>` : '');
 }
 
 // Fold rows that canonicalise to the same platform into one (legacy data
@@ -1099,22 +1101,36 @@ document.getElementById('aiGen').addEventListener('click', async () => {
 // (block rate & est. false-positive), block reasons, top blocked sources, and a
 // block-volume sparkline. The tier can be switched here and applies via /v with
 // no re-embed.
+// The stored values stay loose/balanced/strict (the SDK and /v depend on them),
+// but they are NOT displayed under those names: "loose" blocks everything that
+// isn't clean, which is MORE than "balanced" — on one production site 84.2% vs
+// 56.8%. Anyone reading the three words in order concluded the opposite of what
+// the tiers do, so the UI names them by what they block and lists them in
+// ascending strength.
 const MODE_HELP = {
   off: 'ads always load — protection disabled',
   loose: 'load ads only for clean traffic (blocks all suspect + bad)',
   balanced: 'block bots/crawlers always; suspect only without interaction',
   strict: 'load ads only for clean traffic that also interacted',
 };
+const MODE_LABEL = {
+  off: 'Off',
+  balanced: 'Balanced — bots & crawlers',
+  loose: 'Aggressive — everything not clean',
+  strict: 'Strictest — clean + interacted',
+};
+// ascending block rate, so the table reads as a strength ladder
+const TIER_ORDER = ['balanced', 'loose', 'strict'];
 async function loadAdguard() {
   const el = document.getElementById('adguard');
   let d;
   try { d = await get('adguard'); } catch { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
-  const MODES = ['off', 'loose', 'balanced', 'strict'];
+  const MODES = ['off', ...TIER_ORDER];
   const tierRow = (name) => {
     const t = d.tiers[name]; if (!t) return '';
     const cur = d.current_mode === name;
     return `<tr${cur ? ' style="background:#141a26"' : ''}>
-      <td>${te(name)}${cur ? ` <span class="muted">${te('· current')}</span>` : ''}</td>
+      <td>${te(MODE_LABEL[name] || name)}${cur ? ` <span class="muted">${te('· current')}</span>` : ''}</td>
       <td class="num">${pctf(t.block_rate)}</td>
       <td class="num">${fmt(t.block)}</td>
       <td class="num">${pctf(t.fp_rate)}</td></tr>`;
@@ -1129,14 +1145,14 @@ async function loadAdguard() {
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <label style="font-size:13px">${te('Mode')}
         <select id="agModeSel" style="margin-left:6px;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px;font:inherit">
-          ${MODES.map((m) => `<option value="${m}"${m === d.current_mode ? ' selected' : ''}>${te(m)}</option>`).join('')}
+          ${MODES.map((m) => `<option value="${m}"${m === d.current_mode ? ' selected' : ''}>${te(MODE_LABEL[m] || m)}</option>`).join('')}
         </select>
       </label>
       <span class="muted" id="agModeMsg" style="font-size:12px">${te(MODE_HELP[d.current_mode] || '')}</span>
     </div>
-    <p class="muted" style="margin:14px 0 6px;font-size:12px">${te('Estimated impact over this period')} (${fmt(d.pv)} ${te('pageviews')}). ${esc(window.PVI18N.tk('fp-explainer', '"Est. false-positive" = share of blocked traffic that still showed human interaction — treat it as an upper bound.'))}</p>
+    <p class="muted" style="margin:14px 0 6px;font-size:12px">${te('Estimated impact over this period')} (${fmt(d.pv)} ${te('pageviews')}). ${esc(window.PVI18N.tk('fp-explainer', '"Est. false-positive" = share of blocked traffic that showed pointer or keyboard input. Visits recorded before the pointer split fall back to the old any-interaction bit, which counted scrolling — a scraper scrolls too, so those days read high.'))}</p>
     <table><tr><th>${te('Tier')}</th><th class="num">${te('Block rate')}</th><th class="num">${te('Blocked PV')}</th><th class="num">${te('Est. false-positive')}</th></tr>
-      ${['loose', 'balanced', 'strict'].map(tierRow).join('')}</table>
+      ${TIER_ORDER.map(tierRow).join('')}</table>
     ${trend.some((v) => v > 0) ? `<div style="margin-top:12px;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:12px">${te('Blocked/day')}</span>${sparkline(trend)}</div>` : ''}
     <div class="grid2" style="margin-top:16px">
       <div><h3 style="font-size:13px;margin:0 0 8px">${te('Block reasons')}</h3>

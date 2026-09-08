@@ -71,6 +71,14 @@ export const FLAG = {
    *  session — a session cookie replayed across machines or a farm rotating
    *  environments mid-session (FP-Inconsistent temporal check, IMC 2025) */
   SESSION_DRIFT: 0x400000,
+  /** a DESKTOP device whose browser matches no known family AND whose OS is
+   *  unidentifiable. Real desktop browsers are one of six families; the
+   *  combination is what carries the signal, not any part alone — measured over
+   *  244k pageviews of healthy traffic across 10 sites it appeared on 0.1%,
+   *  while on the site under attack it covered 29.9%. Deliberately scoped to
+   *  desktop: an unrecognised browser on a known mobile OS is an ordinary
+   *  in-app webview and is left alone. */
+  UNIDENTIFIED_DESKTOP: 0x800000,
 } as const;
 
 export type FlagName = keyof typeof FLAG;
@@ -84,6 +92,7 @@ export const FLAG_CONFIG_KEY: Record<FlagName, string> = {
   WEBDRIVER: 'webdriver',
   AUTOMATION_RESIDUE: 'automation_residue',
   UA_CH_MISMATCH: 'ua_clienthints_mismatch',
+  UNIDENTIFIED_DESKTOP: 'unidentified_desktop',
   DATACENTER_ASN: 'datacenter_asn',
   SEC_FETCH_MISSING: 'sec_fetch_missing',
   TZ_IP_MISMATCH: 'timezone_ip_mismatch',
@@ -140,6 +149,8 @@ export const ENV_ONLY_FLAGS: ReadonlySet<FlagName> = new Set<FlagName>([
   'SYNTHETIC_ENV',
   // corporate/legacy proxies downgrade real users to HTTP/1 too — corroboration only
   'HTTP1_MODERN_BROWSER',
+  // a UA this build cannot parse is not by itself proof of anything
+  'UNIDENTIFIED_DESKTOP',
 ]);
 
 /** SQLite predicate matching a search-engine referrer host over a ref_domain
