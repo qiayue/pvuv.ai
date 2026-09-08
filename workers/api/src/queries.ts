@@ -115,15 +115,35 @@ export async function siteTimezone(db: D1Database, siteId: string): Promise<stri
 // raw-events helpers
 // ---------------------------------------------------------------------------
 
+// Per-isolate cache of the partition list. Nearly every dashboard request calls
+// eventTables(), so this sqlite_master lookup was one of the most-executed
+// statements against the database (816 calls in one D1 analytics window) even
+// though its answer changes at most once a month. The set is only ever GROWN,
+// by the consumer, when the first event of a new month arrives.
+//
+// Staleness can therefore only ever HIDE a partition, never invent one — and
+// the only partition that can appear while an isolate is alive is the current
+// month's. So the cache is bypassed whenever it does not already contain the
+// current month: a month rollover is picked up on the very next request instead
+// of after the TTL, and the TTL only covers the case where nothing can change.
+let partitionCache: { names: string[]; at: number } | null = null;
+const PARTITION_TTL_MS = 60_000;
+
 /** Existing events_YYYYMM tables overlapping a UTC [startTs, endTs) span. */
 async function eventTables(db: D1Database, startTs: number, endTs: number): Promise<string[]> {
-  const rows = await db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'events_[0-9][0-9][0-9][0-9][0-9][0-9]'")
-    .all<{ name: string }>();
+  const now = Date.now();
+  const fresh = partitionCache
+    && now - partitionCache.at < PARTITION_TTL_MS
+    && partitionCache.names.includes(`events_${monthSuffix(now)}`);
+  if (!fresh) {
+    const rows = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'events_[0-9][0-9][0-9][0-9][0-9][0-9]'")
+      .all<{ name: string }>();
+    partitionCache = { names: rows.results.map((r) => r.name), at: now };
+  }
   const lo = monthSuffix(startTs);
   const hi = monthSuffix(endTs - 1);
-  return rows.results
-    .map((r) => r.name)
+  return partitionCache!.names
     .filter((n) => { const s = n.slice(7); return s >= lo && s <= hi; })
     .sort();
 }
@@ -363,25 +383,37 @@ export async function realtime(db: D1Database, siteId: string, now: number, wind
   const empty = { window_minutes: windowMin, online: 0, pageviews: 0, minutes: new Array(windowMin).fill(0) };
   const tables = await eventTables(db, startTs, now + 1);
   if (tables.length === 0) return empty;
-  const u = unionOver(tables, 'event, visitor_id, verdict, ts', siteId, startTs, now + 1);
+  // The clean-only predicate is pushed into the partition scan (every figure on
+  // this endpoint is clean-bucket), so bot rows are dropped by the index walk
+  // rather than carried into the aggregate.
+  const u = unionOver(tables, 'event, visitor_id, ts', siteId, startTs, now + 1, "verdict NOT IN ('bot','crawler')");
 
-  const agg = await db.prepare(`
-    SELECT
-      COUNT(DISTINCT CASE WHEN verdict NOT IN ('bot','crawler') THEN visitor_id END) AS online,
-      COALESCE(SUM(event = 'pageview' AND verdict NOT IN ('bot','crawler')), 0) AS pageviews
-    FROM (${u.sql})
-  `).bind(...u.binds).first<{ online: number; pageviews: number }>();
-
-  const perMin = await db.prepare(`
-    SELECT CAST((ts - ?) / 60000 AS INTEGER) AS m, COUNT(*) AS pv
-    FROM (${u.sql})
-    WHERE event = 'pageview' AND verdict NOT IN ('bot','crawler')
-    GROUP BY m
-  `).bind(startTs, ...u.binds).all<{ m: number; pv: number }>();
+  // ONE statement, ONE scan. The totals and the sparkline used to be two
+  // queries over the same 30-minute window — the same rows read twice, two
+  // round-trips, and together the most database time of any pair on the
+  // dashboard. A materialised CTE reads the window once and both aggregates
+  // run off the temp table; the two result shapes are stitched back together
+  // with a compound SELECT and told apart by the sentinel m = -1.
+  const rows = await db.prepare(`
+    WITH ev AS MATERIALIZED (${u.sql})
+    SELECT -1 AS m,
+           COUNT(DISTINCT visitor_id) AS n,
+           COALESCE(SUM(event = 'pageview'), 0) AS pv
+      FROM ev
+    UNION ALL
+    SELECT CAST((ts - ?) / 60000 AS INTEGER) AS m, COUNT(*) AS n, 0 AS pv
+      FROM ev WHERE event = 'pageview'
+     GROUP BY m
+  `).bind(...u.binds, startTs).all<{ m: number; n: number; pv: number }>();
 
   const minutes = new Array(windowMin).fill(0);
-  for (const r of perMin.results) if (r.m >= 0 && r.m < windowMin) minutes[r.m] = r.pv;
-  return { window_minutes: windowMin, online: agg?.online ?? 0, pageviews: agg?.pageviews ?? 0, minutes };
+  let online = 0;
+  let pageviews = 0;
+  for (const r of rows.results) {
+    if (r.m === -1) { online = r.n; pageviews = r.pv; }
+    else if (r.m >= 0 && r.m < windowMin) minutes[r.m] = r.n;
+  }
+  return { window_minutes: windowMin, online, pageviews, minutes };
 }
 
 // ---------------------------------------------------------------------------
@@ -710,12 +742,21 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
       GROUP BY hostname, path ORDER BY pv DESC LIMIT ?
     `).bind(...u.binds, limit).all<Record<string, unknown> & { hostname: string; path: string }>();
 
-    const bounceRows = await db.prepare(`
+    // Bounces only for the pages actually being displayed. Without the IN list
+    // this grouped EVERY entry page in the period and streamed the lot back —
+    // measured at ~6k rows per call to fill in 20 of them, the worst
+    // read-amplification on the dashboard. The aggregate still comes off the
+    // same (site_id, started_at) index walk; what shrinks is the result set.
+    // Hostname is still matched in the map below, not in SQL, so a path shared
+    // by several hostnames stays separated.
+    const paths = [...new Set(res.results.map((r) => r.path))];
+    const bounceRows = paths.length === 0 ? { results: [] as { hostname: string; path: string; bounces: number }[] } : await db.prepare(`
       SELECT entry_host AS hostname, entry_page AS path, COUNT(*) AS bounces
       FROM sessions
-      WHERE site_id = ? AND is_bounce = 1 AND started_at >= ? AND started_at < ?${sf.sql ? ` AND ${sf.sql}` : ''}
+      WHERE site_id = ? AND is_bounce = 1 AND started_at >= ? AND started_at < ?
+        AND entry_page IN (${paths.map(() => '?').join(',')})${sf.sql ? ` AND ${sf.sql}` : ''}
       GROUP BY entry_host, entry_page
-    `).bind(siteId, period.startTs, period.endTs, ...sf.binds).all<{ hostname: string; path: string; bounces: number }>();
+    `).bind(siteId, period.startTs, period.endTs, ...paths, ...sf.binds).all<{ hostname: string; path: string; bounces: number }>();
     const bmap = new Map(bounceRows.results.map((r) => [`${r.hostname} ${r.path}`, r.bounces]));
     const rows = res.results.map((r) => ({ ...r, bounces: bmap.get(`${r.hostname} ${r.path}`) ?? 0 }));
     return { dim, rows };
