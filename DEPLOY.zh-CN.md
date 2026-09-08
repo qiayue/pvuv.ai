@@ -614,7 +614,7 @@ npm run deploy:proxy          # 仅当你用了第一方反代
 
 本次升级需要注意：
 
-- **迁移 0016–0019**（渠道 + 网页指标 + 公开令牌、行为信号列、传输层指纹、保存的漏斗）用上面的
+- **迁移 0016–0020**（渠道 + 网页指标 + 公开令牌、行为信号列、传输层指纹、保存的漏斗，以及删除两个从未被读取的 `visitor_profiles` 索引）用上面的
   命令应用即可；consumer 和每小时 cron 还会自动修复旧的月分区，不需要手动 `ALTER TABLE`。
 - **保留策略新增三个窗口**（`pulse_events_days`、`bot_events_days`、`profiles_idle_days`）。
   从 `config.example.toml` 把它们复制进你的 `config.local.toml`；没复制之前按内置默认值执行。

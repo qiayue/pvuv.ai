@@ -688,8 +688,9 @@ npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
 
 Notes for this release:
 
-- **Migrations 0016–0019** (channel + web vitals + public token, behavior
-  signal columns, transport fingerprint, saved funnels) apply with the command above; the
+- **Migrations 0016–0020** (channel + web vitals + public token, behavior
+  signal columns, transport fingerprint, saved funnels, and dropping two
+  never-read `visitor_profiles` indexes) apply with the command above; the
   consumer and hourly cron also self-heal older monthly partitions, so no
   manual `ALTER TABLE` is needed.
 - **Retention got three new windows** (`pulse_events_days`, `bot_events_days`,

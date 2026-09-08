@@ -25,6 +25,22 @@ import { SESSION_IDLE_MS } from '../../../shared/ids';
  *  at the site's midnight, so one day is an upper bound with slack. Used to
  *  bound session lookups to a window instead of a site's whole history. */
 const SESSION_MAX_SPAN_MS = 86_400_000;
+
+/** Local hour up to which the hourly job still recomputes YESTERDAY. Ingest
+ *  clamps ts to ±10 min and sessions close 30 min after their last event, so
+ *  the previous day is final long before this; the margin is generous. */
+const SETTLE_HOURS = 2;
+
+/** Hour-of-day (0–23) at `ts` in an IANA timezone. */
+function localHour(ts: number, tz: string): number {
+  try {
+    // hourCycle 'h23', not hour12:false — the latter formats midnight as "24"
+    // on some ICU builds, which would skip the one run that matters most.
+    return Number(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }).format(new Date(ts)));
+  } catch {
+    return new Date(ts).getUTCHours(); // unknown zone → UTC, same as localYMD's fallback
+  }
+}
 import { FLAG, FAKE_SEARCH_MASK, searchRefDomainSql } from '../../../shared/flags';
 import { monthSuffix, eventsTableName, eventsIndexDDL, ensureEventColumns, RESERVED_EVENTS_SQL } from '../../../shared/events';
 
@@ -44,8 +60,21 @@ export async function runHourlyRollup(env: Env): Promise<void> {
   for (const site of sites.results) {
     const tz = site.timezone || 'UTC';
     const t = localYMD(now, tz);
-    const yday = addDays(t.y, t.m0, t.d, -1);
-    for (const ymd of [t, yday]) {
+    const days = [t];
+    // Yesterday only needs recomputing while it can still change, which is a
+    // bounded window rather than all day:
+    //   * ingest clamps an event's ts to within TS_TOLERANCE (10 min) of the
+    //     moment it arrives, so no event can join yesterday more than ~10 min
+    //     after local midnight;
+    //   * the zero-interaction pass needs yesterday's sessions to be closed,
+    //     which happens SESSION_IDLE (30 min) after its last event.
+    // Both are settled well before 02:00 local, so the runs after that were
+    // recomputing an unchangeable day — measured as roughly half of all the
+    // rollup's database work. The daily batch still rolls yesterday up for
+    // every site (a final, idempotent pass), so a missed run here cannot
+    // leave it stale either.
+    if (localHour(now, tz) <= SETTLE_HOURS) days.push(addDays(t.y, t.m0, t.d, -1));
+    for (const ymd of days) {
       const span = localDaySpan(tz, ymd.y, ymd.m0, ymd.d);
       await rollupSiteDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing, idleCutoff);
     }

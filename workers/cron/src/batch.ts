@@ -150,6 +150,12 @@ export async function runDailyBatch(env: Env): Promise<void> {
   // ---- 7. recompute the daily rollups the re-verdict touched -----------------
   await recomputeAffectedRollups(db, affectedSites, start, end, existing);
 
+  // Final settle for the previous local day of EVERY site. The hourly job only
+  // recomputes yesterday during the couple of hours in which it can still
+  // change (see SETTLE_HOURS in rollup.ts); this once-a-day pass means a missed
+  // or failed hourly run in that narrow window can never leave a day stale.
+  await settleYesterday(db, existing);
+
   await writeWm(db, CLUSTER_WM_KEY, end);
   console.log(`batch: window=${new Date(start).toISOString()}..${new Date(end).toISOString()} clusters=${clusters.length} (block=${clusters.filter((c) => c.action === 'block').length}) sites_reverdicted=${affectedSites.size}`);
 }
@@ -532,6 +538,25 @@ async function sessionDriftReverdict(
 // ---------------------------------------------------------------------------
 // 7. recompute the (site, local-day) rollups the re-verdict touched
 // ---------------------------------------------------------------------------
+
+/** Roll up the previous local day for every active site, once. Idempotent. */
+async function settleYesterday(db: D1Database, existing: Set<string>): Promise<void> {
+  const now = Date.now();
+  const sites = await db
+    .prepare("SELECT site_id, COALESCE(timezone, 'UTC') AS timezone FROM sites WHERE status = 'active'")
+    .all<{ site_id: string; timezone: string }>();
+  for (const s of sites.results) {
+    const tz = s.timezone || 'UTC';
+    const t = localYMD(now, tz);
+    const y = addDays(t.y, t.m0, t.d, -1);
+    const span = localDaySpan(tz, y.y, y.m0, y.d);
+    try {
+      await rollupSiteDay(db, s.site_id, span.day, span.startTs, span.endTs, existing);
+    } catch (err) {
+      console.error(`batch: settle rollup failed for ${s.site_id} ${span.day}`, err);
+    }
+  }
+}
 
 async function recomputeAffectedRollups(
   db: D1Database, siteIds: Set<string>, startTs: number, endTs: number, existing: Set<string>,

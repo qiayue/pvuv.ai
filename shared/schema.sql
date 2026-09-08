@@ -156,8 +156,10 @@ CREATE TABLE visitor_profiles (
   first_seen INTEGER, last_seen INTEGER,
   PRIMARY KEY (site_id, visitor_id)
 );
-CREATE INDEX idx_vp_fp   ON visitor_profiles(fp_hash);
-CREATE INDEX idx_vp_ip24 ON visitor_profiles(ip24_hash);
+-- NOTE: visitor_profiles is only ever read by its primary key. Indexes on
+-- fp_hash / ip24_hash were dropped in migration 0020 — the cluster analysis
+-- groups those columns over the EVENTS tables, so the indexes only cost a
+-- write on every event. Re-add one if a query ever looks a profile up by hash.
 
 -- daily rollups (with clean bucket)
 CREATE TABLE rollup_page_daily (
