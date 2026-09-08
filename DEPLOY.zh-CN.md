@@ -618,6 +618,9 @@ npm run deploy:proxy          # 仅当你用了第一方反代
   命令应用即可；consumer 和每小时 cron 还会自动修复旧的月分区，不需要手动 `ALTER TABLE`。
 - **保留策略新增三个窗口**（`pulse_events_days`、`bot_events_days`、`profiles_idle_days`）。
   从 `config.example.toml` 把它们复制进你的 `config.local.toml`；没复制之前按内置默认值执行。
+- **必须重新部署 `cron`。** 每小时 rollup 里最重的两条语句已重写（逐页的相关子查询
+  改为一次集合运算；原本扫描站点全部历史会话的子查询现在限定在时间窗内）。在参考
+  部署上这两条占了全部数据库时间的约 72%；计算结果完全不变，无需回填。
 - **SDK 变大了**（行为心跳、网页指标、表单/报错信号）：按上面步骤重建并复制 `f.js`——
   旧 loader 仍能工作，只是上报的信息更少。
 

@@ -695,6 +695,11 @@ Notes for this release:
 - **Retention got three new windows** (`pulse_events_days`, `bot_events_days`,
   `profiles_idle_days`). Copy them into your `config.local.toml` from
   `config.example.toml`; until you do, the shipped defaults apply.
+- **Redeploy `cron`.** The hourly rollup's two heaviest statements were
+  rewritten (a per-page correlated subquery became one set-based pass, and a
+  session lookup that scanned a site's whole history is now bounded to the
+  window). On the reference deployment those two accounted for ~72% of all
+  database time; the results are unchanged, so no backfill is needed.
 - **The SDK grew** (behavior heartbeats, web vitals, form/error signals):
   rebuild and recopy `f.js` as shown — old loaders keep working, they just
   report less.

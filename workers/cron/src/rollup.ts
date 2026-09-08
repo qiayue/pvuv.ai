@@ -20,6 +20,11 @@
 import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
 import { SESSION_IDLE_MS } from '../../../shared/ids';
+
+/** Longest a session can possibly span: it is cut after 30 min idle and again
+ *  at the site's midnight, so one day is an upper bound with slack. Used to
+ *  bound session lookups to a window instead of a site's whole history. */
+const SESSION_MAX_SPAN_MS = 86_400_000;
 import { FLAG, FAKE_SEARCH_MASK, searchRefDomainSql } from '../../../shared/flags';
 import { monthSuffix, eventsTableName, eventsIndexDDL, ensureEventColumns, RESERVED_EVENTS_SQL } from '../../../shared/events';
 
@@ -235,11 +240,20 @@ export async function rollupSiteDay(
         AND verdict != 'crawler'
         AND session_id IN (
           SELECT session_id FROM sessions s
-          WHERE s.site_id = ? AND s.had_interaction = 0
+          WHERE s.site_id = ?
+            -- Bound the candidate sessions to the window they could possibly
+            -- have a pageview in. Without this the subquery matches on site_id
+            -- alone and walks EVERY session the site has ever had, so the cost
+            -- of this hourly statement grows with the lifetime of the site
+            -- (measured: 36k rows read per run and climbing). A session is cut
+            -- after 30 min idle or at midnight, so it can never span more than
+            -- a day — one day of slack before startTs is provably enough.
+            AND s.started_at >= ? AND s.started_at < ?
+            AND s.had_interaction = 0
             AND COALESCE(s.duration_ms, 0) = 0
             AND COALESCE(s.last_pageview_at, s.started_at) < ?
         )
-    `).bind(siteId, startTs, endTs, siteId, idleCutoff));
+    `).bind(siteId, startTs, endTs, siteId, startTs - SESSION_MAX_SPAN_MS, endTs, idleCutoff));
   }
 
   // --- rollup_page_daily ---------------------------------------------------
@@ -263,17 +277,29 @@ export async function rollupSiteDay(
   // this site + local day. Match hostname strictly — a NULL entry_host (only
   // possible for legacy pre-0003 sessions) is NOT matched to every hostname
   // row, which would double-count a shared path across hostnames.
+  //
+  // Counted ONCE for the whole day and joined, not once per page row. As a
+  // correlated subquery this was O(pages x sessions): the plan showed a
+  // CORRELATED SCALAR SUBQUERY re-scanning the day's sessions for every row of
+  // rollup_page_daily, which on production measured 436k rows read per run and
+  // 61% of all database time. The aggregate below is materialised once
+  // (MATERIALIZE b in the plan), making it O(sessions + pages).
+  //
+  // Rows with no bounce keep the 0 written by the INSERT OR REPLACE above —
+  // which runs first in the same batch and rewrites every (hostname, path)
+  // that has events in the window — so the join needs no zeroing pass.
+  const bounceIdx = stmts.length;
   stmts.push(db.prepare(`
-    UPDATE rollup_page_daily SET bounces = (
-      SELECT COUNT(*) FROM sessions s
-      WHERE s.site_id = rollup_page_daily.site_id
-        AND s.entry_page = rollup_page_daily.path
-        AND s.entry_host = rollup_page_daily.hostname
-        AND s.is_bounce = 1
-        AND s.started_at >= ? AND s.started_at < ?
-    )
-    WHERE site_id = ? AND day = ?
-  `).bind(startTs, endTs, siteId, day));
+    UPDATE rollup_page_daily SET bounces = b.n
+    FROM (
+      SELECT entry_host AS h, entry_page AS p, COUNT(*) AS n
+      FROM sessions
+      WHERE site_id = ? AND is_bounce = 1 AND started_at >= ? AND started_at < ?
+      GROUP BY entry_host, entry_page
+    ) AS b
+    WHERE rollup_page_daily.site_id = ? AND rollup_page_daily.day = ?
+      AND rollup_page_daily.hostname = b.h AND rollup_page_daily.path = b.p
+  `).bind(siteId, startTs, endTs, siteId, day));
 
   // --- rollup_source_daily (from sessions) ---------------------------------
   stmts.push(db.prepare(`
@@ -326,31 +352,49 @@ export async function rollupSiteDay(
 
   // session-derived metrics (bounce rate §9.3, avg dwell). Two bounce rates:
   // GA4 engagement-based (is_bounce) and single-page (UA/Plausible style).
+  // All four come from the same day of sessions, so they are computed in ONE
+  // pass with a row-value assignment (the same form the hot-tally update above
+  // uses) instead of four separate scalar subqueries each re-scanning the day.
   stmts.push(db.prepare(`
     UPDATE rollup_site_daily SET
-      bounce_rate = (
-        SELECT ROUND(AVG(CASE WHEN s.is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4)
-        FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
-      ),
-      bounce_rate_single = (
-        SELECT ROUND(AVG(CASE WHEN s.pageviews <= 1 THEN 1.0 ELSE 0.0 END), 4)
-        FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
-      ),
-      avg_duration_ms = (
-        SELECT CAST(AVG(s.duration_ms) AS INTEGER)
-        FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
-      ),
-      -- Plausible/UA visit duration: last−first pageview per session, exit page
-      -- and single-page visits count as 0 (last_pageview_at = started_at → 0).
-      -- Sessions predating migration 0010 have NULL last_pageview_at (unknown) —
-      -- AVG skips them rather than counting them as 0 and diluting the average.
-      visit_duration_ms = (
-        SELECT CAST(AVG(CASE WHEN s.last_pageview_at IS NOT NULL
-                             THEN s.last_pageview_at - s.started_at END) AS INTEGER)
+      (bounce_rate, bounce_rate_single, avg_duration_ms, visit_duration_ms) = (
+        SELECT
+          ROUND(AVG(CASE WHEN s.is_bounce = 1 THEN 1.0 ELSE 0.0 END), 4),
+          ROUND(AVG(CASE WHEN s.pageviews <= 1 THEN 1.0 ELSE 0.0 END), 4),
+          CAST(AVG(s.duration_ms) AS INTEGER),
+          -- Plausible/UA visit duration: last−first pageview per session, exit
+          -- page and single-page visits count as 0 (last_pageview_at =
+          -- started_at → 0). Sessions predating migration 0010 have NULL
+          -- last_pageview_at (unknown) — AVG skips them rather than counting
+          -- them as 0 and diluting the average.
+          CAST(AVG(CASE WHEN s.last_pageview_at IS NOT NULL
+                        THEN s.last_pageview_at - s.started_at END) AS INTEGER)
         FROM sessions s WHERE s.site_id = ? AND s.started_at >= ? AND s.started_at < ?
       )
     WHERE site_id = ? AND day = ?
-  `).bind(siteId, startTs, endTs, siteId, startTs, endTs, siteId, startTs, endTs, siteId, startTs, endTs, siteId, day));
+  `).bind(siteId, startTs, endTs, siteId, day));
 
-  await db.batch(stmts);
+  try {
+    await db.batch(stmts);
+  } catch (err) {
+    // The bounce update uses UPDATE ... FROM (SQLite >= 3.33). D1 is well past
+    // that, but a batch failure here would cost a site its entire rollup for
+    // the day, so rather than risk that on a parser difference we retry once
+    // with the universally-supported correlated form. Every statement in the
+    // batch is idempotent (INSERT OR REPLACE / flag-guarded UPDATEs), so the
+    // retry is also the right response to a transient D1 error.
+    console.error(`rollup ${siteId} ${day}: batch failed, retrying with the legacy bounce update`, err);
+    stmts[bounceIdx] = db.prepare(`
+      UPDATE rollup_page_daily SET bounces = (
+        SELECT COUNT(*) FROM sessions s
+        WHERE s.site_id = rollup_page_daily.site_id
+          AND s.entry_page = rollup_page_daily.path
+          AND s.entry_host = rollup_page_daily.hostname
+          AND s.is_bounce = 1
+          AND s.started_at >= ? AND s.started_at < ?
+      )
+      WHERE site_id = ? AND day = ?
+    `).bind(startTs, endTs, siteId, day);
+    await db.batch(stmts);
+  }
 }
