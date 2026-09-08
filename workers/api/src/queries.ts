@@ -984,6 +984,9 @@ export interface Alert {
   values?: Record<string, string>;
 }
 
+/** Filter dimensions that make the source-concentration alert tautological. */
+const SOURCE_DIMS = new Set(['source', 'channel', 'referrer', 'utm_source', 'ft_source']);
+
 export async function alerts(db: D1Database, siteId: string, period: Period, filters: Filter[] = []) {
   const A = { ...ALERT_DEFAULTS, ...(CONFIG.alerts ?? {}) };
   // pv/verdicts + the flag tallies (datacenter / no-interaction / forged-search
@@ -1000,7 +1003,7 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
   };
   // thresholds ride along so the dashboard can show every monitored ratio
   // ALWAYS — with how far it is from its line — not only once it trips (§11).
-  if (pv < A.min_pageviews) return { alerts: [] as Alert[], pv, stats, thresholds: A, muted: true };
+  if (pv < A.min_pageviews) return { alerts: [] as Alert[], pv, stats, thresholds: A, muted: true, filtered: filters.length > 0 };
 
   const s = await sessionAgg(db, siteId, period.startTs, period.endTs, filters);
   const sf = seFilter(filters);
@@ -1049,7 +1052,13 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
     'Very high pages per visitor', `${ppv.toFixed(1)} pages/visitor (alert above ${A.pages_per_visitor_high}) — can indicate scraping.`,
     { value: ppv.toFixed(1), threshold: String(A.pages_per_visitor_high) });
 
-  if (topSrc && s.sessions >= 30) {
+  // Concentration is only a finding about UNFILTERED traffic. Filter the
+  // dashboard to one source and this alert fires at 100% by construction —
+  // "ChatGPT is 100% of sessions" is a restatement of the filter, not a
+  // diagnosis. The other alerts stay meaningful on a slice ("this slice is 80%
+  // bot" is worth knowing), so only this one is suppressed.
+  const groupedAway = filters.some((f) => SOURCE_DIMS.has(f.dim));
+  if (topSrc && s.sessions >= 30 && !groupedAway) {
     // denominator from the SAME table+predicate as topSrc.n, so the share stays
     // exact — ev.sessions is a per-day sum and would inflate the denominator
     const share = topSrc.n / s.sessions;
@@ -1058,7 +1067,8 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
       { key: String(topSrc.key), share: pct(share), threshold: pct(A.source_concentration) });
   }
 
-  return { alerts: out, pv, stats, thresholds: A, muted: false };
+  // the console labels the panel when the numbers describe a slice, not the site
+  return { alerts: out, pv, stats, thresholds: A, muted: false, filtered: filters.length > 0 };
 }
 
 // ---------------------------------------------------------------------------

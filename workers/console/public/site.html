@@ -1012,8 +1012,10 @@ async function loadAlerts() {
   try { res = await get('alerts'); } catch { el.innerHTML = ''; renderHealth(null); return res; }
   el.innerHTML = (res.alerts || []).map((x) => {
     const crit = x.severity === 'critical';
+    // say so when the numbers describe the filtered slice rather than the site
+    const scope = res.filtered ? ` <span class="muted" style="font-weight:400">${te('· within the current filter')}</span>` : '';
     return `<div class="alert alert-${crit ? 'critical' : 'warning'}"><span class="ico">${crit ? '⛔' : '⚠️'}</span>`
-      + `<span class="body"><b>${esc(te(x.title))}</b><span>${esc(alertText(x))}</span></span></div>`;
+      + `<span class="body"><b>${esc(te(x.title))}</b>${scope}<span>${esc(alertText(x))}</span></span></div>`;
   }).join('');
   renderHealth(res); // the strip shows the same ratios even when nothing trips
   return res;
