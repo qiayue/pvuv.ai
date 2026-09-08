@@ -19,12 +19,11 @@
 
 import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
-import { SESSION_IDLE_MS } from '../../../shared/ids';
+import { SESSION_IDLE_MS, SESSION_MAX_SPAN_MS } from '../../../shared/ids';
 
 /** Longest a session can possibly span: it is cut after 30 min idle and again
  *  at the site's midnight, so one day is an upper bound with slack. Used to
  *  bound session lookups to a window instead of a site's whole history. */
-const SESSION_MAX_SPAN_MS = 86_400_000;
 
 /** Local hour up to which the hourly job still recomputes YESTERDAY. Ingest
  *  clamps ts to ±10 min and sessions close 30 min after their last event, so
@@ -238,7 +237,13 @@ function engagedUpdate(db: D1Database, tables: string[], siteId: string, startTs
           COALESCE(SUM(CASE WHEN e.verdict = 'crawler' THEN 1 ELSE 0 END), 0)
         FROM (${parts.join(' UNION ALL ')}) e
         JOIN sessions s ON s.site_id = e.site_id AND s.session_id = e.session_id
-        WHERE s.had_interaction = 1
+        -- pointer/keyboard, not "the page moved". had_interaction folded a
+        -- programmatic scroll in with real input, which is free for a headless
+        -- scraper — it made the ad-guard false-positive estimate measure how
+        -- many blocked bots scrolled. Rows written before the split have
+        -- had_pointer NULL and keep the old meaning rather than silently
+        -- reading as "not engaged", which would understate the estimate.
+        WHERE COALESCE(s.had_pointer, s.had_interaction) = 1
       )
     WHERE site_id = ? AND day = ?
   `).bind(...binds, siteId, day);
@@ -278,7 +283,10 @@ export async function rollupSiteDay(
             -- after 30 min idle or at midnight, so it can never span more than
             -- a day — one day of slack before startTs is provably enough.
             AND s.started_at >= ? AND s.started_at < ?
-            AND s.had_interaction = 0
+            -- explicit 0 only: NULL means the loader predates the pointer
+            -- split, and treating "unknown" as "no pointer" would flag every
+            -- real visitor for the hour the cached f.js takes to roll over
+            AND COALESCE(s.had_pointer, s.had_interaction) = 0
             AND COALESCE(s.duration_ms, 0) = 0
             AND COALESCE(s.last_pageview_at, s.started_at) < ?
         )

@@ -25,6 +25,7 @@ import {
   type EventRow,
 } from '../../../shared/events';
 import { classifyChannel } from '../../../shared/channel';
+import { SESSION_MAX_SPAN_MS } from '../../../shared/ids';
 
 export interface Env {
   DB: D1Database;
@@ -133,10 +134,10 @@ function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1Prep
     INSERT INTO sessions (
       session_id, site_id, visitor_id, user_id,
       entry_page, exit_page, entry_host, pageviews, events_count, duration_ms,
-      had_interaction, is_bounce,
+      had_interaction, had_pointer, is_bounce,
       source, medium, campaign, referrer, country, device_type,
       bot_score, verdict, bot_flags, started_at, last_active_at, last_pageview_at, channel
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?21, ?6, ?25, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?23, ?24)
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?21, ?6, ?25, ?7, ?8, ?26, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?23, ?24)
     ON CONFLICT(site_id, session_id) DO UPDATE SET
       user_id         = COALESCE(excluded.user_id, sessions.user_id),
       exit_page       = CASE WHEN ?6 = 1 THEN excluded.exit_page ELSE sessions.exit_page END,
@@ -145,8 +146,19 @@ function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1Prep
       last_pageview_at = CASE WHEN ?6 = 1 THEN MAX(COALESCE(sessions.last_pageview_at, 0), ?19) ELSE sessions.last_pageview_at END,
       pageviews       = sessions.pageviews + ?6,
       events_count    = sessions.events_count + ?25,
-      duration_ms     = sessions.duration_ms + ?7,
+      -- clamped: a backgrounded tab keeps sending page_pulse, which kept
+      -- extending last_active_at so the session never idled out. Production
+      -- held sessions of 4.3 and 7.4 DAYS, and 18% of one site's sessions ran
+      -- past 30 minutes, dragging the mean dwell to 35 min against a 4 min
+      -- median-ish visit duration. A session cannot outlive its own span.
+      duration_ms     = MIN(sessions.duration_ms + ?7, ${SESSION_MAX_SPAN_MS}),
       had_interaction = MAX(sessions.had_interaction, excluded.had_interaction),
+      -- tri-state: stays NULL only while NEITHER side has ever reported, so an
+      -- old loader's silence is never mistaken for "no pointer"
+      had_pointer     = CASE
+                          WHEN sessions.had_pointer IS NULL AND excluded.had_pointer IS NULL THEN NULL
+                          ELSE MAX(COALESCE(sessions.had_pointer, 0), COALESCE(excluded.had_pointer, 0))
+                        END,
       is_bounce       = CASE
                           WHEN sessions.pageviews + ?6 >= 2 THEN 0
                           WHEN sessions.duration_ms + ?7 >= ?22 THEN 0
@@ -191,6 +203,7 @@ function sessionUpsert(db: D1Database, row: EventRow, engagedMs: number): D1Prep
       utmMedium: row.utm_medium, clickIdType: row.click_id_type,
     }),
     counted,                                          // 25 events_count increment
+    row.had_pointer,                                  // 26 pointer/keyboard only (NULL = old loader)
   );
 }
 

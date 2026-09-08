@@ -29,6 +29,13 @@ export const COOKIE = {
 export const VISITOR_TTL_DAYS = 13 * 30 + 6; // 396
 /** A new session starts after 30 min of inactivity (§3). */
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
+/** Hard ceiling on how long one session may be said to have lasted. A session
+ *  is cut after 30 min idle or at local midnight, so it can never legitimately
+ *  span more than a day — but a backgrounded tab keeps sending page_pulse,
+ *  which kept refreshing last_active_at and let accumulated dwell run to 4–7
+ *  DAYS in production. Used to clamp sessions.duration_ms on write and to
+ *  bound the rollup's candidate-session scans. */
+export const SESSION_MAX_SPAN_MS = 86_400_000;
 
 // ---------------------------------------------------------------------------
 // ID generation

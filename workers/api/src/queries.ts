@@ -1597,7 +1597,7 @@ export async function visitorProfile(db: D1Database, siteId: string, vid: string
   ).bind(siteId, vid).first();
 
   const sessions = await db.prepare(`
-    SELECT session_id, entry_page, exit_page, pageviews, duration_ms, had_interaction,
+    SELECT session_id, entry_page, exit_page, pageviews, duration_ms, had_interaction, had_pointer,
            is_bounce, source, medium, campaign, bot_score, verdict, started_at, last_active_at
     FROM sessions WHERE site_id = ? AND visitor_id = ? ORDER BY started_at DESC LIMIT 50
   `).bind(siteId, vid).all();
@@ -1659,7 +1659,7 @@ export async function adguardImpact(db: D1Database, siteId: string, period: Peri
   };
 
   // Verdict counts + "engaged" pageviews (session showed human interaction —
-  // click/scroll/keypress, read from sessions.had_interaction; what balanced/
+  // pointer/keyboard, read from sessions.had_pointer; what balanced/
   // strict gate on and what the fp estimate measures). Completed days come from
   // rollup_site_daily's pre-aggregated columns; only the current day runs the
   // events↔sessions JOIN live. Previously this JOIN scanned the WHOLE period on
@@ -1686,7 +1686,7 @@ export async function adguardImpact(db: D1Database, siteId: string, period: Peri
     for (const t of await eventTables(db, split.today.startTs, split.today.endTs)) {
       const rows = await db.prepare(`
         SELECT e.verdict AS verdict, COUNT(*) AS n,
-          SUM(CASE WHEN s.had_interaction = 1 THEN 1 ELSE 0 END) AS eng
+          SUM(CASE WHEN COALESCE(s.had_pointer, s.had_interaction) = 1 THEN 1 ELSE 0 END) AS eng
         FROM ${t} e LEFT JOIN sessions s ON s.site_id = e.site_id AND s.session_id = e.session_id
         WHERE e.site_id = ? AND e.event = 'pageview' AND e.ts >= ? AND e.ts < ?
         GROUP BY e.verdict

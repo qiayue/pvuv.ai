@@ -36,8 +36,16 @@ export interface IncomingEvent {
   d?: number;
   /** scroll_depth 0–100 (page_leave) */
   sd?: number;
-  /** had_interaction 0/1 */
+  /** had_interaction 0/1 — ANY of mousemove/touchstart/scroll/keydown */
   hi?: 0 | 1;
+  /** had_pointer 0/1 — pointer or keyboard ONLY (mousemove/touchstart/keydown).
+   *  Split out from `hi` because a programmatic scroll is free for a headless
+   *  scraper (they scroll to trigger lazy-loading), so `hi` alone cannot tell a
+   *  human from a bot: production measured 12–56% of bot-verdicted sessions
+   *  carrying hi=1, and one site where the suspect bucket interacted MORE than
+   *  the clean bucket. Absent (undefined) from an older loader — see
+   *  EventRow.had_pointer for why that must stay distinguishable from 0. */
+  hp?: 0 | 1;
   /** authenticity signals, obfuscated (§4.4, shared/flags.ts XF) */
   x?: XPayload;
   /** first-touch attribution snapshot from _pv_ft (§3) */
@@ -103,6 +111,12 @@ export interface EventRow {
   duration_ms: number | null;
   scroll_depth: number | null;
   had_interaction: number;
+  /** Pointer/keyboard interaction only. NULL means UNKNOWN — the loader that
+   *  sent this event predates the split — and must never be read as "no
+   *  pointer": for the ~1h the cached f.js takes to roll over, every real
+   *  visitor would otherwise look like a zero-interaction bot. Only an explicit
+   *  0 is evidence. */
+  had_pointer: number | null;
   revenue: number | null;
   revenue_usd: number | null;
   currency: string | null;
@@ -150,7 +164,7 @@ export const EVENT_COLUMNS = [
   'browser', 'os', 'device_type',
   'screen_w', 'screen_h', 'lang',
   'ip_hash', 'ip24_hash', 'asn', 'asn_type', 'fp_hash',
-  'duration_ms', 'scroll_depth', 'had_interaction',
+  'duration_ms', 'scroll_depth', 'had_interaction', 'had_pointer',
   'revenue', 'revenue_usd', 'currency', 'props',
   'ft_source', 'ft_medium', 'ft_campaign', 'ft_referrer',
   'bot_score', 'verdict', 'bot_flags', 'score_stage', 'bot_category',
@@ -246,6 +260,8 @@ export const EVENT_LATE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = 
   { name: 'tls_fp', ddl: 'TEXT' },
   { name: 'tcp_rtt', ddl: 'INTEGER' },
   { name: 'http_protocol', ddl: 'TEXT' },
+  // pointer/keyboard interaction, split out of had_interaction — migration 0021
+  { name: 'had_pointer', ddl: 'INTEGER' },
 ];
 
 /** Minimal structural shape of what this helper needs from D1, so shared/ does
@@ -294,7 +310,7 @@ export function eventsTableDDL(suffix: string): string[] {
       ip_hash TEXT, ip24_hash TEXT,
       asn INTEGER, asn_type TEXT,
       fp_hash TEXT,
-      duration_ms INTEGER, scroll_depth INTEGER, had_interaction INTEGER DEFAULT 0,
+      duration_ms INTEGER, scroll_depth INTEGER, had_interaction INTEGER DEFAULT 0, had_pointer INTEGER,
       revenue REAL, revenue_usd REAL, currency TEXT,
       props TEXT,
       ft_source TEXT, ft_medium TEXT, ft_campaign TEXT, ft_referrer TEXT,

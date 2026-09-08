@@ -658,10 +658,19 @@ import type { XPayload } from '../../shared/flags';
   // interaction & dwell tracking (behavioral signals, §4.4)
   // -------------------------------------------------------------------------
 
+  // Two channels, deliberately. A `scroll` event costs a headless scraper
+  // nothing — they scroll to trigger lazy-loading — so folding it in with
+  // pointer/keyboard produced a bit that says "the page moved", not "a human is
+  // here": production measured 12–56% of bot-verdicted sessions carrying
+  // interaction, and one site where the suspect bucket interacted MORE than the
+  // clean bucket. `pointed` is the half a bot has to work for; `interacted`
+  // stays as-is so the ad-guard gates and dwell logic keep their meaning.
   let interacted = false;
-  (['mousemove', 'touchstart', 'scroll', 'keydown'] as const).forEach((t) => {
-    win.addEventListener(t, () => { interacted = true; }, { once: true, passive: true });
+  let pointed = false;
+  (['mousemove', 'touchstart', 'keydown'] as const).forEach((t) => {
+    win.addEventListener(t, () => { interacted = true; pointed = true; }, { once: true, passive: true });
   });
+  win.addEventListener('scroll', () => { interacted = true; }, { once: true, passive: true });
 
   let visibleSince = doc.visibilityState === 'visible' ? Date.now() : 0;
   let unreportedDwell = 0;
@@ -731,6 +740,7 @@ import type { XPayload } from '../../shared/flags';
       sh: screen.height,
       lang: nav.language,
       hi: interacted ? 1 : 0,
+      hp: pointed ? 1 : 0,
       x,
       ft,
       ts: Date.now(),

@@ -319,6 +319,10 @@ export async function enrichEvent(
     duration_ms: typeof ev.d === 'number' ? Math.max(0, Math.min(ev.d, 24 * 3600 * 1000)) : null,
     scroll_depth: typeof ev.sd === 'number' ? Math.max(0, Math.min(ev.sd, 100)) : null,
     had_interaction: ev.hi === 1 ? 1 : 0,
+    // tri-state on purpose: an older loader sends no `hp` at all, and folding
+    // that to 0 would make every real visitor look like a zero-interaction bot
+    // for the hour the cached f.js takes to roll over. NULL = never reported.
+    had_pointer: ev.hp === 1 ? 1 : ev.hp === 0 ? 0 : null,
     revenue,
     revenue_usd,
     currency,

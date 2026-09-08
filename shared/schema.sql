@@ -88,6 +88,7 @@ CREATE TABLE events_202607 (
   asn INTEGER, asn_type TEXT,
   fp_hash TEXT,
   duration_ms INTEGER, scroll_depth INTEGER, had_interaction INTEGER DEFAULT 0,
+  had_pointer INTEGER,             -- pointer/keyboard only; NULL = loader predates the split (0021)
   revenue REAL, revenue_usd REAL, currency TEXT,
   props TEXT,
   ft_source TEXT, ft_medium TEXT, ft_campaign TEXT, ft_referrer TEXT,
@@ -123,6 +124,7 @@ CREATE TABLE sessions (
   entry_page   TEXT, exit_page TEXT, entry_host TEXT,
   pageviews INTEGER DEFAULT 0, events_count INTEGER DEFAULT 0,
   duration_ms INTEGER DEFAULT 0, had_interaction INTEGER DEFAULT 0,
+  had_pointer INTEGER,             -- pointer/keyboard only; NULL = never reported (0021)
   is_bounce INTEGER,
   source TEXT, medium TEXT, campaign TEXT, referrer TEXT,
   country TEXT, device_type TEXT,
