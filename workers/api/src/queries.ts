@@ -698,6 +698,11 @@ function subDayLabel(instant: number, tz: string, interval: string, withDate: bo
 // GET /sites/:id/breakdown?dim=page|source|utm_campaign|country|device  (live)
 // ---------------------------------------------------------------------------
 
+// Longest entry-page IN list the bounce lookup will build. D1 allows 100 bound
+// parameters per statement; this leaves ample room for the site/window binds
+// and every filter the dashboard can stack.
+const BOUNCE_IN_MAX = 60;
+
 export async function breakdown(db: D1Database, siteId: string, dim: string, period: Period, limit: number, key: string | null = null, filters: Filter[] = []) {
   limit = Math.min(Math.max(Number.isFinite(limit) ? limit : 20, 1), 1000); // NaN → default; cap high so full-data exports aren't truncated
   // active filters narrow every row; the grouped dim itself is excluded so the
@@ -749,14 +754,23 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
     // same (site_id, started_at) index walk; what shrinks is the result set.
     // Hostname is still matched in the map below, not in SQL, so a path shared
     // by several hostnames stays separated.
+    //
+    // D1 caps a statement at 100 bound parameters, and this list is as long as
+    // the caller's `limit` — which the export sends as 1000. So the IN list is
+    // used only while it comfortably fits alongside the site/window binds and
+    // any active filters; past that (an export, never the dashboard) it falls
+    // back to grouping every entry page, which is the right shape for an
+    // export anyway since it is asking for the whole table.
     const paths = [...new Set(res.results.map((r) => r.path))];
-    const bounceRows = paths.length === 0 ? { results: [] as { hostname: string; path: string; bounces: number }[] } : await db.prepare(`
+    const narrow = paths.length > 0 && paths.length <= BOUNCE_IN_MAX
+      ? { sql: ` AND entry_page IN (${paths.map(() => '?').join(',')})`, binds: paths }
+      : { sql: '', binds: [] as string[] };
+    const bounceRows = res.results.length === 0 ? { results: [] as { hostname: string; path: string; bounces: number }[] } : await db.prepare(`
       SELECT entry_host AS hostname, entry_page AS path, COUNT(*) AS bounces
       FROM sessions
-      WHERE site_id = ? AND is_bounce = 1 AND started_at >= ? AND started_at < ?
-        AND entry_page IN (${paths.map(() => '?').join(',')})${sf.sql ? ` AND ${sf.sql}` : ''}
+      WHERE site_id = ? AND is_bounce = 1 AND started_at >= ? AND started_at < ?${narrow.sql}${sf.sql ? ` AND ${sf.sql}` : ''}
       GROUP BY entry_host, entry_page
-    `).bind(siteId, period.startTs, period.endTs, ...paths, ...sf.binds).all<{ hostname: string; path: string; bounces: number }>();
+    `).bind(siteId, period.startTs, period.endTs, ...narrow.binds, ...sf.binds).all<{ hostname: string; path: string; bounces: number }>();
     const bmap = new Map(bounceRows.results.map((r) => [`${r.hostname} ${r.path}`, r.bounces]));
     const rows = res.results.map((r) => ({ ...r, bounces: bmap.get(`${r.hostname} ${r.path}`) ?? 0 }));
     return { dim, rows };
