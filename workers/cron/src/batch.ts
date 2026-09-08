@@ -51,7 +51,7 @@ const DAY_MS = 86_400_000;
 
 interface Cluster {
   id: string;
-  type: 'fp' | 'ip24' | 'cookie_reset' | 'graph';
+  type: 'fp' | 'ip24' | 'cookie_reset' | 'graph' | 'oneshot';
   siteId: string | null;          // null = cross-site/global
   members: number;
   sites: number;
@@ -60,6 +60,12 @@ interface Cluster {
   /** blocklist / re-verdict handles */
   fp?: string;
   ip24?: string;
+  /** generic site-scoped re-verdict handle: one column of the events table and
+   *  the value to match. Used by the one-shot detector, whose node key may be a
+   *  /24, an ASN or a transport fingerprint — none of which the edge can look
+   *  up in KV, so the cluster is corrected in the data rather than blocked at
+   *  the door. */
+  key?: { col: 'ip24_hash' | 'asn' | 'tls_fp'; val: string | number };
 }
 
 export async function runDailyBatch(env: Env): Promise<void> {
@@ -97,6 +103,7 @@ export async function runDailyBatch(env: Env): Promise<void> {
     ...(await fpClusters(db, u, P.fp_cluster_min_visitors, cap)),
     ...(await ip24Clusters(db, u, P.ip24_share_threshold, P.ip24_min_events, cap)),
     ...(await cookieResetClusters(db, u, P.cookie_reset_min_visitors, P.cookie_reset_epv_max, cap)),
+    ...(await oneShotClusters(db, u, P.oneshot_min_visitors ?? 200, P.oneshot_epv_max ?? 1.5, cap)),
     ...(await graphClusters(db, u, P.graph_min_members ?? 5, P.graph_seed_share ?? 0.6, P.graph_hop2_seed_share ?? 0.25, cap)),
   ];
 
@@ -108,7 +115,10 @@ export async function runDailyBatch(env: Env): Promise<void> {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     c.id, c.siteId, c.type, c.members,
-    JSON.stringify({ members: c.members, sites: c.sites, events: c.events, window: { start, end }, fp: c.fp ?? null, ip24: c.ip24 ?? null }),
+    JSON.stringify({
+      members: c.members, sites: c.sites, events: c.events, window: { start, end },
+      fp: c.fp ?? null, ip24: c.ip24 ?? null, key: c.key ?? null,
+    }),
     c.action, nowTs, nowTs + ttlSec * 1000,
   ));
   if (flagStmts.length) await db.batch(flagStmts);
@@ -126,8 +136,14 @@ export async function runDailyBatch(env: Env): Promise<void> {
   // clusters (opt-in, rare) are site-scoped and handled individually.
   const blocking = clusters.filter((c) => c.action === 'block');
   const fps = [...new Set(blocking.filter((c) => c.fp).map((c) => c.fp!))];
-  const ip24Only = blocking.filter((c) => !c.fp && c.ip24);
-  const affectedSites = await reverdict(db, tables, start, end, fps, ip24Only);
+  // site-scoped handles: bare-/24 clusters (legacy shape) plus every one-shot
+  // cluster, whose key may be a /24, an ASN or a transport fingerprint
+  const scoped = [
+    ...blocking.filter((c) => !c.fp && c.ip24 && !c.key)
+      .map((c) => ({ siteId: c.siteId, col: 'ip24_hash' as const, val: c.ip24! })),
+    ...blocking.filter((c) => c.key).map((c) => ({ siteId: c.siteId, col: c.key!.col, val: c.key!.val })),
+  ];
+  const affectedSites = await reverdict(db, tables, start, end, fps, scoped);
 
   // ---- 5b. session-drift re-verdict (FP-Inconsistent temporal check): the
   // browser family / OS / language changed WITHIN one session_id — impossible
@@ -340,6 +356,72 @@ async function ip24Clusters(
 }
 
 // ---------------------------------------------------------------------------
+// 3b. one-shot farms keyed on the NETWORK / TRANSPORT, not on a fingerprint.
+//
+//     cookieResetClusters (below) already encodes the right criterion — a node
+//     cycling through visitor_ids that each appear exactly once — but it keys
+//     on fp_hash, and fp_hash is produced from the canvas/WebGL probe (`x7`)
+//     that the loader does not implement yet. Measured across 11 production
+//     sites: fp_hash was NULL on 100% of rows. So that detector, the fingerprint
+//     half of the bipartite graph, and fpClusters have never once fired.
+//
+//     What the evasion looks like without them, from the site that was hit:
+//     24,847 pageviews, 24,847 visitor_ids, 24,847 sessions — a fresh identity
+//     for every single request — enumerating 23,421 distinct URLs from 47 /24s
+//     across 6 ASNs, no interaction at all. Each individual /24 carried 0.66% of
+//     the site's traffic, so ip24Clusters' 30% share threshold never came close;
+//     and because none of it ever reached the 'bot' band, graphClusters (whose
+//     seeds are visitors ALREADY verdicted bot) had nothing to propagate from.
+//     Every layer missed by a margin, and the traffic sat in 'suspect' forever.
+//
+//     This detector needs no fingerprint and no pre-existing bot label, which is
+//     what breaks that deadlock: once it re-verdicts a node's events to 'bot',
+//     the graph propagation finally has seeds and takes over on the next run.
+//
+//     The guard that keeps it off real traffic is `had_pointer`: a node is only
+//     judged when NOT ONE of its events carries explicit pointer/keyboard input
+//     (migration 0021 — a scroll no longer counts, which is the whole point).
+//     Rows written before the split have had_pointer NULL and contribute 0, so
+//     the guard is permissive on history and gets strictly stronger as the new
+//     loader rolls out. It can only ever prevent a false positive.
+// ---------------------------------------------------------------------------
+
+const ONESHOT_KEYS = ['ip24_hash', 'asn', 'tls_fp'] as const;
+
+async function oneShotClusters(
+  db: D1Database, u: (cols: string, extra?: string) => Union,
+  minVisitors: number, epvMax: number, cap: number,
+): Promise<Cluster[]> {
+  const out: Cluster[] = [];
+  for (const col of ONESHOT_KEYS) {
+    const uv = u(`site_id, ${col} AS k, visitor_id, had_pointer`, `${col} IS NOT NULL`);
+    const rows = await db.prepare(`
+      SELECT site_id, k,
+             COUNT(DISTINCT visitor_id) AS members,
+             COUNT(*) AS events
+      FROM ${uv.sql}
+      GROUP BY site_id, k
+      HAVING COUNT(DISTINCT visitor_id) >= ?
+         AND COUNT(*) * 1.0 / COUNT(DISTINCT visitor_id) <= ?
+         AND SUM(CASE WHEN had_pointer = 1 THEN 1 ELSE 0 END) = 0
+      ORDER BY members DESC LIMIT ?
+    `).bind(...uv.binds, minVisitors, epvMax, cap)
+      .all<{ site_id: string; k: string | number; members: number; events: number }>();
+    for (const r of rows.results) {
+      out.push({
+        id: `os:${col}:${r.site_id}:${r.k}`, type: 'oneshot', siteId: r.site_id,
+        members: r.members, sites: 1, events: r.events,
+        action: 'block', key: { col, val: r.k },
+        // a /24 is also a KV-lookupable handle; the same opt-in rule as
+        // ip24Clusters decides whether the edge blocks on it outright
+        ...(col === 'ip24_hash' && CONFIG.blocklist.share_bare_ip ? { ip24: String(r.k) } : {}),
+      });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // 4. cookie-reset farms — same fp + /24 cycling one-shot visitor_ids (§6.4).
 //    fp+network+behavior evidence → strong enough to block.
 // ---------------------------------------------------------------------------
@@ -347,6 +429,14 @@ async function ip24Clusters(
 async function cookieResetClusters(
   db: D1Database, u: (cols: string, extra?: string) => Union, minVisitors: number, epvMax: number, cap: number,
 ): Promise<Cluster[]> {
+  // Deliberately still keyed on the REAL fingerprint, which means this stays
+  // dormant until the canvas probe (`x7`) is implemented. Substituting tls_fp
+  // here was tried and reverted: a differential run blocked a seeded control
+  // group of 250 genuine one-shot visitors who merely shared a browser version
+  // and a /24. This detector's bar is 10 visitors — right for a near-per-device
+  // canvas hash, far too loose for a per-browser-version transport hash. The
+  // transport key is handled by oneShotClusters instead, at a 20x higher bar
+  // and behind the had_pointer guard.
   const uv = u('fp_hash, ip24_hash, visitor_id, site_id', 'fp_hash IS NOT NULL AND ip24_hash IS NOT NULL');
   const rows = await db.prepare(`
     SELECT fp_hash, ip24_hash, COUNT(DISTINCT visitor_id) AS members, COUNT(*) AS events, COUNT(DISTINCT site_id) AS sites
@@ -434,8 +524,10 @@ async function graphClusters(
 //    Idempotent via the BLOCKLIST_CLUSTER flag bit / MAX() semantics.
 // ---------------------------------------------------------------------------
 
+interface ScopedHandle { siteId: string | null; col: 'ip24_hash' | 'asn' | 'tls_fp'; val: string | number }
+
 async function reverdict(
-  db: D1Database, tables: string[], startTs: number, endTs: number, fps: string[], ip24Clusters: Cluster[],
+  db: D1Database, tables: string[], startTs: number, endTs: number, fps: string[], scoped: ScopedHandle[],
 ): Promise<Set<string>> {
   const flag = FLAG.BLOCKLIST_CLUSTER;
   const w = typeof CONFIG.weights.blocklist_cluster === 'number' ? CONFIG.weights.blocklist_cluster : 40;
@@ -481,10 +573,14 @@ async function reverdict(
     await pass(`fp_hash IN (${inC})`, chunk);
     await profileSet(`fp_hash IN (${inC})`, chunk).run();
   }
-  // (2) bare-IP /24 clusters (opt-in, rare): site-scoped, handled individually
-  for (const c of ip24Clusters) {
-    await pass('ip24_hash = ? AND site_id = ?', [c.ip24, c.siteId]);
-    await profileSet('ip24_hash = ? AND site_id = ?', [c.ip24, c.siteId]).run();
+  // (2) site-scoped handles (/24, ASN, transport fp): one pass each. Always
+  // pinned to the site the cluster was found on — an ASN or a TLS fingerprint
+  // is shared by huge numbers of unrelated real visitors, so it must never be
+  // used as a global blocking key the way an fp_hash is.
+  for (const h of scoped) {
+    await pass(`${h.col} = ? AND site_id = ?`, [h.val, h.siteId]);
+    // visitor_profiles carries ip24_hash and asn but not tls_fp
+    if (h.col !== 'tls_fp') await profileSet(`${h.col} = ? AND site_id = ?`, [h.val, h.siteId]).run();
   }
   return affected;
 }
