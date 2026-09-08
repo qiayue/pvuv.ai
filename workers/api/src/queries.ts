@@ -1020,41 +1020,251 @@ export async function anomalies(db: D1Database, siteId: string, limit = 40) {
 
 export interface FunnelStep { type: 'page' | 'event'; value: string }
 
-export async function funnel(db: D1Database, siteId: string, period: Period, steps: FunnelStep[], filters: Filter[] = []) {
+/** Event columns the funnel CTE needs: step matching, the behaviour deltas that
+ *  explain a drop, and the dimensions a segment breakdown can group by. */
+const FUNNEL_EV_COLS = [
+  'visitor_id', 'ts', 'event', 'path', 'duration_ms', 'scroll_depth',
+  'err_count', 'rage_count', 'dead_count',
+  'country', 'device_type', 'browser', 'os', 'utm_source', 'ref_domain',
+].join(', ');
+
+/** Segment dimensions a funnel can be broken down by (all live on the event
+ *  row, so one CTE covers them). A visitor's value is the FIRST one seen. */
+const FUNNEL_SEG: Record<string, string> = {
+  source: "COALESCE(utm_source, ref_domain, '(direct)')",
+  country: "COALESCE(country, '(unknown)')",
+  device: "COALESCE(device_type, '(unknown)')",
+  browser: "COALESCE(browser, '(unknown)')",
+  os: "COALESCE(os, '(unknown)')",
+};
+export const FUNNEL_BREAKDOWNS = Object.keys(FUNNEL_SEG);
+
+/** Earliest-by-ts value of `expr` within a GROUP BY visitor (zero-padded ts
+ *  prefix makes the lexical MIN the chronological first, then it is sliced off). */
+const firstBy = (expr: string, cond?: string) =>
+  `SUBSTR(MIN(${cond ? `CASE WHEN ${cond} THEN ` : ''}printf('%020d', ts) || ${expr}${cond ? ' END' : ''}), 21)`;
+
+/** SQL that matches one funnel step (one bind: the step value). */
+const stepMatch = (s: FunnelStep) => (s.type === 'page' ? "event = 'pageview' AND path = ?" : 'event = ?');
+
+/** "Reached step k" — every step up to k matched, in non-decreasing time. */
+function reachedSQL(k: number): string {
+  const c = ['t0 IS NOT NULL'];
+  for (let j = 1; j <= k; j++) c.push(`t${j} IS NOT NULL`, `t${j} >= t${j - 1}`);
+  return c.join(' AND ');
+}
+
+/**
+ * Shared CTE head for every funnel query: the period's clean events, one row
+ * per visitor carrying the timestamp `t{i}` and page `p{i}` at which they
+ * matched each step, and `last_step` = the furthest step they reached (-1 =
+ * never entered).
+ *
+ * Conversion is measured over CLEAN traffic only — bot and crawler hits are
+ * excluded exactly as they are for goals, revenue and conversion timing, so a
+ * scraped funnel can't quietly inflate the top of it.
+ */
+function funnelCte(
+  steps: FunnelStep[], tables: string[], siteId: string, period: Period,
+  filters: Filter[], segDim?: string,
+): { sql: string; binds: unknown[] } {
+  const ef = evFilter(filters);
+  const where = ef.sql ? `verdict NOT IN ('bot','crawler') AND ${ef.sql}` : "verdict NOT IN ('bot','crawler')";
+  const u = unionOver(tables, FUNNEL_EV_COLS, siteId, period.startTs, period.endTs, where, ef.binds);
+
+  const binds: unknown[] = [...u.binds];
+  const cols: string[] = [];
+  steps.forEach((s, i) => {
+    const m = stepMatch(s);
+    binds.push(s.value);
+    cols.push(`MIN(CASE WHEN ${m} THEN ts END) AS t${i}`);
+    binds.push(s.value);
+    cols.push(`${firstBy("COALESCE(path,'')", m)} AS p${i}`);
+  });
+  cols.push(`${firstBy("COALESCE(country,'')")} AS v_country`);
+  cols.push(`${firstBy("COALESCE(device_type,'')")} AS v_device`);
+  if (segDim) cols.push(`${firstBy(FUNNEL_SEG[segDim])} AS seg`);
+
+  const ladder = steps.map((_, i) => i).reverse()
+    .map((k) => `WHEN ${reachedSQL(k)} THEN ${k}`).join(' ');
+
+  return {
+    binds,
+    sql: `WITH ev AS (${u.sql}),
+      per AS (SELECT visitor_id, ${cols.join(', ')} FROM ev GROUP BY visitor_id),
+      reach AS (SELECT *, CASE ${ladder} ELSE -1 END AS last_step FROM per)`,
+  };
+}
+
+export interface FunnelFriction {
+  droppers: number;
+  avg_dwell_ms: number | null;
+  avg_scroll: number | null;
+  rage_visitors: number; dead_visitors: number; err_visitors: number;
+  rage: number; dead: number; err: number;
+}
+
+/**
+ * Ordered conversion funnel (M3), now answering *why* as well as *how many*.
+ * A step is { type:'page', value:'/path' } or { type:'event', value:'signup' }.
+ * A visitor reaches step k when the FIRST occurrence of each step 0..k is
+ * non-decreasing in time (t0 ≤ t1 ≤ … ≤ tk) — "first-occurrence" ordering,
+ * computed entirely in SQL.
+ *
+ * Per step it returns:
+ *   visitors       — reached this step
+ *   dropped        — reached this step and never the next one
+ *   median_gap_ms  — from the previous step (hesitation vs friction)
+ *   friction       — what the people who dropped here actually did on this
+ *                    step's page: dwell, scroll depth, and the frustration
+ *                    signals the SDK collects (rage clicks, dead clicks, JS
+ *                    errors). This is the part that turns "we lose 61% here"
+ *                    into "and 23% of them rage-clicked", which is what an
+ *                    optimisation (human or AI) can act on.
+ *
+ * With `breakdown` it also returns the same ladder per segment (traffic
+ * source / country / device / browser / OS), so a step that only leaks for
+ * one segment is visible instead of averaged away.
+ */
+export async function funnel(
+  db: D1Database, siteId: string, period: Period, steps: FunnelStep[],
+  filters: Filter[] = [], opts: { breakdown?: string | null } = {},
+) {
   const clean = steps
     .filter((s) => s && (s.type === 'page' || s.type === 'event') && typeof s.value === 'string' && s.value)
     .slice(0, 8);
   if (clean.length < 2) throw new ApiError(400, 'funnel needs 2–8 steps');
+  const segDim = opts.breakdown && FUNNEL_SEG[opts.breakdown] ? opts.breakdown : null;
+
+  const empty = {
+    steps: clean.map((s) => ({ ...s, visitors: 0, dropped: 0, median_gap_ms: null, friction: null })),
+    breakdown: null, clean_only: true,
+  };
+  const tables = await eventTables(db, period.startTs, period.endTs);
+  if (tables.length === 0) return empty;
+
+  const N = clean.length;
+  const cte = funnelCte(clean, tables, siteId, period, filters);
+
+  // ── counts per step + median gap from the previous step, in one pass.
+  // NTILE(2) splits each step's gaps in half; the max of the lower half is the
+  // median (same trick vitals() uses for p75, and it needs no window funcs D1
+  // lacks).
+  const cnt = clean.map((_, i) => `SELECT ${i} AS i, SUM(last_step >= ${i}) AS c FROM reach`).join(' UNION ALL ');
+  const gaps = clean.slice(1).map((_, k) => {
+    const i = k + 1;
+    return `SELECT ${i} AS i, t${i} - t${i - 1} AS gp FROM reach WHERE last_step >= ${i}`;
+  }).join(' UNION ALL ');
+  const ladderRows = await db.prepare(`${cte.sql},
+    cnt AS (${cnt}),
+    g AS (${gaps}),
+    gm AS (SELECT i, MAX(CASE WHEN q <= 1 THEN gp END) AS med
+           FROM (SELECT i, gp, NTILE(2) OVER (PARTITION BY i ORDER BY gp) AS q FROM g)
+           GROUP BY i)
+    SELECT cnt.i AS i, cnt.c AS c, gm.med AS med FROM cnt LEFT JOIN gm ON gm.i = cnt.i ORDER BY cnt.i
+  `).bind(...cte.binds).all<{ i: number; c: number; med: number | null }>();
+
+  const counts = new Array(N).fill(0);
+  const gapMs: Array<number | null> = new Array(N).fill(null);
+  for (const r of ladderRows.results) { counts[r.i] = r.c ?? 0; gapMs[r.i] = r.med ?? null; }
+
+  // ── friction: for the visitors who stopped at step i, aggregate their
+  // behaviour on THAT step's page from the step's timestamp onward. The
+  // behaviour columns arrived with migration 0017, so a partition older than
+  // it makes this fail — the funnel itself must still work, hence the catch.
+  const frictionByStep = new Map<number, FunnelFriction>();
+  try {
+    const pathCase = clean.map((_, i) => `WHEN ${i} THEN r.p${i}`).join(' ');
+    const tsCase = clean.map((_, i) => `WHEN ${i} THEN r.t${i}`).join(' ');
+    const fr = await db.prepare(`${cte.sql},
+      fr AS (
+        SELECT r.last_step AS i, r.visitor_id AS vid,
+               SUM(COALESCE(e.duration_ms, 0)) AS dwell,
+               MAX(COALESCE(e.scroll_depth, 0)) AS scr,
+               SUM(COALESCE(e.rage_count, 0)) AS rage,
+               SUM(COALESCE(e.dead_count, 0)) AS dead,
+               SUM(COALESCE(e.err_count, 0)) AS err
+        FROM reach r JOIN ev e ON e.visitor_id = r.visitor_id
+        WHERE r.last_step >= 0
+          AND e.path = CASE r.last_step ${pathCase} END
+          AND e.ts >= CASE r.last_step ${tsCase} END
+        GROUP BY r.last_step, r.visitor_id
+      )
+      SELECT i, COUNT(*) AS n, AVG(dwell) AS avg_dwell, AVG(NULLIF(scr, 0)) AS avg_scroll,
+             SUM(rage > 0) AS nr, SUM(dead > 0) AS nd, SUM(err > 0) AS ne,
+             SUM(rage) AS rage, SUM(dead) AS dead, SUM(err) AS err
+      FROM fr GROUP BY i
+    `).bind(...cte.binds).all<Record<string, number>>();
+    for (const r of fr.results) {
+      frictionByStep.set(r.i, {
+        droppers: r.n ?? 0,
+        avg_dwell_ms: r.avg_dwell != null ? Math.round(r.avg_dwell) : null,
+        avg_scroll: r.avg_scroll != null ? Math.round(r.avg_scroll) : null,
+        rage_visitors: r.nr ?? 0, dead_visitors: r.nd ?? 0, err_visitors: r.ne ?? 0,
+        rage: r.rage ?? 0, dead: r.dead ?? 0, err: r.err ?? 0,
+      });
+    }
+  } catch (err) {
+    console.error('funnel friction unavailable', err);
+  }
+
+  const stepsOut = clean.map((s, i) => ({
+    type: s.type, value: s.value,
+    visitors: counts[i],
+    dropped: i < N - 1 ? Math.max(counts[i] - counts[i + 1], 0) : 0,
+    median_gap_ms: gapMs[i],
+    // friction belongs to the people who LEFT here, so the final step (which
+    // nobody can drop out of) never carries one
+    friction: i < N - 1 ? frictionByStep.get(i) ?? null : null,
+  }));
+
+  // ── optional per-segment ladder
+  let breakdown: { dim: string; rows: Array<{ key: string; counts: number[]; conv: number }> } | null = null;
+  if (segDim) {
+    const segCte = funnelCte(clean, tables, siteId, period, filters, segDim);
+    const sums = clean.map((_, i) => `SUM(last_step >= ${i}) AS c${i}`).join(', ');
+    const rows = await db.prepare(`${segCte.sql}
+      SELECT COALESCE(NULLIF(seg, ''), '(unknown)') AS key, ${sums}
+      FROM reach WHERE last_step >= 0 GROUP BY key ORDER BY c0 DESC LIMIT 12
+    `).bind(...segCte.binds).all<Record<string, string | number>>();
+    breakdown = {
+      dim: segDim,
+      rows: rows.results.map((r) => {
+        const cs = clean.map((_, i) => Number(r[`c${i}`] ?? 0));
+        return { key: String(r.key), counts: cs, conv: cs[0] ? cs[N - 1] / cs[0] : 0 };
+      }),
+    };
+  }
+
+  return { steps: stepsOut, breakdown, clean_only: true };
+}
+
+/**
+ * The visitors who reached one funnel step and never the next — the list
+ * behind a drop-off number, so the trail of a real person who gave up is one
+ * click away (the journey page renders it).
+ */
+export async function funnelDropoff(
+  db: D1Database, siteId: string, period: Period, steps: FunnelStep[],
+  stepIndex: number, filters: Filter[] = [], limit = 50,
+) {
+  const clean = steps
+    .filter((s) => s && (s.type === 'page' || s.type === 'event') && typeof s.value === 'string' && s.value)
+    .slice(0, 8);
+  if (clean.length < 2) throw new ApiError(400, 'funnel needs 2–8 steps');
+  const i = Math.min(Math.max(stepIndex, 0), clean.length - 2);
+  const n = Math.min(Math.max(limit, 1), 200);
 
   const tables = await eventTables(db, period.startTs, period.endTs);
-  if (tables.length === 0) return { steps: clean.map((s) => ({ ...s, visitors: 0 })) };
+  if (tables.length === 0) return { step: i, rows: [] };
 
-  const ef = evFilter(filters);
-  const u = unionOver(tables, 'visitor_id, ts, event, path', siteId, period.startTs, period.endTs, ef.sql, ef.binds);
+  const cte = funnelCte(clean, tables, siteId, period, filters);
+  const rows = await db.prepare(`${cte.sql}
+    SELECT visitor_id, t${i} AS reached_at, v_country AS country, v_device AS device_type
+    FROM reach WHERE last_step = ${i} ORDER BY reached_at DESC LIMIT ?
+  `).bind(...cte.binds, n).all<Record<string, unknown>>();
 
-  const matchBinds: unknown[] = [];
-  const minExprs = clean.map((s, i) => {
-    matchBinds.push(s.value);
-    return s.type === 'page'
-      ? `MIN(CASE WHEN event = 'pageview' AND path = ? THEN ts END) AS t${i}`
-      : `MIN(CASE WHEN event = ? THEN ts END) AS t${i}`;
-  });
-  const countExprs = clean.map((_, i) => {
-    const conds: string[] = [];
-    for (let j = 0; j <= i; j++) conds.push(`t${j} IS NOT NULL`);
-    for (let j = 1; j <= i; j++) conds.push(`t${j} >= t${j - 1}`);
-    return `SUM(CASE WHEN ${conds.join(' AND ')} THEN 1 ELSE 0 END) AS c${i}`;
-  });
-
-  // matchBinds appear (inner SELECT) before u.binds (the FROM subquery)
-  const row = await db.prepare(`
-    SELECT ${countExprs.join(', ')} FROM (
-      SELECT visitor_id, ${minExprs.join(', ')}
-      FROM (${u.sql}) GROUP BY visitor_id
-    )
-  `).bind(...matchBinds, ...u.binds).first<Record<string, number>>();
-
-  return { steps: clean.map((s, i) => ({ type: s.type, value: s.value, visitors: row?.[`c${i}`] ?? 0 })) };
+  return { step: i, rows: rows.results };
 }
 
 // ---------------------------------------------------------------------------

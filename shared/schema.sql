@@ -229,6 +229,18 @@ CREATE TABLE anomaly_reports (
   related_cluster TEXT, evidence TEXT,
   status TEXT DEFAULT 'pending', created_at INTEGER
 );
+-- saved conversion funnels (migration 0019) — see that file for the rationale
+CREATE TABLE funnels (
+  site_id    TEXT NOT NULL,
+  funnel_id  TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  steps      TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (site_id, funnel_id)
+);
+CREATE INDEX idx_funnels_site ON funnels(site_id, updated_at);
+
 CREATE TABLE ai_reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   site_id TEXT, period TEXT, kind TEXT,

@@ -377,9 +377,19 @@ the panel shows — the rollups already cover any range for the charts.
   Suspicious · AI report). Click any row (source, page, country, device, UTM)
   to filter the whole dashboard; sources are folded per platform (all Google
   hosts read as one "Google" row). Channels (GA4-style grouping), Core Web
-  Vitals from clean traffic, goals with conversion-timing distribution, a
-  funnel that pre-fills from your first goal, and the shadow-mode banner for
-  ad protection.
+  Vitals from clean traffic, goals with conversion-timing distribution, and
+  the shadow-mode banner for ad protection.
+- **Funnels** — several saved funnels per site (page paths and custom events,
+  2–8 steps), measured over clean traffic only. Every drop shows the median
+  time from the previous step and **what the people who left were doing on
+  that step**: dwell, scroll depth, rage clicks, dead clicks and JS errors —
+  the behaviour signals the SDK collects, which is what turns "we lose 61%
+  here" into something fixable. Break the whole funnel down by source,
+  country, device, browser or OS to find a step that only leaks for one
+  audience, and click *see who →* on any drop to open those visitors'
+  journeys. Saved funnels are readable by the API/MCP
+  (`/v1/sites/:id/funnels`, `…/funnel?funnel_id=…&breakdown=source`) and are
+  included in the AI report.
 - **Visitor journeys** (`visitors →`) — find visitors by page path or
   verdict, then replay one visitor's sessions as a timeline: each page with
   dwell, scroll depth, clicked elements, JS errors, rage/dead clicks, plus
@@ -627,6 +637,8 @@ home page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
 | "AI is not configured" | Set provider + model + API key under ⚙ Settings → AI analysis reports (or the `AI_API_KEY` secret) |
 | AI report "LLM request failed (401/404)" | Wrong API key, base URL, or model name for the chosen provider — recheck the AI settings |
 | New bot signals never fire | Config not regenerated before deploy — run `npm run config:gen` (or `npm install`) then redeploy `ingest`/`cron` |
+| Funnel numbers lower than expected | Funnels count CLEAN traffic only (bots and crawlers are excluded, as they are for goals and revenue) — the *Traffic quality* section shows how much that removes |
+| Funnel drops show no behaviour chips | The friction signals need the behaviour columns (migration 0017) and a rebuilt `f.js`; a partition older than that reports the funnel without them |
 | Anomaly / distribution strip empty | The daily job runs at 03:30 site-local-ish (UTC cron); needs a few days of baseline before it flags |
 | Dashboard stays on "Waiting for the first visit" | No event has reached D1 for that site: wrong `data-api`, page `Origin` not in the site's domains, or the consumer isn't deployed — the self-check pins it down |
 | Ranking shows `—` for External / Internal | Those two columns come from `rollup_source_daily`, filled by the hourly job — check back after `:05` |
@@ -676,8 +688,8 @@ npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
 
 Notes for this release:
 
-- **Migrations 0016–0018** (channel + web vitals + public token, behavior
-  signal columns, transport fingerprint) apply with the command above; the
+- **Migrations 0016–0019** (channel + web vitals + public token, behavior
+  signal columns, transport fingerprint, saved funnels) apply with the command above; the
   consumer and hourly cron also self-heal older monthly partitions, so no
   manual `ALTER TABLE` is needed.
 - **Retention got three new windows** (`pulse_events_days`, `bot_events_days`,

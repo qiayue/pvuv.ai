@@ -87,6 +87,18 @@
   .flabel { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12.5px; white-space: nowrap; }
   .fstat { flex: 0 0 auto; min-width: 118px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
   .fhint { color: var(--muted); font-size: 12px; margin: 8px 2px 0; }
+  .fname-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .fname-row input { flex: 0 1 240px; background-color: var(--bg); }
+  /* drop-off annotation between two funnel bars: how many left, and what the
+     behaviour signals say they were doing when they did */
+  .fdrop { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 1px 0 7px; padding: 3px 0 3px 12px; border-left: 2px dashed var(--border-2); font-size: 12.5px; color: var(--muted); }
+  .fdrop .fnum-drop { color: var(--warn); font-weight: 600; }
+  .fchip { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 9px; background: var(--surface-2); color: var(--text-2); font-size: 11.5px; line-height: 19px; white-space: nowrap; }
+  .fchip.bad { background: #331414; color: var(--bad); }
+  .fchip.warn { background: #33290f; color: var(--warn); }
+  .fseg { margin-top: 18px; }
+  .fseg .worst { color: var(--warn); }
+  .fseg td.conv { font-weight: 600; }
   /* first-run */
   .onboard { margin: 0 0 18px; border-color: #2a3550; background: #141a26; }
   .onboard pre { margin: 0; background: #0c1117; border: 1px solid #2b3a2e; border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; word-break: break-all; font: 12.5px/1.5 var(--mono); color: #9ece9e; }
@@ -214,12 +226,28 @@
   <div class="chart-head" data-sec="funnel">
     <h2 data-i18n="Funnel">Funnel</h2>
     <div class="chart-ctrls">
+      <select id="funnelPick" aria-label="Saved funnels"></select>
+      <select id="funnelSeg" aria-label="Break down by">
+        <option value="" data-i18n="No breakdown">No breakdown</option>
+        <option value="source" data-i18n="By source">By source</option>
+        <option value="country" data-i18n="By country">By country</option>
+        <option value="device" data-i18n="By device">By device</option>
+        <option value="browser" data-i18n="By browser">By browser</option>
+        <option value="os" data-i18n="By OS">By OS</option>
+      </select>
       <button id="funnelAdd" class="btn" data-i18n="+ step">+ step</button>
       <button id="funnelRun" class="btn primary" data-i18n="Run">Run</button>
     </div>
   </div>
+  <p class="sec-desc" data-i18n="Clean traffic only — bots and crawlers never enter a funnel. Each drop shows what the people who left were doing on that step.">Clean traffic only — bots and crawlers never enter a funnel. Each drop shows what the people who left were doing on that step.</p>
   <div class="panel">
     <div id="funnelSteps"></div>
+    <div class="fname-row">
+      <input id="funnelName" maxlength="60" placeholder="Funnel name" data-i18n-ph="Funnel name">
+      <button id="funnelSave" class="btn" data-i18n="Save funnel">Save funnel</button>
+      <button id="funnelDel" class="btn danger" hidden data-i18n="Delete">Delete</button>
+      <span class="muted" id="funnelMsg" style="font-size:12px"></span>
+    </div>
     <div id="funnelResult"></div>
   </div>
 
@@ -1431,17 +1459,62 @@ async function loadUtm() {
 
 // ── Funnel: user builds ordered steps (page path or event), we compute the
 // first-occurrence-ordered funnel over the selected period. Steps persist per site.
+// ── Funnel ────────────────────────────────────────────────────────────────
+// A funnel answers three questions, in this order: how many get through, WHO
+// falls out, and WHAT they were doing when they did. The last one is the
+// reason we collect dwell / scroll / rage clicks / dead clicks / JS errors at
+// all — a drop with "31% of them rage-clicked here" is a bug report; a drop
+// without it is just a number.
+//
+// Definitions live on the server (saved funnels), so they follow you across
+// devices and are readable by the API and the AI report. The working copy is
+// still mirrored to localStorage so an unsaved edit survives a refresh.
 const FUNNEL_KEY = 'pvuv.funnel.' + site;
+const DEFAULT_STEPS = [{ type: 'page', value: '/' }, { type: 'event', value: '' }];
+let funnels = [];            // saved definitions for this site
+let currentFunnelId = null;  // null = an unsaved working copy
 let funnelSteps = (() => { try { return JSON.parse(localStorage.getItem(FUNNEL_KEY)) || []; } catch { return []; } })();
-if (!Array.isArray(funnelSteps) || funnelSteps.length < 2) funnelSteps = [{ type: 'page', value: '/' }, { type: 'event', value: '' }];
+if (!Array.isArray(funnelSteps) || funnelSteps.length < 2) funnelSteps = DEFAULT_STEPS.map((x) => ({ ...x }));
+let funnelSuggested = false;
+
 function saveFunnel() { try { localStorage.setItem(FUNNEL_KEY, JSON.stringify(funnelSteps)); } catch { /* non-fatal */ } }
+
+async function loadFunnels() {
+  try { funnels = (await (await guard(await fetch(`/api/sites/${site}/funnels`))).json()).funnels || []; }
+  catch { funnels = []; }
+  // open the first saved funnel on arrival — a saved definition is what the
+  // owner meant, the local working copy is only a scratchpad
+  if (funnels.length && currentFunnelId === null && !localStorage.getItem(FUNNEL_KEY)) applyFunnel(funnels[0].funnel_id, true);
+  renderFunnelPicker();
+}
+const funnelsReady = loadFunnels();
+
+function renderFunnelPicker() {
+  const sel = document.getElementById('funnelPick');
+  sel.innerHTML = funnels.map((f) => `<option value="${esc(f.funnel_id)}"${f.funnel_id === currentFunnelId ? ' selected' : ''}>${esc(f.name)}</option>`).join('')
+    + `<option value=""${currentFunnelId === null ? ' selected' : ''}>${te('Unsaved funnel')}</option>`;
+  sel.hidden = false;
+  document.getElementById('funnelDel').hidden = currentFunnelId === null;
+  const cur = funnels.find((f) => f.funnel_id === currentFunnelId);
+  document.getElementById('funnelName').value = cur ? cur.name : '';
+}
+function applyFunnel(id, quiet) {
+  const f = funnels.find((x) => x.funnel_id === id);
+  currentFunnelId = f ? f.funnel_id : null;
+  if (f) funnelSteps = f.steps.map((x) => ({ ...x }));
+  else { try { funnelSteps = JSON.parse(localStorage.getItem(FUNNEL_KEY)) || DEFAULT_STEPS.map((x) => ({ ...x })); } catch { funnelSteps = DEFAULT_STEPS.map((x) => ({ ...x })); } }
+  renderFunnelSteps();
+  renderFunnelPicker();
+  if (!quiet) runFunnel();
+}
+
 function renderFunnelSteps() {
   const el = document.getElementById('funnelSteps');
   el.innerHTML = funnelSteps.map((s, i) => `<div class="fstep" data-i="${i}">
       <span class="fnum">${i + 1}</span>
-      <select class="ftype"><option value="page"${s.type === 'page' ? ' selected' : ''}>Page path</option><option value="event"${s.type === 'event' ? ' selected' : ''}>Event</option></select>
+      <select class="ftype"><option value="page"${s.type === 'page' ? ' selected' : ''}>${te('Page path')}</option><option value="event"${s.type === 'event' ? ' selected' : ''}>${te('Event')}</option></select>
       <input class="fval" value="${esc(s.value)}" placeholder="${s.type === 'page' ? '/pricing' : 'signup'}" aria-label="Step ${i + 1} value">
-      ${funnelSteps.length > 2 ? '<button class="fx" title="Remove step">×</button>' : ''}
+      ${funnelSteps.length > 2 ? `<button class="fx" title="${esc(t('Remove step'))}">×</button>` : ''}
     </div>`).join('');
   el.querySelectorAll('.fstep').forEach((row) => {
     const i = Number(row.dataset.i);
@@ -1451,28 +1524,174 @@ function renderFunnelSteps() {
     if (x) x.addEventListener('click', () => { funnelSteps.splice(i, 1); saveFunnel(); renderFunnelSteps(); });
   });
 }
+
+const fmsg = (text, bad) => {
+  const el = document.getElementById('funnelMsg');
+  el.textContent = text; el.style.color = bad ? '#f87171' : '';
+  if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 4000);
+};
+
+async function saveFunnelServer() {
+  const valid = funnelSteps.filter((s) => s.value && s.value.trim());
+  if (valid.length < 2) { fmsg(t('Add at least 2 steps with a value, then Run.'), true); return; }
+  const name = document.getElementById('funnelName').value.trim() || t('Funnel');
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/funnels`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ funnel_id: currentFunnelId || undefined, name, steps: valid }),
+    }));
+    const d = await r.json();
+    if (!r.ok) { fmsg(d.error || t('save failed'), true); return; }
+    currentFunnelId = d.funnel_id;
+    const existing = funnels.find((f) => f.funnel_id === d.funnel_id);
+    if (existing) { existing.name = d.name; existing.steps = d.steps; }
+    else funnels.push({ funnel_id: d.funnel_id, name: d.name, steps: d.steps });
+    try { localStorage.removeItem(FUNNEL_KEY); } catch { /* non-fatal */ }
+    renderFunnelPicker();
+    fmsg(t('saved'));
+  } catch { fmsg(t('save failed'), true); }
+}
+async function deleteFunnelServer() {
+  if (!currentFunnelId) return;
+  if (!confirm(t('Delete this funnel?'))) return;
+  try {
+    await guard(await fetch(`/api/sites/${site}/funnels/${encodeURIComponent(currentFunnelId)}`, { method: 'DELETE' }));
+    funnels = funnels.filter((f) => f.funnel_id !== currentFunnelId);
+    currentFunnelId = null;
+    applyFunnel(null);
+  } catch { fmsg(t('failed'), true); }
+}
+
+// ── run + render
 async function runFunnel() {
+  await funnelsReady;
   const valid = funnelSteps.filter((s) => s.value && s.value.trim());
   const out = document.getElementById('funnelResult');
   if (valid.length < 2) { out.innerHTML = `<p class="fhint">${te('Add at least 2 steps with a value, then Run.')}</p>`; return; }
-  let steps = [];
-  try { steps = (await get('funnel', `&steps=${encodeURIComponent(JSON.stringify(valid))}`)).steps || []; } catch { out.innerHTML = `<p class="muted">${te('funnel failed')}</p>`; return; }
+  const seg = document.getElementById('funnelSeg').value;
+  out.innerHTML = `<p class="loading" style="margin-top:10px">${te('loading…')}</p>`;
+  let d;
+  try {
+    d = await get('funnel', `&steps=${encodeURIComponent(JSON.stringify(valid))}${seg ? `&breakdown=${seg}` : ''}`);
+  } catch { out.innerHTML = `<p class="muted">${te('funnel failed')}</p>`; return; }
+  renderFunnel(d, valid);
+}
+
+/** One drop annotation: how many left, and the behaviour of the people who
+ *  left, measured on the step's own page from the moment they reached it. */
+function funnelDropRow(step, i, reached) {
+  const f = step.friction;
+  const pct = reached ? Math.round(step.dropped / reached * 100) : 0;
+  const bits = [`<span class="fnum-drop">−${fmt(step.dropped)}</span> <span>${pct}% ${te('dropped here')}</span>`];
+  if (f && f.droppers) {
+    const share = (n) => Math.round(n / f.droppers * 100);
+    if (f.avg_dwell_ms) bits.push(`<span class="fchip">${te('stayed')} ${dur(f.avg_dwell_ms)}</span>`);
+    if (f.avg_scroll != null) bits.push(`<span class="fchip">${te('scrolled')} ${f.avg_scroll}%</span>`);
+    if (f.rage_visitors) bits.push(`<span class="fchip bad">${share(f.rage_visitors)}% ${te('rage-clicked')}</span>`);
+    if (f.dead_visitors) bits.push(`<span class="fchip warn">${share(f.dead_visitors)}% ${te('clicked something dead')}</span>`);
+    if (f.err_visitors) bits.push(`<span class="fchip bad">${share(f.err_visitors)}% ${te('hit a JS error')}</span>`);
+  }
+  bits.push(`<button class="all-btn" data-drop="${i}">${te('see who →')}</button>`);
+  return `<div class="fdrop">${bits.join(' ')}</div>`;
+}
+
+const funnelStepLabel = (s) => `${s.type === 'page' ? t('Page') : t('Event')} ${s.value}`;
+
+function renderFunnel(d, valid) {
+  const out = document.getElementById('funnelResult');
+  const steps = d.steps || [];
   const top = steps[0] ? steps[0].visitors : 0;
-  out.innerHTML = '<div style="margin-top:10px">' + steps.map((s, i) => {
+  let html = '<div style="margin-top:10px">';
+  steps.forEach((s, i) => {
     const v = s.visitors || 0;
     const pctTop = top ? (v / top * 100) : 0;
-    const prev = i > 0 ? (steps[i - 1].visitors || 0) : v;
-    const drop = i > 0 && prev > 0 ? (1 - v / prev) * 100 : 0;
-    const label = (s.type === 'page' ? 'Page ' : 'Event ') + s.value;
-    return `<div class="frow"><div class="fbar-wrap"><div class="fbar" style="width:${Math.max(pctTop, 1).toFixed(1)}%"></div>`
-      + `<span class="flabel">${i + 1}. ${esc(label)}</span></div>`
-      + `<div class="fstat"><b>${fmt(v)}</b> <span class="muted">${pctTop.toFixed(0)}%${i > 0 ? ` · −${drop.toFixed(0)}%` : ''}</span></div></div>`;
-  }).join('') + '</div>'
-    + (funnelSuggested ? `<p class="fhint">${te('Suggested from your homepage and first goal — edit the steps freely; your edits are remembered.')}</p>` : '');
+    const gap = s.median_gap_ms != null ? ` <span class="muted">· ${te('after')} ${dur(s.median_gap_ms)}</span>` : '';
+    html += `<div class="frow"><div class="fbar-wrap"><div class="fbar" style="width:${Math.max(pctTop, 1).toFixed(1)}%"></div>`
+      + `<span class="flabel">${i + 1}. ${esc(funnelStepLabel(s))}${gap}</span></div>`
+      + `<div class="fstat"><b>${fmt(v)}</b> <span class="muted">${pctTop.toFixed(0)}%</span></div></div>`;
+    if (i < steps.length - 1 && s.dropped > 0) html += funnelDropRow(s, i, v);
+  });
+  html += '</div>';
+  if (d.breakdown) html += funnelSegTable(d.breakdown, steps);
+  if (funnelSuggested) html += `<p class="fhint">${te('Suggested from your homepage and first goal — edit the steps freely; your edits are remembered.')}</p>`;
   funnelSuggested = false;
+  out.innerHTML = html;
+  out.querySelectorAll('[data-drop]').forEach((b) =>
+    b.addEventListener('click', () => openDropoff(Number(b.dataset.drop), valid, steps)));
 }
+
+/** Per-segment ladder: where a step leaks for one audience but not the rest.
+ *  "Biggest loss" names the transition that costs that segment the most, so
+ *  the row is directly actionable instead of just a conversion number. */
+function funnelSegTable(bd, steps) {
+  let rows = (bd.rows || []).filter((r) => r.counts && r.counts[0] > 0);
+  if (!rows.length) return '';
+  const N = steps.length;
+  // fold platform variants the same way the sources panel does, or the table
+  // shows two rows both labelled "Google"
+  if (bd.dim === 'source') {
+    const merged = new Map();
+    for (const r of rows) {
+      const key = canonicalSource(r.key) || r.key;
+      const m = merged.get(key);
+      if (!m) { merged.set(key, { key, counts: r.counts.slice(), conv: 0 }); continue; }
+      r.counts.forEach((c, i) => { m.counts[i] += c; });
+    }
+    rows = [...merged.values()].map((r) => ({ ...r, conv: r.counts[0] ? r.counts[N - 1] / r.counts[0] : 0 }))
+      .sort((a, b) => b.counts[0] - a.counts[0]);
+  }
+  const enough = rows.filter((r) => r.counts[0] >= 20);
+  const worst = enough.length ? enough.reduce((a, b) => (b.conv < a.conv ? b : a)) : null;
+  const label = { source: 'Source', country: 'Country', device: 'Device', browser: 'Browser', os: 'OS' }[bd.dim] || bd.dim;
+  const body = rows.map((r) => {
+    let bi = 0, bl = -1;
+    for (let i = 0; i < N - 1; i++) { const lost = r.counts[i] - r.counts[i + 1]; if (lost > bl) { bl = lost; bi = i; } }
+    const isWorst = worst && r.key === worst.key;
+    const name = bd.dim === 'source' ? sourceLabel(r.key) : r.key;
+    return `<tr${isWorst ? ' class="worst"' : ''}>
+      <td class="lead"><span class="lead-in"><span class="txt" title="${esc(r.key)}">${esc(name)}</span></span></td>
+      <td class="num">${fmt(r.counts[0])}</td>
+      <td class="num">${fmt(r.counts[N - 1])}</td>
+      <td class="num conv">${(r.conv * 100).toFixed(1)}%</td>
+      <td class="muted nowrap">${bl > 0 ? `${bi + 1}→${bi + 2} <span class="fnum-drop">−${fmt(bl)}</span>` : '–'}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="fseg"><h3>${te('Conversion by')} ${te(label)}</h3>
+    <table><tr><th>${te(label)}</th><th class="num">${te('Entered')}</th><th class="num">${te('Converted')}</th><th class="num">${te('Rate')}</th><th>${te('Biggest loss')}</th></tr>
+    ${body}</table>
+    ${worst ? `<p class="fhint">${te('Worst converting segment with enough volume is highlighted.')}</p>` : ''}</div>`;
+}
+
+/** The people behind a drop number — one click from here to their full trail. */
+async function openDropoff(i, valid, steps) {
+  const title = `${t('Dropped at step')} ${i + 1} · ${funnelStepLabel(steps[i])}`;
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  document.getElementById('modal').hidden = false;
+  let d;
+  try {
+    d = await get('funnel_dropoff', `&steps=${encodeURIComponent(JSON.stringify(valid))}&step=${i}&limit=100`);
+  } catch { document.getElementById('modalBody').innerHTML = `<p class="muted">${te('funnel failed')}</p>`; return; }
+  const rows = d.rows || [];
+  document.getElementById('modalBody').innerHTML = rows.length
+    ? `<table><tr><th>${te('Visitor')}</th><th>${te('Reached this step')}</th><th>${te('Where')}</th><th>${te('Device')}</th></tr>`
+      + rows.map((r) => `<tr>
+          <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}">${esc(String(r.visitor_id).slice(0, 8))}…</a></td>
+          <td class="muted nowrap">${new Date(r.reached_at).toISOString().slice(0, 16).replace('T', ' ')}</td>
+          <td class="nowrap">${flagEmoji(r.country)} ${esc(r.country || '–')}</td>
+          <td class="nowrap">${esc(r.device_type || '–')}</td>
+        </tr>`).join('') + '</table>'
+      + `<p class="muted" style="font-size:12px;margin:10px 2px 0">${te('Open a visitor to replay everything they did before they left.')}`
+        + `${rows.length >= 100 ? ` ${te('Showing the 100 most recent.')}` : ''}</p>`
+    : `<p class="muted">${te('no visitors matched in this period')}</p>`;
+}
+
 document.getElementById('funnelAdd').addEventListener('click', () => { if (funnelSteps.length < 8) { funnelSteps.push({ type: 'event', value: '' }); saveFunnel(); renderFunnelSteps(); } });
 document.getElementById('funnelRun').addEventListener('click', runFunnel);
+document.getElementById('funnelSave').addEventListener('click', saveFunnelServer);
+document.getElementById('funnelDel').addEventListener('click', deleteFunnelServer);
+document.getElementById('funnelPick').addEventListener('change', (e) => applyFunnel(e.target.value || null));
+document.getElementById('funnelSeg').addEventListener('change', runFunnel);
 
 // ── Core Web Vitals: p75 + Google rating per metric, slowest pages by LCP.
 // Hidden until the SDK has reported at least one measured load (clean traffic
@@ -1579,13 +1798,14 @@ async function loadGoals() {
   // first visit: the default funnel is "/ → (event)". Fill the event with the
   // site's first goal and run it, so the section shows a result instead of a
   // "add a step" prompt. Only touches an untouched default (never a saved one).
-  const untouched = funnelSteps.length === 2 && funnelSteps[0].type === 'page' && funnelSteps[0].value === '/'
+  await funnelsReady;
+  const untouched = !funnels.length && currentFunnelId === null
+    && funnelSteps.length === 2 && funnelSteps[0].type === 'page' && funnelSteps[0].value === '/'
     && funnelSteps[1].type === 'event' && !funnelSteps[1].value && !localStorage.getItem(FUNNEL_KEY);
   if (untouched && rows[0] && rows[0].key) {
     funnelSteps[1].value = rows[0].key; renderFunnelSteps(); funnelSuggested = true; runFunnel();
   }
 }
-let funnelSuggested = false;
 
 // Conversion-timing distribution (CTIT): how long after the session started
 // each goal event fired. Fraud shapes: a 0–10s spike = conversions faster than

@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { parseBotDirectory } from '../../../shared/botdir';
 import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
@@ -703,6 +703,42 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ content: result.content, period: periodLabel, created_at: now });
   }
 
+  // ── saved funnels (migration 0019). A funnel is a property of the site, not
+  // of one browser: several per site, shared by every admin, and readable by
+  // the API/MCP and the AI report.
+  const funnelsMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/funnels(?:\/([A-Za-z0-9_-]{1,32}))?$/);
+  if (funnelsMatch) {
+    const [, siteId, funnelId] = funnelsMatch;
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+
+    if (request.method === 'GET' && !funnelId) {
+      const rows = await env.DB.prepare(
+        'SELECT funnel_id, name, steps, created_at, updated_at FROM funnels WHERE site_id = ? ORDER BY created_at',
+      ).bind(siteId).all<{ funnel_id: string; name: string; steps: string; created_at: number; updated_at: number }>();
+      return json({ funnels: rows.results.map((r) => ({ ...r, steps: safeSteps(r.steps) })) });
+    }
+    if (request.method === 'POST') {
+      let body: { funnel_id?: string; name?: string; steps?: unknown };
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const steps = parseFunnelSteps(JSON.stringify(body.steps ?? []));
+      if (steps.length < 2) return json({ error: 'a funnel needs 2–8 steps with a value' }, 400);
+      const name = (body.name || '').trim().slice(0, 60) || 'Funnel';
+      const id = (body.funnel_id || funnelId || generateSiteId()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+      if (!id) return json({ error: 'bad funnel id' }, 400);
+      const now = Date.now();
+      await env.DB.prepare(`INSERT INTO funnels (site_id, funnel_id, name, steps, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_id, funnel_id) DO UPDATE SET name = excluded.name, steps = excluded.steps, updated_at = excluded.updated_at`)
+        .bind(siteId, id, name, JSON.stringify(steps), now, now).run();
+      return json({ funnel_id: id, name, steps, updated_at: now });
+    }
+    if (request.method === 'DELETE' && funnelId) {
+      await env.DB.prepare('DELETE FROM funnels WHERE site_id = ? AND funnel_id = ?').bind(siteId, funnelId).run();
+      return json({ ok: true });
+    }
+  }
+
   // site-scoped queries — reuse the api worker's query layer
   const m = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/([a-z_]+)(?:\/([^/]+)\/([a-z_]+))?$/);
   if (m && request.method === 'GET') {
@@ -727,7 +763,14 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (resource === 'edge') return json(await edge(env.DB, siteId, period));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
     if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
-    if (resource === 'funnel') return json(await funnel(env.DB, siteId, period, parseFunnelSteps(q.get('steps')), filters));
+    if (resource === 'funnel' || resource === 'funnel_dropoff') {
+      const fsteps = await resolveFunnelSteps(env.DB, siteId, q);
+      if (resource === 'funnel_dropoff') {
+        return json(await funnelDropoff(env.DB, siteId, period, fsteps, parseInt(q.get('step') ?? '0', 10), filters,
+          parseInt(q.get('limit') ?? '50', 10)));
+      }
+      return json(await funnel(env.DB, siteId, period, fsteps, filters, { breakdown: q.get('breakdown') }));
+    }
     if (resource === 'traffic') {
       return json(await traffic(env.DB, siteId, period, {
         verdict: q.get('verdict'),
@@ -911,6 +954,21 @@ function parseFunnelSteps(raw: string | null): FunnelStep[] {
       .slice(0, 8)
       .map((s) => ({ type: s.type, value: s.value }));
   } catch { return []; }
+}
+
+/** Stored funnel steps → validated steps (a hand-edited row can't break a query). */
+function safeSteps(raw: string): FunnelStep[] { return parseFunnelSteps(raw); }
+
+/** Funnel steps for a query: an explicit `steps` param, or a saved funnel by id. */
+async function resolveFunnelSteps(db: D1Database, siteId: string, q: URLSearchParams): Promise<FunnelStep[]> {
+  const id = q.get('funnel_id');
+  if (id) {
+    const row = await db.prepare('SELECT steps FROM funnels WHERE site_id = ? AND funnel_id = ?')
+      .bind(siteId, id).first<{ steps: string }>();
+    if (!row) throw new ApiError(404, 'no such funnel');
+    return safeSteps(row.steps);
+  }
+  return parseFunnelSteps(q.get('steps'));
 }
 
 /** Parse the `filters` query param (JSON [{dim,value}]), validated against the

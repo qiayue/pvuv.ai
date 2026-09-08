@@ -8,6 +8,9 @@
  *   GET /v1/sites/:id/quality?period=30d
  *   GET /v1/sites/:id/vitals?period=30d
  *   GET /v1/sites/:id/traffic?verdict=bot&min_score=70&limit=50
+ *   GET /v1/sites/:id/funnels                       — saved funnels
+ *   GET /v1/sites/:id/funnel?funnel_id=…&breakdown=source
+ *   GET /v1/sites/:id/funnel_dropoff?funnel_id=…&step=1
  *   GET /v1/sites/:id/visitors?path=/pay&limit=50
  *   GET /v1/sites/:id/visitors/:vid/profile
  *
@@ -16,7 +19,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
+import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
 import { hmacSign } from '../../../shared/ids';
@@ -101,7 +104,29 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (resource === 'edge') return json(await edge(env.DB, siteId, period));
   if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
   if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
-  if (resource === 'funnel') return json(await funnel(env.DB, siteId, period, parseFunnelSteps(q.get('steps')), filters));
+  // funnel: ad-hoc `steps`, or a saved funnel by `funnel_id` (so an agent can
+  // ask about "the checkout funnel" without being told its steps)
+  if (resource === 'funnels') {
+    const rows = await env.DB.prepare(
+      'SELECT funnel_id, name, steps, created_at, updated_at FROM funnels WHERE site_id = ? ORDER BY created_at',
+    ).bind(siteId).all<{ funnel_id: string; name: string; steps: string; created_at: number; updated_at: number }>();
+    return json({ funnels: rows.results.map((r) => ({ ...r, steps: parseFunnelSteps(r.steps) })) });
+  }
+  if (resource === 'funnel' || resource === 'funnel_dropoff') {
+    let fsteps = parseFunnelSteps(q.get('steps'));
+    const fid = q.get('funnel_id');
+    if (fid) {
+      const row = await env.DB.prepare('SELECT steps FROM funnels WHERE site_id = ? AND funnel_id = ?')
+        .bind(siteId, fid).first<{ steps: string }>();
+      if (!row) throw new ApiError(404, 'no such funnel');
+      fsteps = parseFunnelSteps(row.steps);
+    }
+    if (resource === 'funnel_dropoff') {
+      return json(await funnelDropoff(env.DB, siteId, period, fsteps, parseInt(q.get('step') ?? '0', 10), filters,
+        parseInt(q.get('limit') ?? '50', 10)));
+    }
+    return json(await funnel(env.DB, siteId, period, fsteps, filters, { breakdown: q.get('breakdown') }));
+  }
   if (resource === 'traffic') {
     return json(await traffic(env.DB, siteId, period, {
       verdict: q.get('verdict'),

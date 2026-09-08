@@ -2,14 +2,16 @@
  * AI analysis report (PROJECT_PLAN.md §13).
  *
  * Gathers a compact, factual snapshot of one site over a period (traffic
- * summary, quality/invalid-traffic breakdown, top sources & pages, the
- * rule-based alerts and the baseline anomalies), turns it into a grounded
+ * summary, quality/invalid-traffic breakdown, top sources & pages, every saved
+ * conversion funnel with its per-step drop-off and the behaviour signals of
+ * the people who dropped, the rule-based alerts and the baseline anomalies),
+ * turns it into a grounded
  * prompt, and asks the deployer's configured LLM to write a short markdown
  * report. The numbers come entirely from our own D1 — the model only narrates
  * and advises, it is never the source of a metric.
  */
 
-import { overview, quality, breakdown, alerts, anomalies, type Period } from '../../api/src/queries';
+import { overview, quality, breakdown, alerts, anomalies, funnel, type Period, type FunnelStep } from '../../api/src/queries';
 import { callLLM, type AiConfig } from './llm';
 
 export type ReportLang = 'en' | 'zh';
@@ -36,6 +38,7 @@ function snapshotText(
   pages: Awaited<ReturnType<typeof breakdown>>,
   al: Awaited<ReturnType<typeof alerts>>,
   an: Awaited<ReturnType<typeof anomalies>>,
+  funnels: Array<{ name: string; data: Awaited<ReturnType<typeof funnel>> }> = [],
 ): string {
   const totalVerdict = ov.clean_count + ov.suspect_count + ov.bot_count + ov.crawler_count;
   const invalid = ov.suspect_count + ov.bot_count + ov.crawler_count;
@@ -87,6 +90,44 @@ function snapshotText(
   for (const a of an.anomalies.slice(0, 8)) {
     lines.push(`  - ${a.day} ${a.dimension} (${a.kind}): baseline ${a.baseline}, actual ${a.actual} — ${a.message}`);
   }
+  // Funnels last: the most actionable part of the snapshot. Each drop carries
+  // what the people who left were doing on that step, which is the only thing
+  // in here that points at a specific fix rather than a trend.
+  for (const f of funnels) {
+    const st = f.data.steps;
+    if (!st.length) continue;
+    lines.push('');
+    lines.push(`== Funnel: ${f.name} (clean traffic only) ==`);
+    const top = st[0].visitors || 0;
+    st.forEach((s, i) => {
+      const label = s.type === 'page' ? `page ${s.value}` : `event ${s.value}`;
+      lines.push(`Step ${i + 1} (${label}): ${s.visitors} visitors (${pct(s.visitors, top)} of step 1)`
+        + (s.median_gap_ms != null ? `, median ${dur(s.median_gap_ms)} after the previous step` : ''));
+      const fr = s.friction;
+      if (s.dropped > 0) {
+        let line = `  -> dropped here: ${s.dropped} (${pct(s.dropped, s.visitors)} of those who reached it)`;
+        if (fr && fr.droppers) {
+          const sh = (n: number) => pct(n, fr.droppers);
+          const bits: string[] = [];
+          if (fr.avg_dwell_ms) bits.push(`avg ${dur(fr.avg_dwell_ms)} on the page`);
+          if (fr.avg_scroll != null) bits.push(`avg scroll ${fr.avg_scroll}%`);
+          if (fr.rage_visitors) bits.push(`${sh(fr.rage_visitors)} rage-clicked (${fr.rage} clicks)`);
+          if (fr.dead_visitors) bits.push(`${sh(fr.dead_visitors)} clicked a dead element (${fr.dead})`);
+          if (fr.err_visitors) bits.push(`${sh(fr.err_visitors)} hit a JS error (${fr.err})`);
+          if (bits.length) line += `; those who left: ${bits.join(', ')}`;
+        }
+        lines.push(line);
+      }
+    });
+    const bd = f.data.breakdown;
+    if (bd && bd.rows.length) {
+      lines.push(`Conversion by ${bd.dim} (entered -> converted):`);
+      for (const r of bd.rows.slice(0, 6)) {
+        lines.push(`  ${r.key}: ${r.counts[0]} -> ${r.counts[r.counts.length - 1]} (${(r.conv * 100).toFixed(1)}%)`);
+      }
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -126,7 +167,22 @@ export async function generateReport(
     alerts(db, siteId, period),
     anomalies(db, siteId, 10),
   ]);
-  const snapshot = snapshotText(siteName, period, ov, ql, src, pages, al, an);
+
+  // every saved funnel, broken down by traffic source — a funnel that only
+  // leaks for one source is the single most useful thing the model can be told
+  const saved = await db.prepare('SELECT name, steps FROM funnels WHERE site_id = ? ORDER BY created_at LIMIT 4')
+    .bind(siteId).all<{ name: string; steps: string }>();
+  const funnels: Array<{ name: string; data: Awaited<ReturnType<typeof funnel>> }> = [];
+  for (const row of saved.results) {
+    let steps: FunnelStep[] = [];
+    try { steps = JSON.parse(row.steps); } catch { continue; }
+    if (!Array.isArray(steps) || steps.length < 2) continue;
+    // one bad funnel must not cost the whole report
+    try { funnels.push({ name: row.name, data: await funnel(db, siteId, period, steps, [], { breakdown: 'source' }) }); }
+    catch (err) { console.error('report: funnel failed', row.name, err); }
+  }
+
+  const snapshot = snapshotText(siteName, period, ov, ql, src, pages, al, an, funnels);
   const content = await callLLM(cfg, SYSTEM[lang], USER_INTRO[lang] + snapshot);
   return { content, snapshot };
 }
