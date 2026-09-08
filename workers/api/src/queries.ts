@@ -971,7 +971,18 @@ const ALERT_DEFAULTS = {
   pages_per_visitor_high: 15, source_concentration: 0.60,
 };
 
-export interface Alert { id: string; severity: 'warning' | 'critical'; title: string; detail: string; }
+export interface Alert {
+  id: string;
+  severity: 'warning' | 'critical';
+  /** English title + detail. Kept verbatim for API/MCP consumers and as the
+   *  console's fallback; the console prefers `values` so it can render the same
+   *  sentence in the viewer's language instead of shipping a pre-formatted
+   *  English string it cannot translate. */
+  title: string;
+  detail: string;
+  /** already-formatted substitution values for the localized template */
+  values?: Record<string, string>;
+}
 
 export async function alerts(db: D1Database, siteId: string, period: Period, filters: Filter[] = []) {
   const A = { ...ALERT_DEFAULTS, ...(CONFIG.alerts ?? {}) };
@@ -1002,38 +1013,49 @@ export async function alerts(db: D1Database, siteId: string, period: Period, fil
   const out: Alert[] = [];
   const pct = (x: number) => (x * 100).toFixed(1) + '%';
   const sev = (ratio: number): Alert['severity'] => (ratio >= 2 ? 'critical' : 'warning');
-  const add = (id: string, ratio: number, title: string, detail: string) => out.push({ id, severity: sev(ratio), title, detail });
+  const add = (id: string, ratio: number, title: string, detail: string, values?: Record<string, string>) =>
+    out.push({ id, severity: sev(ratio), title, detail, values });
 
   const invalid = (ev.suspect_count + ev.bot_count) / pv;
   if (invalid > A.invalid_share) add('invalid_share', invalid / A.invalid_share,
-    'High invalid-traffic share', `${pct(invalid)} of pageviews are bot/suspect (alert above ${pct(A.invalid_share)}).`);
+    'High invalid-traffic share', `${pct(invalid)} of pageviews are bot/suspect (alert above ${pct(A.invalid_share)}).`,
+    { share: pct(invalid), threshold: pct(A.invalid_share) });
 
   const dcShare = dc / pv;
   if (dcShare > A.datacenter_share) add('datacenter', dcShare / A.datacenter_share,
-    'Lots of datacenter traffic', `${pct(dcShare)} of pageviews come from cloud/hosting IPs (alert above ${pct(A.datacenter_share)}).`);
+    'Lots of datacenter traffic', `${pct(dcShare)} of pageviews come from cloud/hosting IPs (alert above ${pct(A.datacenter_share)}).`,
+    { share: pct(dcShare), threshold: pct(A.datacenter_share) });
 
   const fakeShare = fake / pv;
   if (fakeShare > A.fake_search_share) add('fake_search', fakeShare / A.fake_search_share,
-    'Forged search-referrer traffic', `${pct(fakeShare)} of pageviews claim a search referrer but look forged (alert above ${pct(A.fake_search_share)}).`);
+    'Forged search-referrer traffic', `${pct(fakeShare)} of pageviews claim a search referrer but look forged (alert above ${pct(A.fake_search_share)}).`,
+    { share: pct(fakeShare), threshold: pct(A.fake_search_share) });
 
   const zeroShare = zero / pv;
+  // "interaction" here is the pointer/keyboard channel (migration 0021), not a
+  // scroll — a headless scraper scrolls, so the old wording promised more than
+  // the signal delivered
   if (zeroShare > A.zero_interaction_share) add('zero_interaction', zeroShare / A.zero_interaction_share,
-    'Many no-interaction visits', `${pct(zeroShare)} of pageviews had no click / scroll / leave (alert above ${pct(A.zero_interaction_share)}).`);
+    'Many no-interaction visits', `${pct(zeroShare)} of pageviews had no pointer / keyboard input and no leave signal (alert above ${pct(A.zero_interaction_share)}).`,
+    { share: pct(zeroShare), threshold: pct(A.zero_interaction_share) });
 
   if (s.bounce_rate_single != null && s.sessions >= 30 && s.bounce_rate_single < A.bounce_low)
     out.push({ id: 'bounce_low', severity: 'warning', title: 'Implausibly low bounce rate',
-      detail: `Single-page bounce is only ${pct(s.bounce_rate_single)} — real audiences rarely fall below ${pct(A.bounce_low)}; often automated multi-hit traffic.` });
+      detail: `Single-page bounce is only ${pct(s.bounce_rate_single)} — real audiences rarely fall below ${pct(A.bounce_low)}; often automated multi-hit traffic.`,
+      values: { share: pct(s.bounce_rate_single), threshold: pct(A.bounce_low) } });
 
   const ppv = ev.uv ? pv / ev.uv : 0;
   if (ppv > A.pages_per_visitor_high) add('pages_per_visitor', ppv / A.pages_per_visitor_high,
-    'Very high pages per visitor', `${ppv.toFixed(1)} pages/visitor (alert above ${A.pages_per_visitor_high}) — can indicate scraping.`);
+    'Very high pages per visitor', `${ppv.toFixed(1)} pages/visitor (alert above ${A.pages_per_visitor_high}) — can indicate scraping.`,
+    { value: ppv.toFixed(1), threshold: String(A.pages_per_visitor_high) });
 
   if (topSrc && s.sessions >= 30) {
     // denominator from the SAME table+predicate as topSrc.n, so the share stays
     // exact — ev.sessions is a per-day sum and would inflate the denominator
     const share = topSrc.n / s.sessions;
     if (share > A.source_concentration) add('source_concentration', share / A.source_concentration,
-      'One source dominates', `“${topSrc.key}” is ${pct(share)} of sessions (alert above ${pct(A.source_concentration)}) — check for referral spam or forged referrers.`);
+      'One source dominates', `“${topSrc.key}” is ${pct(share)} of sessions (alert above ${pct(A.source_concentration)}) — check for referral spam or forged referrers.`,
+      { key: String(topSrc.key), share: pct(share), threshold: pct(A.source_concentration) });
   }
 
   return { alerts: out, pv, stats, thresholds: A, muted: false };

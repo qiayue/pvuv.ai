@@ -985,6 +985,26 @@ function renderHealth(res) {
     + (res && res.muted ? `<p class="muted" style="margin:10px 0 0;font-size:12px">${te('Sample too small for alerts — shown for reference only.')}</p>` : '');
 }
 
+// Alert bodies arrive from the API as finished English sentences with the
+// numbers already interpolated, so they can't go through the plain string
+// table. Each alert also carries `values`, which lets the console rebuild the
+// same sentence from a translatable template — same approach as anomalyText.
+// Falls back to the server's English detail for any id added later.
+const ALERT_DETAIL = {
+  invalid_share: ['alert-invalid', '{share} of pageviews are bot/suspect (alert above {threshold}).'],
+  datacenter: ['alert-datacenter', '{share} of pageviews come from cloud/hosting IPs (alert above {threshold}).'],
+  fake_search: ['alert-fake-search', '{share} of pageviews claim a search referrer but look forged (alert above {threshold}).'],
+  zero_interaction: ['alert-zero-interaction', '{share} of pageviews had no pointer / keyboard input and no leave signal (alert above {threshold}).'],
+  bounce_low: ['alert-bounce-low', 'Single-page bounce is only {share} — real audiences rarely fall below {threshold}; often automated multi-hit traffic.'],
+  pages_per_visitor: ['alert-ppv', '{value} pages/visitor (alert above {threshold}) — can indicate scraping.'],
+  source_concentration: ['alert-source-concentration', '“{key}” is {share} of sessions (alert above {threshold}) — check for referral spam or forged referrers.'],
+};
+function alertText(a) {
+  const tpl = ALERT_DETAIL[a.id];
+  if (!tpl || !a.values) return a.detail;
+  return Object.entries(a.values).reduce((str, [k, v]) => str.split(`{${k}}`).join(v), window.PVI18N.tk(tpl[0], tpl[1]));
+}
+
 // Returns the full payload so renderCards can reuse its stats (forged-search etc.).
 async function loadAlerts() {
   const el = document.getElementById('alerts');
@@ -993,7 +1013,7 @@ async function loadAlerts() {
   el.innerHTML = (res.alerts || []).map((x) => {
     const crit = x.severity === 'critical';
     return `<div class="alert alert-${crit ? 'critical' : 'warning'}"><span class="ico">${crit ? '⛔' : '⚠️'}</span>`
-      + `<span class="body"><b>${esc(x.title)}</b><span>${esc(x.detail)}</span></span></div>`;
+      + `<span class="body"><b>${esc(te(x.title))}</b><span>${esc(alertText(x))}</span></span></div>`;
   }).join('');
   renderHealth(res); // the strip shows the same ratios even when nothing trips
   return res;
