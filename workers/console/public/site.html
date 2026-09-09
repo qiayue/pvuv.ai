@@ -150,6 +150,7 @@
       <option value="this_year" data-i18n="This year">This year</option>
     </optgroup>
   </select>
+  <button id="embedBtn" class="btn" title="The tracking snippet for this site" data-i18n-title="The tracking snippet for this site">&lt;/&gt; <span data-i18n="Embed code">Embed code</span></button>
   <button id="shareBtn" class="btn" title="Read-only public dashboard link">🔗 <span data-i18n="Share link">Share link</span></button>
   <button id="dlBtn" class="btn" title="Download all data for the selected range as JSON">⬇ <span data-i18n="Download data">Download data</span></button>
   </div>
@@ -592,6 +593,26 @@ async function openAll(mount) {
   }));
 }
 document.querySelectorAll('.all-btn').forEach((b) => b.addEventListener('click', () => openAll(b.dataset.panel)));
+
+// Embed code — available at any time, not only on the first-run screen.
+document.getElementById('embedBtn').addEventListener('click', async () => {
+  const s = allSites.find((x) => x.site_id === site) || { site_id: site };
+  document.getElementById('modalTitle').textContent = t('Embed code');
+  document.getElementById('modalBody').innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  document.getElementById('modal').hidden = false;
+  const code = await snippetFor(s);
+  document.getElementById('modalBody').innerHTML = `
+    <p class="muted" style="margin:0 0 10px;font-size:13px">${te('Add this to every page, before </head> or at the end of <body>.')}</p>
+    <pre id="embedCode" style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:12.5px;font-family:var(--mono);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px">${esc(code)}</pre>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+      <button class="btn" id="embedCopy">${te('Copy snippet')}</button>
+      <a class="btn" href="/health.html" target="_blank" rel="noopener">${te('Run self-check')} ↗</a>
+    </div>
+    <p class="muted" style="font-size:12px;margin:12px 0 0">${esc(window.PVI18N.tk('embed-note', 'data-api must be your ingest host; data-adguard only matters if you protect ads. Changes reach already-embedded pages within about an hour, as the f.js cache revalidates.'))}</p>`;
+  document.getElementById('embedCopy').onclick = async (ev) => {
+    try { await navigator.clipboard.writeText(code); ev.target.textContent = t('Copied'); } catch { /* clipboard blocked */ }
+  };
+});
 
 function closeModal() { document.getElementById('modal').hidden = true; }
 document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -1386,19 +1407,34 @@ async function loadSiteName() {
   if (me && me.has_data === 0) startOnboarding(me);
 }
 
+// ── the tracking snippet. ONE builder, used by both the first-run screen and
+// the Embed-code button, so the two can never drift — the snippet has to stay
+// reachable after the first visit lands, since that is when people actually go
+// looking for it (adding a second domain, moving hosts, re-checking data-api).
+let ingestHostCache = null;
+async function ingestHost() {
+  if (ingestHostCache === null) {
+    let h = '';
+    try { h = ((await (await fetch('/api/me')).json()).ingest_host) || ''; } catch { /* fall through */ }
+    // sibling-subdomain guess only for deployments predating INGEST_HOST
+    ingestHostCache = h || 'in.' + location.hostname.replace(/^(www|console)\./, '');
+  }
+  return ingestHostCache;
+}
+async function snippetFor(s) {
+  const attrs = [`data-site="${s.site_id}"`, `data-api="https://${await ingestHost()}"`];
+  if (s.adguard_mode && s.adguard_mode !== 'off') attrs.push(`data-adguard="${s.adguard_mode}"`);
+  if (s.adclient) attrs.push(`data-adclient="${s.adclient}"`);
+  return `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+}
+
 // ── first-run: no event recorded yet → snippet + live probe instead of an
 // empty dashboard. Polls /realtime every 5s; the first pageview reloads.
 let onboardTimer = null;
 async function startOnboarding(s) {
   document.body.classList.add('onboarding');
   document.getElementById('onboard').hidden = false;
-  let ingestHost = '';
-  try { ingestHost = ((await (await fetch('/api/me')).json()).ingest_host) || ''; } catch { /* fall through */ }
-  ingestHost = ingestHost || 'in.' + location.hostname.replace(/^(www|console)\./, '');
-  const attrs = [`data-site="${s.site_id}"`, `data-api="https://${ingestHost}"`];
-  if (s.adguard_mode && s.adguard_mode !== 'off') attrs.push(`data-adguard="${s.adguard_mode}"`);
-  if (s.adclient) attrs.push(`data-adclient="${s.adclient}"`);
-  const code = `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+  const code = await snippetFor(s);
   document.getElementById('onboardSnippet').textContent = code;
   document.getElementById('onboardCopy').onclick = async () => {
     try { await navigator.clipboard.writeText(code); document.getElementById('onboardCopy').textContent = t('Copied'); } catch { /* clipboard blocked */ }

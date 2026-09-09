@@ -101,8 +101,14 @@
       <div><label><span data-i18n="Site name">Site name</span><input id="name" required placeholder="My Blog" data-i18n-ph="My Blog"></label></div>
       <div><label><span data-i18n="Domains (comma-separated)">Domains (comma-separated)</span><input id="domains" required placeholder="example.com, www.example.com"></label></div>
       <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
-        <select id="agmode"><option value="off" data-i18n="off">off</option><option value="loose" data-i18n="loose">loose</option>
-          <option value="balanced" data-i18n="balanced">balanced</option><option value="strict" data-i18n="strict">strict</option></select></label></div>
+        <!-- values are the stored modes; labels say what each BLOCKS, in ascending
+             strength, because "loose" blocks more than "balanced" (see site.html) -->
+        <select id="agmode">
+          <option value="off" data-i18n="Off">Off</option>
+          <option value="balanced" data-i18n="Balanced — bots &amp; crawlers">Balanced — bots &amp; crawlers</option>
+          <option value="loose" data-i18n="Aggressive — everything not clean">Aggressive — everything not clean</option>
+          <option value="strict" data-i18n="Strictest — clean + interacted">Strictest — clean + interacted</option>
+        </select></label></div>
       <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
       <div><label><span data-i18n="Timezone">Timezone</span> <span style="color:#e0a34a" data-i18n="(can't be changed later)">(can't be changed later)</span>
         <input id="tz" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
