@@ -16,6 +16,14 @@ kv_namespaces = [
   { binding = "BLOCKLIST", id = "PLACEHOLDER_KV_BLOCKLIST_ID" }
 ]
 
+# DO NOT EDIT THESE IN THE CLOUDFLARE DASHBOARD.
+# The dashboard's cron editor is an "every N minutes/hours" builder that cannot
+# represent a daily-at-a-fixed-time schedule, so merely OPENING the trigger and
+# saving rewrites "30 3 * * *" into the nearest preset it can express. Wrangler
+# does not reconcile that back, and src/index.ts dispatches on the exact string,
+# so the daily batch then silently never runs. Change them here and redeploy.
+# If they have already drifted: delete both triggers in the dashboard, then
+# `npm run deploy:cron` to have wrangler recreate them from this file.
 [triggers]
 crons = [
   "5 * * * *",   # hourly rollup (at :05, after the hour closes)

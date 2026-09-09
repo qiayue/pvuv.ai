@@ -68,6 +68,26 @@ interface Cluster {
   key?: { col: 'ip24_hash' | 'asn' | 'tls_fp'; val: string | number };
 }
 
+/** How long the daily batch may go unfinished before the hourly job takes over.
+ *  Just over a day, so a healthy deployment never trips it. */
+export const DAILY_STALE_MS = 25 * 60 * 60 * 1000;
+
+/** Has the daily batch failed to complete for longer than DAILY_STALE_MS?
+ *
+ *  This exists because the daily trigger can silently stop firing: Cloudflare's
+ *  dashboard cron editor is a "every N minutes/hours" builder that cannot
+ *  represent a daily-at-a-fixed-time schedule, so merely OPENING the trigger
+ *  and saving rewrites it to the nearest preset. That happened in production
+ *  and went unnoticed for seven weeks — no error, because a schedule matching
+ *  no handler simply does nothing.
+ *
+ *  A never-set watermark is NOT treated as stale: that is a fresh deployment,
+ *  where the daily trigger has just not had its first run yet. */
+export async function isDailyBatchStale(db: D1Database, now: number): Promise<boolean> {
+  const wm = await readWm(db, CLUSTER_WM_KEY);
+  return wm != null && now - wm > DAILY_STALE_MS;
+}
+
 export async function runDailyBatch(env: Env): Promise<void> {
   const db = env.DB;
   const now = Date.now();

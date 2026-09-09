@@ -21,7 +21,7 @@
  */
 
 import { runHourlyRollup } from './rollup';
-import { runDailyBatch } from './batch';
+import { runDailyBatch, isDailyBatchStale } from './batch';
 import { runRetentionPurge } from './retention';
 import { runAnomalyDetection } from './anomaly';
 import { runEdgePull } from './edge';
@@ -43,6 +43,19 @@ export default {
     switch (event.cron) {
       case CRON_HOURLY:
         await runHourlyRollup(env);
+        // Self-heal. The rollup above has already committed, so this can only
+        // ever add work, never put the hourly job at risk. It fires only when
+        // the daily batch's watermark has not moved for over a day, which in a
+        // healthy deployment is never — and which is exactly the state that
+        // went unnoticed for seven weeks when the daily trigger was silently
+        // rewritten. The batch is watermark-guarded and idempotent, so running
+        // it from here is safe even if the daily trigger later comes back.
+        if (await isDailyBatchStale(env.DB, Date.now())) {
+          console.error('cron: daily batch is more than a day overdue — running it from the hourly job. Check the worker\'s Cron Triggers against workers/cron/wrangler.toml.');
+          await runDailyBatch(env);
+          await runAnomalyDetection(env);
+          await runRetentionPurge(env);
+        }
         break;
       case CRON_DAILY:
         await runDailyBatch(env);
