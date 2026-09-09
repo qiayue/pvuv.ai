@@ -309,6 +309,27 @@ All thresholds are read from your config (`[population]`, `[anomaly]`,
 never hardcoded — so regenerate the config (`npm run config:gen`) and redeploy
 `cron` after any tuning.
 
+> **Never edit these triggers in the Cloudflare dashboard.** Its cron editor is
+> an "every N minutes/hours" builder that cannot express *daily at a fixed
+> time*, so merely **opening** the `30 3 * * *` trigger and saving rewrites it
+> to the nearest preset it can represent. Wrangler does not reconcile that back,
+> and the worker dispatches on the exact schedule string — so the daily job then
+> never runs, with **no error and no log**. This happened on the reference
+> deployment and went unnoticed for seven weeks: the daily batch's watermark
+> stayed frozen, `cluster_flags` stayed empty, and every population/cluster
+> detector was dormant the whole time.
+>
+> Two safeguards now exist, but neither replaces the rule above. A schedule that
+> matches no handler is logged loudly (`cron: NOTHING RAN — fired with
+> schedule …`), and if the daily batch's watermark has not moved for over a day
+> the **hourly** job runs it instead, so a drifted trigger costs you at most an
+> hour rather than weeks.
+>
+> To change a schedule, edit `workers/cron/wrangler.toml` and redeploy. To
+> recover one that has already drifted: delete **both** triggers in the
+> dashboard, then `npm run deploy:cron` to let wrangler recreate them. Confirm
+> the dashboard then reads *At 03:30* and *At 5 minutes past the hour*.
+
 ## Storage & retention (keep D1 small)
 
 D1 databases are capped at 10 GB, and a few sites can reach several GB in a
@@ -395,6 +416,21 @@ the panel shows — the rollups already cover any range for the charts.
   dwell, scroll depth, clicked elements, JS errors, rage/dead clicks, plus
   custom events, forms and outbound clicks. Times are shown in the site's
   timezone.
+- **Ad protection** — a per-tier estimate of what enforcement would do:
+  block rate, blocked pageviews, and an estimated false-positive rate. The
+  tiers are stored as `loose` / `balanced` / `strict` but are *displayed* by
+  what they block, in ascending strength — "loose" blocks everything that is
+  not clean, which is **more** than "balanced", and reading the three words in
+  order gives you the opposite of the truth. The false-positive estimate is the
+  share of blocked traffic that showed **pointer or keyboard** input; scrolling
+  deliberately does not count, because a headless scraper scrolls to trigger
+  lazy-loading. Shadow mode records without blocking so you can read these
+  numbers before committing.
+- **"Non-bot" columns** — `Non-bot PV` / `Non-bot visitors` count everything
+  whose verdict is not `bot` or `crawler`, which **includes `suspect`**. They
+  are not the strictly-clean count, and on a site under attack the two can
+  differ by 3×. The *Traffic quality* section shows the four verdicts
+  separately.
 - **Share link** — a read-only public dashboard (aggregates only, no
   visitor-level data) with a rotatable token.
 - **Self-check** — `/health.html`, walks the whole deployment end to end.
@@ -642,6 +678,10 @@ home page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
 | Anomaly / distribution strip empty | The daily job runs at 03:30 site-local-ish (UTC cron); needs a few days of baseline before it flags |
 | Dashboard stays on "Waiting for the first visit" | No event has reached D1 for that site: wrong `data-api`, page `Origin` not in the site's domains, or the consumer isn't deployed — the self-check pins it down |
 | Ranking shows `—` for External / Internal | Those two columns come from `rollup_source_daily`, filled by the hourly job — check back after `:05` |
+| Daily job never runs: `cluster_flags` empty, `batch_wm_*` frozen | The worker's Cron Triggers have drifted from `wrangler.toml` — see the warning under *Scheduled jobs*. Check `SELECT key, value FROM instance_settings WHERE key LIKE 'batch_wm%'`; if the timestamp is stale the hourly job will self-heal within the hour, but fix the trigger |
+| Cron log says `NOTHING RAN — fired with schedule …` | Same cause, now reported explicitly: that schedule matches no handler. Delete both triggers in the dashboard and `npm run deploy:cron` |
+| Ad-protection false-positive rate looks impossibly high | Reading a period from before the pointer split (migration 0021). Rows written earlier fall back to the old any-interaction bit, which counted scrolling — and scrapers scroll. Look at a period that starts after the deploy |
+| Every visitor suddenly looks like a no-interaction bot | Should not happen: `had_pointer` is NULL for loaders that predate the split and NULL is treated as *unknown*, never as *no pointer*. If you see it, check that migration 0021 ran before the workers were deployed |
 | D1 database keeps growing / approaching 10 GB | Raw `events_YYYYMM` rows (bot traffic + behavior heartbeats). Lower `[retention]` windows, redeploy `cron` + `console`, then ⚙ Settings → Storage → *Run purge now* — see *Storage & retention* |
 
 ## Local development
@@ -688,22 +728,52 @@ npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
 
 Notes for this release:
 
-- **Migrations 0016–0020** (channel + web vitals + public token, behavior
-  signal columns, transport fingerprint, saved funnels, and dropping two
-  never-read `visitor_profiles` indexes) apply with the command above; the
-  consumer and hourly cron also self-heal older monthly partitions, so no
-  manual `ALTER TABLE` is needed.
-- **Retention got three new windows** (`pulse_events_days`, `bot_events_days`,
+- **Run the migrations BEFORE deploying the workers.** This is the one step
+  whose order matters. Event partitions repair themselves (the consumer and the
+  hourly cron add missing columns on the fly), but `sessions.had_pointer` comes
+  only from migration 0021 — deploy the consumer first and every session write
+  fails until the migration lands.
+- **Migrations 0016–0021** apply with the command above: channel + web vitals +
+  public token, behavior-signal columns, transport fingerprint, saved funnels,
+  dropping two never-read `visitor_profiles` indexes, and the pointer/scroll
+  split. No manual `ALTER TABLE` is needed for older monthly partitions.
+- **Interaction is now two signals, not one.** `had_interaction` fired on any of
+  mousemove / touchstart / scroll / keydown — and a scroll costs a headless
+  scraper nothing, since they scroll to trigger lazy-loading. Measured across 11
+  production sites, 12–56% of *bot*-verdicted sessions carried "interaction",
+  while crawler-verdicted sessions (which never execute JS) sat near 0%; on the
+  worst-hit site the suspect bucket appeared *more* engaged than the clean one.
+  `had_pointer` now carries pointer/keyboard only, and the zero-interaction flag
+  plus the ad-guard false-positive estimate read it. Expect the estimate to drop
+  sharply and the *balanced* tier's block rate to rise — on the reference site,
+  balanced went from blocking 57% at an apparent 28% false-positive rate to
+  blocking 85% at 0.5%.
+- **Rebuild and recopy `f.js`.** The pointer signal comes from the loader; until
+  it rolls over (see below) `had_pointer` is NULL, which readers treat as
+  *unknown* and fall back to the old bit. Nothing misfires during the window.
+- **New detection signals.** `UNIDENTIFIED_DESKTOP` (a desktop device whose UA
+  names no known browser family *and* no identifiable OS — 0.1% of healthy
+  traffic across 10 sites, 29.9% on a site under a scraping campaign) and a
+  one-shot farm detector that clusters on /24, ASN and transport fingerprint
+  without needing a fingerprint or a pre-existing bot label. Both are governed
+  by `config.example.toml`; copy the new `[weights] unidentified_desktop` and
+  `[population] oneshot_*` keys into your `config.local.toml` to tune them.
+- **Session dwell is clamped to one day.** A backgrounded tab kept sending
+  `page_pulse`, which refreshed `last_active_at` so the session never idled out;
+  production held single sessions of 4.3 and 7.4 days, dragging one site's mean
+  dwell to 35 minutes against a 4-minute visit duration. New writes are clamped.
+  To fix history: `UPDATE sessions SET duration_ms = 86400000 WHERE duration_ms > 86400000;`
+- **Retention has three windows** (`pulse_events_days`, `bot_events_days`,
   `profiles_idle_days`). Copy them into your `config.local.toml` from
-  `config.example.toml`; until you do, the shipped defaults apply.
-- **Redeploy `cron`.** The hourly rollup's two heaviest statements were
-  rewritten (a per-page correlated subquery became one set-based pass, and a
-  session lookup that scanned a site's whole history is now bounded to the
-  window). On the reference deployment those two accounted for ~72% of all
-  database time; the results are unchanged, so no backfill is needed.
-- **The SDK grew** (behavior heartbeats, web vitals, form/error signals):
-  rebuild and recopy `f.js` as shown — old loaders keep working, they just
-  report less.
+  `config.example.toml`; until you do, the shipped defaults apply. The purge is
+  batched, so a database that has gone untrimmed for months comes down over
+  several daily runs rather than all at once.
+- **Redeploy every worker.** Four rounds of database-cost work landed across
+  `cron`, `api` and `console`: the hourly rollup's two heaviest statements
+  (~72% of all database time), two write-only indexes and a settled day being
+  recomputed hourly, the daily job's window scans getting a usable index
+  (`SCAN` → `SEARCH`, one statement was 12.2s), and the dashboard's realtime
+  pair collapsing into a single scan. Results are unchanged; no backfill.
 
 Two things people miss:
 
