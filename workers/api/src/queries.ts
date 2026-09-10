@@ -355,6 +355,119 @@ function hybridSplit(period: Period): { hasPast: boolean; pastStart: string; pas
 }
 
 // ---------------------------------------------------------------------------
+// GET /sites/summary — one row per site for the site LIST.
+//
+// The list used to call /overview once per site, and overview() is a fully-live
+// raw scan of the whole period. With a dozen sites that is a dozen concurrent
+// whole-period scans, and one busy site (261k pageviews in a day) makes the
+// whole grid sit on "…" for a long time.
+//
+// Two things fix it. Completed days come from rollup_site_daily, which the
+// hourly job already maintains — no raw scan at all. And every site is
+// aggregated in ONE pass per partition instead of one query per site.
+//
+// The `site_id IN (…)` predicate is not a filter so much as a plan hint: the
+// partitions are indexed on (site_id, ts), so a ts-only window cannot use the
+// index and degenerates into a full partition scan.
+//
+// Sites are grouped by timezone, because "today" is a site-local day and a
+// deployment can hold sites in different zones. In practice that is one group.
+//
+// uv is exact for a single-day period and a per-day sum across a multi-day one
+// (a visitor on three days counts three times) — the same approximation the
+// per-day timeseries makes, and the reason the dashboard, not this list, is the
+// authoritative number.
+// ---------------------------------------------------------------------------
+
+export interface SiteSummary {
+  site_id: string;
+  pv: number; uv: number; sessions: number;
+  clean_count: number; suspect_count: number; bot_count: number; crawler_count: number;
+}
+
+const SUMMARY_ZERO = (site_id: string): SiteSummary =>
+  ({ site_id, pv: 0, uv: 0, sessions: 0, clean_count: 0, suspect_count: 0, bot_count: 0, crawler_count: 0 });
+
+/** Chunk size for the site_id IN-list: D1 allows 100 bound parameters per
+ *  statement and each partition query also binds the window. */
+const SUMMARY_CHUNK = 60;
+
+export async function sitesSummary(
+  db: D1Database,
+  sites: { site_id: string; timezone?: string | null }[],
+  periodToken: string | null,
+): Promise<{ sites: SiteSummary[]; uv_approx: boolean }> {
+  const out = new Map<string, SiteSummary>();
+  for (const s of sites) out.set(s.site_id, SUMMARY_ZERO(s.site_id));
+  if (sites.length === 0) return { sites: [], uv_approx: false };
+  // uv is a per-day sum as soon as a completed day contributes, so say so
+  let uvApprox = false;
+
+  const byTz = new Map<string, string[]>();
+  for (const s of sites) {
+    const tz = s.timezone || 'UTC';
+    (byTz.get(tz) ?? byTz.set(tz, []).get(tz)!).push(s.site_id);
+  }
+
+  for (const [tz, ids] of byTz) {
+    const period = parsePeriod(periodToken, tz);
+    const split = hybridSplit(period);
+
+    for (let i = 0; i < ids.length; i += SUMMARY_CHUNK) {
+      const chunk = ids.slice(i, i + SUMMARY_CHUNK);
+      const marks = chunk.map(() => '?').join(',');
+
+      if (split.hasPast) {
+        uvApprox = true;
+        const rows = await db.prepare(`
+          SELECT site_id,
+            COALESCE(SUM(pv), 0) AS pv,
+            COALESCE(SUM(uv), 0) AS uv,
+            COALESCE(SUM(sessions), 0) AS sessions,
+            COALESCE(SUM(clean_count), 0) AS clean_count,
+            COALESCE(SUM(suspect_count), 0) AS suspect_count,
+            COALESCE(SUM(bot_count), 0) AS bot_count,
+            COALESCE(SUM(crawler_count), 0) AS crawler_count
+          FROM rollup_site_daily
+          WHERE site_id IN (${marks}) AND day BETWEEN ? AND ?
+          GROUP BY site_id
+        `).bind(...chunk, split.pastStart, split.pastEnd).all<SiteSummary>();
+        for (const r of rows.results) addSummary(out, r);
+      }
+
+      if (split.today) {
+        const { startTs, endTs } = split.today;
+        for (const table of await eventTables(db, startTs, endTs)) {
+          const rows = await db.prepare(`
+            SELECT site_id,
+              COALESCE(SUM(event = 'pageview'), 0) AS pv,
+              COUNT(DISTINCT CASE WHEN event = 'pageview' THEN visitor_id END) AS uv,
+              COUNT(DISTINCT CASE WHEN event = 'pageview' THEN session_id END) AS sessions,
+              COALESCE(SUM(event = 'pageview' AND verdict = 'clean'), 0) AS clean_count,
+              COALESCE(SUM(event = 'pageview' AND verdict = 'suspect'), 0) AS suspect_count,
+              COALESCE(SUM(event = 'pageview' AND verdict = 'bot'), 0) AS bot_count,
+              COALESCE(SUM(event = 'pageview' AND verdict = 'crawler'), 0) AS crawler_count
+            FROM ${table}
+            WHERE site_id IN (${marks}) AND ts >= ? AND ts < ?
+            GROUP BY site_id
+          `).bind(...chunk, startTs, endTs).all<SiteSummary>();
+          for (const r of rows.results) addSummary(out, r);
+        }
+      }
+    }
+  }
+  return { sites: [...out.values()], uv_approx: uvApprox };
+}
+
+function addSummary(out: Map<string, SiteSummary>, r: SiteSummary): void {
+  const cur = out.get(r.site_id);
+  if (!cur) return;
+  cur.pv += r.pv; cur.uv += r.uv; cur.sessions += r.sessions;
+  cur.clean_count += r.clean_count; cur.suspect_count += r.suspect_count;
+  cur.bot_count += r.bot_count; cur.crawler_count += r.crawler_count;
+}
+
+// ---------------------------------------------------------------------------
 // GET /sites/:id/overview  — real-time totals over the whole span
 // ---------------------------------------------------------------------------
 

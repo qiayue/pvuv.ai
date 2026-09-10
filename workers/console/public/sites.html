@@ -271,22 +271,28 @@ async function loadSites() {
       <div class="foot"><span class="tag" title="${te('Timezone')}">🕒 ${esc(s.timezone || 'UTC')}</span><span class="tag" title="${te('Ad protection mode')}">🛡 ${te(s.adguard_mode || 'off')}</span><span class="spacer"></span><span class="tag good" id="hs-${esc(s.site_id)}"></span></div>
     </a>`).join('') + '</div>';
 
-  // fetch each site's overview in parallel and fill its card
-  await Promise.all(sites.map(async (s) => {
-    try {
-      const o = await (await fetch(`/api/sites/${s.site_id}/overview?period=${period}`)).json();
+  // ONE request for every card. This used to be one /overview per site, and
+  // /overview is a live raw scan of the whole period — a dozen sites meant a
+  // dozen concurrent whole-period scans, so the grid sat on "…" for a long time
+  // whenever one site was busy. /api/sites/summary reads completed days from
+  // the rollups and aggregates all sites in a single pass.
+  try {
+    const d = await (await fetch(`/api/sites/summary?period=${period}`)).json();
+    for (const o of d.sites || []) {
+      const st = document.getElementById('st-' + o.site_id);
+      const hs = document.getElementById('hs-' + o.site_id);
+      if (!st || !hs) continue;
       const human = o.pv ? (((o.clean_count + o.suspect_count) / o.pv) * 100).toFixed(0) : 0;
-      document.getElementById('st-' + s.site_id).innerHTML = `
+      st.innerHTML = `
         <div class="stat"><div class="v">${fmt(o.pv)}</div><div class="k">${te('Pageviews')}</div></div>
-        <div class="stat"><div class="v">${fmt(o.uv)}</div><div class="k">${te('Visitors')}</div></div>
+        <div class="stat"${d.uv_approx ? ` title="${te('uv-approx')}"` : ''}><div class="v">${d.uv_approx ? '≈' : ''}${fmt(o.uv)}</div><div class="k">${te('Visitors')}</div></div>
         <div class="stat"><div class="v">${fmt(o.sessions)}</div><div class="k">${te('Sessions')}</div></div>`;
-      const hs = document.getElementById('hs-' + s.site_id);
       hs.textContent = o.pv ? human + '% ' + t('human') : t('no data yet');
       hs.className = 'tag ' + (o.pv ? (human >= 90 ? 'good' : human >= 70 ? 'warn' : 'bad') : '');
-    } catch {
-      document.getElementById('hs-' + s.site_id).textContent = '';
     }
-  }));
+  } catch {
+    document.querySelectorAll('[id^="hs-"]').forEach((el) => { el.textContent = ''; });
+  }
 }
 // remember the sites-overview period across refreshes (default: last 24h)
 (() => {

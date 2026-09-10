@@ -19,7 +19,7 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
+import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
 import { hmacSign } from '../../../shared/ids';
@@ -76,6 +76,21 @@ async function route(request: Request, env: Env): Promise<Response> {
         return { site_id: r.site_id, name: r.name, domains, timezone: r.timezone, created_at: r.created_at };
       }),
     });
+  }
+
+  // batched per-site totals for a site LIST — one pass over the rollups (and,
+  // for the current day, one pass per partition) instead of one whole-period
+  // raw scan per site. See sitesSummary.
+  if (url.pathname === '/v1/sites/summary') {
+    const caller = await resolveCaller(request, env);
+    const where: string[] = ["status = 'active'", "name != '__pvuv_selftest'"];
+    const binds: unknown[] = [];
+    if (caller.ownerId) { where.push('owner_id = ?'); binds.push(caller.ownerId); }
+    if (caller.siteId) { where.push('site_id = ?'); binds.push(caller.siteId); }
+    const rows = await env.DB.prepare(
+      `SELECT site_id, timezone FROM sites WHERE ${where.join(' AND ')}`,
+    ).bind(...binds).all<{ site_id: string; timezone: string | null }>();
+    return json(await sitesSummary(env.DB, rows.results, url.searchParams.get('period')));
   }
 
   const m = url.pathname.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/([a-z_]+)(?:\/([^/]+)\/([a-z_]+))?$/);

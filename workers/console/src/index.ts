@@ -19,7 +19,7 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { parseBotDirectory } from '../../../shared/botdir';
 import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
@@ -600,6 +600,15 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const owns = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
     if (!owns || owns.owner_id !== user) throw new ApiError(403, 'not your site');
     return json(await probeEvent(env, siteId, vid, Date.now()));
+  }
+
+  // one batched row per site for the site grid (see sitesSummary): the list used
+  // to fire one /overview per site, each a whole-period raw scan
+  if (path === '/api/sites/summary' && request.method === 'GET') {
+    const rows = await env.DB.prepare(
+      "SELECT site_id, timezone FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest'",
+    ).bind(user).all<{ site_id: string; timezone: string | null }>();
+    return json(await sitesSummary(env.DB, rows.results, new URL(request.url).searchParams.get('period')));
   }
 
   if (path === '/api/sites') {
