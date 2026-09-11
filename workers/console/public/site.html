@@ -1302,16 +1302,30 @@ async function load() {
 
   // high-score drill-down, aggregated by VISITOR (one row per suspicious visitor,
   // not per event): event/session counts, worst score/verdict, union of evidence.
-  const traffic = (async () => {
+  // NOT an IIFE: an immediately-invoked async function fires its request the
+  // moment it is defined, so a wave-2 member written that way would still
+  // compete with wave 1 — only its await would move.
+  const traffic = async () => {
     const tr = await get('traffic', '&min_score=30&limit=50');
     renderTraffic(tr.rows || [], TRAFFIC_FOLD);
-  })();
+  };
 
   // UTM breakdown, then re-run the saved funnel for the period (needs UTM done
   // only for layout order; funnel is a no-op if <2 valid steps).
-  const utm = (async () => { await loadUtm(); runFunnel(); })();
+  const utm = async () => { await loadUtm(); runFunnel(); };
 
-  await Promise.all([cards, panels, loadChart(), quality, traffic, utm, loadGoals(), loadVitals(), loadAdguard(), loadCrawlers(), loadEdge()]);
+  // TWO WAVES. Every one of these is a live scan over the period, and firing
+  // all of them at once meant a busy site (260k pageviews in a day) painted
+  // nothing at all until the slowest finished — the whole page sat on
+  // skeletons. The first wave is what is actually on screen when the page
+  // opens; the rest only starts once that has rendered, so the dashboard is
+  // readable while the tail fills in behind it.
+  //
+  // This does not make the queries cheaper, it stops them competing. Sections
+  // that were never scrolled to still cost the same once they run.
+  await Promise.all([cards, panels, loadChart(), quality]);
+  renderSecNav();               // nav is usable as soon as the top half exists
+  await Promise.all([traffic(), utm(), loadGoals(), loadVitals(), loadAdguard(), loadCrawlers(), loadEdge()]);
   renderSecNav();
 }
 
