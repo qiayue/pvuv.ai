@@ -174,9 +174,14 @@
   <div class="alerts" id="alerts"></div>
   <div class="anomalies" id="anomalies"></div>
   <div class="filters" id="filters"></div>
-  <div class="cards" id="cards" data-sec="overview"></div>
+  <!-- Only the active section is in the DOM flow, and a section runs its
+       queries the first time it is opened. Everything used to live on one
+       long page and load at once, which on a busy site meant ~15 concurrent
+       live scans and a screen full of skeletons. -->
+  <div class="cards" id="cards"></div>
 
-  <div class="chart-head" data-sec="trend">
+  <section class="sec" data-sec="overview" hidden>
+  <div class="chart-head">
     <h2 id="chartTitle">Pageviews</h2>
     <div class="chart-ctrls">
       <select id="metric" aria-label="Metric"></select>
@@ -185,21 +190,34 @@
   </div>
   <div class="panel" id="chart"></div>
 
-  <div class="grid2" data-sec="sources">
+  </section>
+
+  <section class="sec" data-sec="sources" hidden>
+  <div class="grid2">
     <div><div class="sec-head"><h2 data-i18n="Top sources">Top sources</h2><span class="tabs" data-tabs="sources"></span><button class="all-btn" data-panel="sources" data-i18n="All →">All →</button></div><div class="panel" id="sources"></div></div>
     <div><div class="sec-head"><h2 data-i18n="Pages">Pages</h2><span class="tabs" data-tabs="pages"></span><button class="all-btn" data-panel="pages" data-i18n="All →">All →</button></div><div class="panel" id="pages"></div></div>
   </div>
-  <div class="grid2" data-sec="audience">
+  </section>
+
+  <section class="sec" data-sec="audience" hidden>
+  <div class="grid2">
     <div><div class="sec-head"><h2 data-i18n="Locations">Locations</h2><span class="tabs" data-tabs="countries"></span><button class="all-btn" data-panel="countries" data-i18n="All →">All →</button></div><div class="panel" id="countries"></div></div>
     <div><div class="sec-head"><h2 data-i18n="Devices">Devices</h2><span class="tabs" data-tabs="devices"></span><button class="all-btn" data-panel="devices" data-i18n="All →">All →</button></div><div class="panel" id="devices"></div></div>
   </div>
 
-  <div id="vitalsSec" hidden data-sec="vitals">
+  </section>
+
+  <section class="sec" data-sec="vitals" hidden>
+  <div id="vitalsSec" hidden>
     <h2 data-i18n="Web Vitals">Web Vitals</h2>
     <div class="panel" id="vitals"></div>
   </div>
 
-  <div class="chart-head" data-sec="campaigns">
+    <p class="muted" id="vitalsEmpty" hidden data-i18n="no data yet">no data yet</p>
+  </section>
+
+  <section class="sec" data-sec="campaigns" hidden>
+  <div class="chart-head">
     <h2 data-i18n="Campaigns (UTM)">Campaigns (UTM)</h2>
     <div class="chart-ctrls">
       <select id="utmDim" aria-label="UTM dimension">
@@ -215,7 +233,10 @@
   </div>
   <div class="panel" id="utm"></div>
 
-  <div id="goalsSection" hidden data-sec="goals">
+  </section>
+
+  <section class="sec" data-sec="goals" hidden>
+  <div id="goalsSection" hidden>
     <h2 data-i18n="Goals (custom events)">Goals (custom events)</h2>
     <div class="panel" id="goals"></div>
   </div>
@@ -224,7 +245,11 @@
     <div class="panel" id="ctit"></div>
   </div>
 
-  <div class="chart-head" data-sec="funnel">
+    <p class="muted" id="goalsEmpty" hidden data-i18n="no data yet">no data yet</p>
+  </section>
+
+  <section class="sec" data-sec="funnel" hidden>
+  <div class="chart-head">
     <h2 data-i18n="Funnel">Funnel</h2>
     <div class="chart-ctrls">
       <select id="funnelPick" aria-label="Saved funnels"></select>
@@ -252,7 +277,10 @@
     <div id="funnelResult"></div>
   </div>
 
-  <h2 data-i18n="Traffic quality" data-sec="quality">Traffic quality</h2>
+  </section>
+
+  <section class="sec" data-sec="quality" hidden>
+  <h2 data-i18n="Traffic quality">Traffic quality</h2>
   <p class="sec-desc" data-i18n="How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.">How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.</p>
   <div class="panel" id="health"></div>
   <div class="grid2">
@@ -262,20 +290,31 @@
   <div id="crawlerSec" hidden><div class="sec-head"><h2 data-i18n="Crawlers by category">Crawlers by category</h2></div><div class="panel" id="crawlers"></div></div>
   <div id="edgeSec" hidden><div class="sec-head"><h2 data-i18n="What the script never saw">What the script never saw</h2></div><div class="panel" id="edge"></div></div>
 
-  <h2 data-i18n="Ad protection" data-sec="adguard">Ad protection</h2>
+  </section>
+
+  <section class="sec" data-sec="adguard" hidden>
+  <h2 data-i18n="Ad protection">Ad protection</h2>
   <div class="panel" id="adguard"></div>
 
-  <div class="sec-head" data-sec="suspicious"><h2 data-i18n="Suspicious visitors">Suspicious visitors</h2><a class="all-btn" id="trafficAll" href="#" data-i18n="All visitors →">All visitors →</a></div>
+  </section>
+
+  <section class="sec" data-sec="suspicious" hidden>
+  <div class="sec-head"><h2 data-i18n="Suspicious visitors">Suspicious visitors</h2><a class="all-btn" id="trafficAll" href="#" data-i18n="All visitors →">All visitors →</a></div>
   <p class="sec-desc" data-i18n="Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.">Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.</p>
   <div class="panel" id="traffic"></div>
 
-  <div class="chart-head" data-sec="ai">
+  </section>
+
+  <section class="sec" data-sec="ai" hidden>
+  <div class="chart-head">
     <h2 data-i18n="AI report">AI report</h2>
     <div class="chart-ctrls">
       <button id="aiGen" class="btn primary" data-i18n="Generate">Generate</button>
     </div>
   </div>
   <div class="panel" id="aiReport"></div>
+  </section>
+
 </main>
 
 <div class="modal" id="modal" hidden>
@@ -1274,59 +1313,72 @@ async function downloadData() {
 }
 document.getElementById('dlBtn').addEventListener('click', downloadData);
 
-async function load() {
-  // Independent sections load CONCURRENTLY (Cloudflare serves over HTTP/2, so
-  // these multiplex on one connection) and each renders the moment its own
-  // request lands — instead of a serial await-waterfall where the whole page
-  // stays blank until the slowest query at the end of the chain resolves.
-  const cards = (async () => {
-    const ov = await get('overview');
-    renderCards(ov, null);     // paint 11/12 cards the instant overview lands
-    renderShadowBanner(ov);
-    const al = await loadAlerts(); // alerts scans more — refine the Forged-search card when it arrives
-    renderCards(ov, al);
-  })();
-
-  const panels = Promise.all(Object.keys(PANELS).map(loadPanel));
-
-  const quality = (async () => {
-    const qy = await get('quality');
-    donut(qy.totals);
-    const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
-    document.getElementById('flags').innerHTML = firedFlags.length
-      ? `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Bot-detection checks that fired on suspicious traffic — one visit can trip several.')}</p>`
-        + `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>` +
-        firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
-      : `<p class="muted">${te('no signals fired — traffic looks clean')}</p>`;
-  })();
-
-  // high-score drill-down, aggregated by VISITOR (one row per suspicious visitor,
-  // not per event): event/session counts, worst score/verdict, union of evidence.
-  // NOT an IIFE: an immediately-invoked async function fires its request the
-  // moment it is defined, so a wave-2 member written that way would still
-  // compete with wave 1 — only its await would move.
-  const traffic = async () => {
+// ── sections load ON DEMAND ────────────────────────────────────────────────
+// Everything used to sit on one long page and load at once: ~15 concurrent
+// requests, nearly all of them live scans over the period. On a busy site that
+// meant nothing rendered at all until the slowest finished. Now opening the
+// page costs the header (cards + alerts) plus ONE section, and a section runs
+// its queries the first time it is opened.
+const SECTION_LOADERS = {
+  overview:   () => loadChart(),
+  sources:    () => Promise.all([loadPanel('sources'), loadPanel('pages')]),
+  audience:   () => Promise.all([loadPanel('countries'), loadPanel('devices')]),
+  vitals:     async () => { await loadVitals(); document.getElementById('vitalsEmpty').hidden = !document.getElementById('vitalsSec').hidden; },
+  campaigns:  () => loadUtm(),
+  goals:      async () => { await loadGoals(); document.getElementById('goalsEmpty').hidden = !document.getElementById('goalsSection').hidden; },
+  funnel:     async () => { await funnelsReady; runFunnel(); },
+  quality:    () => Promise.all([loadQuality(), loadCrawlers(), loadEdge()]),
+  adguard:    () => loadAdguard(),
+  suspicious: async () => {
+    // aggregated by VISITOR (one row per suspicious visitor, not per event):
+    // event/session counts, worst score/verdict, union of evidence
     const tr = await get('traffic', '&min_score=30&limit=50');
     renderTraffic(tr.rows || [], TRAFFIC_FOLD);
-  };
+  },
+  ai:         () => loadAiReport(),
+};
+const SECTION_ORDER = ['overview', 'sources', 'audience', 'campaigns', 'funnel', 'goals', 'vitals', 'quality', 'adguard', 'suspicious', 'ai'];
 
-  // UTM breakdown, then re-run the saved funnel for the period (needs UTM done
-  // only for layout order; funnel is a no-op if <2 valid steps).
-  const utm = async () => { await loadUtm(); runFunnel(); };
+let activeSec = 'overview';
+// bumped whenever the period or the filters change, so every section reloads
+// the next time it is opened instead of showing the previous range's numbers
+let dataGen = 0;
+const secLoadedAt = new Map();
 
-  // TWO WAVES. Every one of these is a live scan over the period, and firing
-  // all of them at once meant a busy site (260k pageviews in a day) painted
-  // nothing at all until the slowest finished — the whole page sat on
-  // skeletons. The first wave is what is actually on screen when the page
-  // opens; the rest only starts once that has rendered, so the dashboard is
-  // readable while the tail fills in behind it.
-  //
-  // This does not make the queries cheaper, it stops them competing. Sections
-  // that were never scrolled to still cost the same once they run.
-  await Promise.all([cards, panels, loadChart(), quality]);
-  renderSecNav();               // nav is usable as soon as the top half exists
-  await Promise.all([traffic(), utm(), loadGoals(), loadVitals(), loadAdguard(), loadCrawlers(), loadEdge()]);
+async function loadQuality() {
+  const qy = await get('quality');
+  donut(qy.totals);
+  const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  document.getElementById('flags').innerHTML = firedFlags.length
+    ? `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Bot-detection checks that fired on suspicious traffic — one visit can trip several.')}</p>`
+      + `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>` +
+      firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
+    : `<p class="muted">${te('no signals fired — traffic looks clean')}</p>`;
+}
+
+async function showSection(sec, { push = true } = {}) {
+  if (!SECTION_LOADERS[sec]) sec = 'overview';
+  activeSec = sec;
+  document.querySelectorAll('section.sec').forEach((el) => { el.hidden = el.dataset.sec !== sec; });
+  document.querySelectorAll('#secnav a').forEach((a) => a.classList.toggle('active', a.dataset.target === sec));
+  if (push) history.replaceState(null, '', '#' + sec);
+  if (secLoadedAt.get(sec) === dataGen) return;      // already current
+  secLoadedAt.set(sec, dataGen);
+  try { await SECTION_LOADERS[sec](); } catch { secLoadedAt.delete(sec); }
+}
+
+async function load() {
+  dataGen += 1;
+  secLoadedAt.clear();
+  // the header is the "overview" the page owes you immediately
+  const ov = await get('overview');
+  renderCards(ov, null);          // paint 11/12 cards the instant overview lands
+  renderShadowBanner(ov);
   renderSecNav();
+  const section = showSection(activeSec, { push: false });
+  const al = await loadAlerts();  // alerts scans more — refine the Forged-search card when it arrives
+  renderCards(ov, al);
+  await section;
 }
 
 // Suspicious-visitor table: folded to the top rows so the page doesn't grow
@@ -1938,27 +1990,22 @@ renderFunnelSteps();
 // scroll position. Hidden sections (no goals / no vitals yet) are skipped, so
 // the nav always reflects what the page actually shows.
 const SEC_LABEL = { overview: 'Overview', trend: 'Trend', sources: 'Sources', audience: 'Audience', vitals: 'Web Vitals', campaigns: 'Campaigns', goals: 'Goals', funnel: 'Funnel', quality: 'Traffic quality', adguard: 'Ad protection', suspicious: 'Suspicious', ai: 'AI report' };
+// The nav is a TAB BAR now, not a scroll-spy: every entry is always listed
+// (a stable set is easier to navigate than one that grows as data loads), and
+// clicking one swaps the visible section and loads it if it has not been
+// opened for the current period/filters yet.
 function renderSecNav() {
   const ul = document.getElementById('secnav');
-  const secs = [...document.querySelectorAll('[data-sec]')].filter((el) => !el.hidden && el.offsetParent !== null);
-  ul.innerHTML = secs.map((el) => `<li><a href="#${el.dataset.sec}" data-target="${el.dataset.sec}">${te(SEC_LABEL[el.dataset.sec] || el.dataset.sec)}</a></li>`).join('');
+  ul.innerHTML = SECTION_ORDER
+    .map((sec) => `<li><a href="#${sec}" data-target="${sec}"${sec === activeSec ? ' class="active"' : ''}>${te(SEC_LABEL[sec] || sec)}</a></li>`)
+    .join('');
   ul.querySelectorAll('a').forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
-    const target = document.querySelector(`[data-sec="${a.dataset.target}"]`);
-    if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); history.replaceState(null, '', '#' + a.dataset.target); }
+    showSection(a.dataset.target);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }));
-  updateSecNav();
 }
-function updateSecNav() {
-  const secs = [...document.querySelectorAll('[data-sec]')].filter((el) => !el.hidden && el.offsetParent !== null);
-  const line = 55 + 48 + 20; // header + nav + slack
-  let current = secs[0];
-  for (const el of secs) { if (el.getBoundingClientRect().top <= line) current = el; }
-  document.querySelectorAll('#secnav a').forEach((a) => a.classList.toggle('active', current && a.dataset.target === current.dataset.sec));
-}
-let secNavTick = false;
-window.addEventListener('scroll', () => { if (!secNavTick) { secNavTick = true; requestAnimationFrame(() => { updateSecNav(); secNavTick = false; }); } }, { passive: true });
-renderSecNav();
+window.addEventListener('hashchange', () => showSection(location.hash.slice(1), { push: false }));
 // load the site meta (name, domain, shadow_until) before the first render so the
 // header and shadow banner are correct on first paint
 loadBrand();
@@ -1972,13 +2019,16 @@ document.addEventListener('pvuv:lang', () => {
   renderFilters();
   renderFunnelSteps();
   setTitle();
-  load();
+  load();          // reloads the header + whichever section is open
   pollRealtime();
   loadAnomalies();
-  loadAiReport();
 });
 
-(async () => { await loadSiteName(); load(); pollRealtime(); loadAnomalies(); loadAiReport(); })();
+(async () => {
+  const deep = location.hash.slice(1);
+  if (SECTION_LOADERS[deep]) activeSec = deep;   // honour a shared #section link
+  await loadSiteName(); load(); pollRealtime(); loadAnomalies();
+})();
 setInterval(pollRealtime, 15000);
 </script>
 </body>
