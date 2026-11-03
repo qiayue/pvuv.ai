@@ -3,7 +3,7 @@
 **注重隐私的网站统计,内置无效流量识别与广告防护。可以直接用官方托管服务,也可以完全自己部署在 Cloudflare 上。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-[![Status: early development](https://img.shields.io/badge/status-early%20development-orange.svg)](#路线图)
+[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-blue.svg)](./CHANGELOG.md)
 [![Runs on Cloudflare](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020.svg)](https://workers.cloudflare.com/)
 
 > English: [`README.md`](./README.md) · 完整构建规格：[`PROJECT_PLAN.zh-CN.md`](./PROJECT_PLAN.zh-CN.md)
@@ -26,7 +26,7 @@ pvuv.ai 是一个跑在 Cloudflare 边缘的轻量统计平台。它不只统计
 → **托管版:** 打开 [pvuv.ai](https://pvuv.ai) 用谷歌登录即可,本文其余部分可以跳过。
 → **自部署:** 继续往下读,然后从[开始之前](#开始之前)入手。
 
-> **状态**：本仓库正在积极开发中。[路线图](#路线图)跟踪首个可部署里程碑（M1）的进度。正式打 tag 前，接口与表结构可能变动。
+> **状态**：v0.1.0 是首个正式开源版本，详见 [`CHANGELOG.md`](./CHANGELOG.md)。目前仍处于 1.0 之前：小版本之间接口与表结构仍可能变动，每次表结构变更都会以 D1 迁移发布，并在 [`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md) 中附升级说明。
 
 ---
 

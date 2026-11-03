@@ -3,7 +3,7 @@
 **Privacy-conscious web analytics with built-in invalid-traffic detection and ad protection. Use the hosted service, or run the whole thing yourself on Cloudflare.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-[![Status: early development](https://img.shields.io/badge/status-early%20development-orange.svg)](#roadmap)
+[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-blue.svg)](./CHANGELOG.md)
 [![Runs on Cloudflare](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020.svg)](https://workers.cloudflare.com/)
 
 > 中文说明 / Chinese: [`README.zh-CN.md`](./README.zh-CN.md) · Full build spec: [`PROJECT_PLAN.md`](./PROJECT_PLAN.md)
@@ -26,7 +26,7 @@ pvuv.ai is a lightweight analytics platform that runs on Cloudflare's edge. Beyo
 → **Hosted:** go to [pvuv.ai](https://pvuv.ai), sign in with Google, and skip the rest of this README.
 → **Self-hosted:** read on, then jump to [Before you start](#before-you-start).
 
-> **Status.** This repository is under active development. The [roadmap](#roadmap) tracks progress toward the first deployable milestone (M1). Interfaces and schema may change before a tagged release.
+> **Status.** v0.1.0 is the first open-source release — see [`CHANGELOG.md`](./CHANGELOG.md). It is pre-1.0: interfaces and schema may still change between minor versions, and every schema change ships as a D1 migration with upgrade notes in [`DEPLOY.md`](./DEPLOY.md).
 
 ---
 
