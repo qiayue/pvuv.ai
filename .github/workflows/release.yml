@@ -1,0 +1,45 @@
+# Publish a GitHub Release whose notes are that version's CHANGELOG.md section.
+# Run it from Actions → Release → Run workflow (enter e.g. v0.1.0), or push a
+# v* tag. The version must already have a "## [x.y.z]" section in CHANGELOG.md.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to create and publish (e.g. v0.1.0)
+        required: true
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          ver="${TAG#v}"
+          awk -v ver="$ver" '
+            /^## \[/ { p = index($0, "[" ver "]") > 0; next }
+            /^\[[^]]+\]: / { next }
+            p { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::No '## [$ver]' section in CHANGELOG.md"; exit 1
+          fi
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "pvuv.ai $TAG" --notes-file notes.md
