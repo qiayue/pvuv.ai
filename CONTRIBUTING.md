@@ -1,8 +1,9 @@
 # Contributing to pvuv.ai
 
-Thanks for your interest in contributing! This project is under active
-development toward its first deployable milestone (M1). Contributions of code,
-docs, translations, and bug reports are all welcome.
+Thanks for your interest in contributing! v0.1.0 is the first open-source
+release (see [`CHANGELOG.md`](./CHANGELOG.md)); the project is pre-1.0 and
+still moving quickly. Contributions of code, docs, translations, and bug
+reports are all welcome.
 
 ## Before you start
 
@@ -10,15 +11,18 @@ docs, translations, and bug reports are all welcome.
    [`PROJECT_PLAN.zh-CN.md`](./PROJECT_PLAN.zh-CN.md)) is the source of truth for
    architecture, schema, endpoints, and milestones. Proposals should fit it — or
    explain clearly why it should change.
-2. **Check the roadmap.** See which milestone (M1–M4) your change belongs to. M1
-   is intentionally narrow; features beyond it may be deferred.
+2. **Check the roadmap.** The README's roadmap table shows which milestones
+   (M1–M4) are done and what is still open — currency conversion, cross-device
+   merge, attribution models, scheduled AI reports, WebGL/canvas fingerprinting
+   and the human-review UI are good places to help.
 3. **Open an issue first for anything non-trivial.** A quick discussion before a
    large PR saves everyone time, especially for schema or interface changes.
 
 ## Development setup
 
-**Prerequisites:** Node.js 18+, a Cloudflare account, `wrangler`
-(`npm i -g wrangler`).
+**Prerequisites:** Node.js 22+ (required by wrangler 4) and a Cloudflare
+account. `wrangler` is a dev dependency — use it through `npx wrangler` or the
+npm scripts.
 
 ```bash
 git clone https://github.com/qiayue/pvuv.ai.git
@@ -27,15 +31,16 @@ npm install
 cp config.example.toml config.local.toml   # tune locally; gitignored
 ```
 
-Most components run locally with `wrangler dev`. Put local-only variables in
-`.dev.vars` (gitignored) — never in tracked files. For local D1, use
-`wrangler d1 execute pvuv --local --file=./shared/schema.sql`.
+Most components run locally with `npm run dev:<worker>` (e.g. `npm run
+dev:ingest`, which wraps `wrangler dev`). Put local-only variables in
+`.dev.vars` (gitignored) — never in tracked files. Create the local D1 schema
+with `npm run db:migrate:local`.
 
 ## Ground rules
 
 - **Never commit secrets or real IDs.** No HMAC keys, Cloudflare tokens, API
-  keys, `.dev.vars`, `config.local.*`, or real `account_id`. CI and reviewers
-  will reject anything that looks like a leaked credential. See
+  keys, `.dev.vars`, `config.local.*`, or real `account_id`. Reviewers will
+  reject anything that looks like a leaked credential. See
   [`SECURITY.md`](./SECURITY.md).
 - **Keep tuning out of the repo.** Detection *architecture* is public; concrete
   production weights/thresholds/blocklists belong in `config.local.*`. Don't
@@ -56,9 +61,12 @@ Most components run locally with `wrangler dev`. Put local-only variables in
 - Describe *what* and *why*; link the related issue.
 - If you change the D1 schema, include a migration in `migrations/` and update
   `shared/schema.sql` and the relevant `PROJECT_PLAN.md` section.
-- Match the existing code style; run the linter/formatter if the repo defines
-  one.
-- Update docs (README / PROJECT_PLAN) when behavior or interfaces change. If you
+- Match the existing code style. Before opening a PR, run `npm run typecheck`,
+  and `npm run build:sdk` if you touched `sdk/` or `shared/`.
+- Add a line under an `Unreleased` heading in [`CHANGELOG.md`](./CHANGELOG.md)
+  for any user-visible change.
+- Update docs (README / DEPLOY / docs/API.md / PROJECT_PLAN) when behavior or
+  interfaces change. If you
   touch one language version of a doc, note the other so it can be kept in sync.
 
 ## Translations & docs

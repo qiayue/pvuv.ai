@@ -1,6 +1,7 @@
 /**
- * pvuv.ai collection SDK — builds to dist/f.js, served from js.pvuv.ai.
- * PROJECT_PLAN.md §4, §18.1 (M1 scope).
+ * pvuv.ai collection SDK — builds to dist/f.js, served by the console worker
+ * (or first-party through workers/proxy).
+ * PROJECT_PLAN.md §4, §18.1.
  *
  *   <script defer src="https://js.pvuv.ai/f.js"
  *           data-site="Ab3xK9pQ"

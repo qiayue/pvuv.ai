@@ -43,4 +43,19 @@ pvuv.ai.
 - Deployment guides in English and Chinese: [`DEPLOY.md`](./DEPLOY.md),
   [`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md).
 
+### Requirements
+- Node.js 22+ (required by wrangler 4), a Cloudflare account on the Workers
+  Paid plan, and a domain on Cloudflare DNS.
+
+### Known limitations
+- Revenue is aggregated in USD only; events in other currencies are stored but
+  not yet converted.
+- `identify()` records the user ↔ visitor link, but nothing merges visitors
+  across devices yet; there are no multi-touch attribution models.
+- AI reports are on demand only (no scheduled reports), and anomalies have no
+  review/dismiss UI.
+- The expensive client checks (WebGL/canvas fingerprint) are not collected, so
+  the fingerprint blocklist and cross-site fingerprint clusters stay dormant.
+- Old monthly partitions are dropped by retention, not archived.
+
 [0.1.0]: https://github.com/qiayue/pvuv.ai/releases/tag/v0.1.0

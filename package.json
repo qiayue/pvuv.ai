@@ -8,6 +8,9 @@
     "type": "git",
     "url": "https://github.com/qiayue/pvuv.ai"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "postinstall": "node scripts/gen-config.mjs",
     "build:sdk": "npm run config:gen && node sdk/build.mjs",

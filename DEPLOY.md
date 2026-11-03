@@ -14,9 +14,9 @@ the current `wrangler.toml` files.
 | Ingest + fast verdict | `https://in.example.com/in`, `/v` | `workers/ingest` |
 | Queue consumer | (no route — consumes `pvuv-ingest`) | `workers/consumer` |
 | Query API | `https://api.example.com/v1/...` | `workers/api` |
-| Console (dashboards) | `https://example.com/` | `workers/console` |
+| Console (dashboards) | `https://analytics.example.com/` | `workers/console` |
 | Scheduled rollups + daily anti-fraud/anomaly analysis | (no route — cron triggers) | `workers/cron` |
-| SDK `f.js` | `https://example.com/f.js` (M1; see step 8) | served by console |
+| SDK `f.js` | `https://analytics.example.com/f.js` (see step 8) | served by console |
 
 ---
 
@@ -27,7 +27,7 @@ the current `wrangler.toml` files.
   D1, KV, and Workers usage itself fit comfortably in included quotas for small/medium sites.
 - A **domain added to Cloudflare** (its DNS zone must be on your account) for
   the routes `in.<domain>`, `api.<domain>`, and the console host.
-- **Node.js 18+** and npm.
+- **Node.js 22+** and npm (wrangler 4 requires Node 22 or newer).
 - Log in once: `npx wrangler login`, then note your account id from
   `npx wrangler whoami`.
 
@@ -76,13 +76,18 @@ Non-interactive:
 
 ```bash
 npm run setup -- --domain example.com --admin you@example.com \
-  [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
+  [--console-host analytics.example.com] [--ingest-host in.example.com] [--api-host api.example.com]
 ```
 
 Your domain is asked for once and written everywhere it is needed; DNS records
 and certificates are provisioned during deploy (Custom Domains, see step 5).
 Afterwards, complete the one step it cannot do for you: **OAuth login** (its own
 section further down).
+
+Two optional pieces setup does **not** do: it does not set the `API_TOKEN`
+secret (only needed for the external ranking API — `npx wrangler secret put
+API_TOKEN -c workers/api/wrangler.toml`), and it does not configure or deploy the
+optional `workers/proxy` (see *First-party reverse proxy*).
 
 The rest of this guide is the manual equivalent — follow it if you want to
 understand each step, or if setup fails partway and you'd rather finish by hand.
@@ -148,9 +153,11 @@ Each worker owns one hostname, declared as a Cloudflare **Custom Domain**:
 
 - `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`
 - `workers/api/wrangler.toml` → `{ pattern = "api.example.com", custom_domain = true }`
-- `workers/console/wrangler.toml` → `{ pattern = "example.com", custom_domain = true }`
-  (or a subdomain like `analytics.example.com` — then adjust the embed snippet's
-  `data-api`, see step 9)
+- `workers/console/wrangler.toml` → `{ pattern = "analytics.example.com", custom_domain = true }`
+  (or the apex `example.com` if you deploy there)
+- `workers/console/wrangler.toml` `[vars] INGEST_HOST` → your ingest host
+  (e.g. `in.example.com`); the console builds every embed snippet's `data-api`
+  from it
 - `workers/console/wrangler.toml` `[vars] ADMIN_EMAILS` → your admin email(s),
   comma-separated. This build is **single-tenant**: everyone listed shares one
   site list (your own sites); anyone else is refused. Login is OAuth-only —
@@ -218,30 +225,29 @@ cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:console
 ```
 
-`f.js` is now served at `https://example.com/f.js`.
+`f.js` is now served at `https://analytics.example.com/f.js`.
 
-> **Note (M1).** The reference architecture serves the SDK from an isolated
-> `js.` subdomain so that ad-blocker listings of exposed hosts never touch
-> your dashboards (PROJECT_PLAN.md §1). Serving it from the console apex is
-> the simple M1 path; moving it to `js.<domain>` (Workers Static Assets or
-> R2) or a first-party reverse proxy (§12) needs no code changes later.
+> **Note.** The SDK is served by the console worker. To keep your dashboard
+> host off ad-blocker lists (PROJECT_PLAN.md §1) you can instead serve `f.js`
+> from a separate `js.<domain>` (Workers Static Assets or R2), or first-party
+> through `workers/proxy` — see *First-party reverse proxy* below.
 
 ## 9. Register your first site
 
-1. Open `https://example.com/login.html`, sign in with Google or GitHub
+1. Open `https://analytics.example.com/login.html`, sign in with Google or GitHub
    (the email must be in `ADMIN_EMAILS`).
 2. Click **New site**: name, the domain(s) the site runs on
    (e.g. `blog.example.org, www.blog.example.org`), adguard mode, optional
    AdSense client id, and the **timezone**. All stats (today / this month /
    daily rollups) are aggregated by this timezone's calendar day. It defaults
-   to your account default (set it under the ⚙ gear → *Default timezone*) and
+   to your account default (set it under ⚙ Settings → *Default timezone for new sites*) and
    **cannot be changed after the site is created** — pick the one you want to
    report in. Owners in any timezone can measure sites in any timezone; the
    choice only affects how days are drawn.
 3. Copy the embed snippet it prints. It looks like:
 
 ```html
-<script defer src="https://example.com/f.js"
+<script defer src="https://analytics.example.com/f.js"
         data-site="Ab3xK9pQ"
         data-api="https://in.example.com"
         data-adguard="balanced"
@@ -290,7 +296,7 @@ that `POST /in` returns **204**. Data timeline:
 - **Within the hour**: metric cards / charts / breakdowns fill in — they read
   the pre-aggregated rollups, which the cron worker recomputes at `:05` every
   hour.
-- **Next day**: the daily job (03:30) produces population-cluster blocks,
+- **Next day**: the daily job (03:30 UTC) produces population-cluster blocks,
   baseline + distribution anomalies (the dashboard's *Recent anomalies* strip),
   and purges raw data past the retention window.
 
@@ -393,9 +399,11 @@ the panel shows — the rollups already cover any range for the charts.
   selected range, timezone and ad-guard mode; the clean-traffic ranking
   across your sites; ⚙ Settings (branding, default timezone, AI reports,
   API tokens, crawler directory, Cloudflare edge requests, storage).
-- **Dashboard** — sticky section nav (Overview · Trend · Sources · Audience ·
-  Web Vitals · Campaigns · Goals · Funnel · Traffic quality · Ad protection ·
-  Suspicious · AI report). Click any row (source, page, country, device, UTM)
+- **Dashboard** — a tab bar (Overview · Sources · Audience · Campaigns ·
+  Funnel · Goals · Web Vitals · Traffic quality · Ad protection · Suspicious ·
+  AI report). Each tab loads its data the first time it is opened, and
+  `#section` links open that tab. The KPI cards, alerts, anomalies strip and
+  realtime count stay above the tabs; the trend chart is in Overview. Click any row (source, page, country, device, UTM)
   to filter the whole dashboard; sources are folded per platform (all Google
   hosts read as one "Google" row). Channels (GA4-style grouping), Core Web
   Vitals from clean traffic, goals with conversion-timing distribution, and
@@ -477,15 +485,15 @@ Redeploy the console after changing `[vars]`; secrets take effect immediately.
 
 Your deployment's `/` is a public landing page. Three tiers, no forking needed:
 
-1. **Name + description (no code).** Console → sign in → *Homepage settings*:
-   set your site name and description; the default page renders them
+1. **Name + description (no code).** Console → ⚙ Settings → *Site & branding*:
+   set the brand name and description (plus optional logos/favicon); the default page renders them
    (server-side, also in `<title>` and `<meta name="description">`).
 2. **Fully custom page.** Create `workers/console/public/home.html` with any
    HTML you like and redeploy the console — it replaces the default homepage
    entirely and is served **verbatim** (nothing is injected). The file is
    **gitignored**, so your landing copy never enters the public repo and
-   `git pull` never conflicts. This is also how the official pvuv.ai homepage
-   is expected to work.
+   `git pull` never conflicts. The official pvuv.ai homepage
+   works this way.
 3. **Default.** Do nothing and you get the minimal shipped page.
 
 The shipped default page carries a small optional "Powered by pvuv.ai" footer
@@ -503,9 +511,12 @@ you can serve `f.js` and the reporting endpoints as **first-party** requests on
 the measured site's own domain via `workers/proxy` (§12). It is NOT part of
 `npm run deploy:all` — deploy it separately.
 
-1. Edit `workers/proxy/wrangler.toml`: set the `route` to a path prefix on your
-   measured domain (e.g. `example.com/_pv/*`), and the `[vars]` `UPSTREAM_INGEST`
-   / `UPSTREAM_ASSETS` to your ingest host and console.
+1. Edit `workers/proxy/wrangler.toml` (`npm run setup` does not touch this file):
+   - `account_id` → your account id (it still says `PLACEHOLDER_ACCOUNT_ID`);
+   - the route `pattern` + `zone_name` → a path prefix on your measured domain and
+     its zone (e.g. `example.com/_pv/*` and `example.com`);
+   - `[vars] PROXY_PREFIX` → the same prefix (e.g. `/_pv`);
+   - `[vars] UPSTREAM_INGEST` / `UPSTREAM_ASSETS` → your ingest host and console host.
 2. Share a secret between the proxy and ingest so ingest trusts the forwarded
    client context (real IP/ASN/geo) — without it a proxied request would look
    like it came from Cloudflare and mis-score:
@@ -521,14 +532,14 @@ the measured site's own domain via `workers/proxy` (§12). It is NOT part of
            data-site="Ab3xK9pQ" data-api="https://example.com/_pv"></script>
    ```
 
-The proxy forwards the real client IP/ASN/timezone/geo as signed `x-pv-*`
-headers; ingest trusts them ONLY when `x-pv-proxy` matches `PROXY_TOKEN`, so a
+The proxy forwards the real client IP/ASN/timezone/geo as `x-pv-*` headers,
+authenticated by a shared `x-pv-proxy` token; ingest trusts them ONLY when `x-pv-proxy` matches `PROXY_TOKEN`, so a
 direct client can't spoof its IP. If `PROXY_TOKEN` is unset on ingest, forwarded
 headers are ignored (direct embed keeps working unchanged).
 
 ## AI analysis reports (optional)
 
-Each site's dashboard has an **AI report** panel that turns a factual traffic
+Each site's dashboard has an **AI report** tab that turns a factual traffic
 snapshot into a written summary. It works with **any OpenAI-compatible endpoint**
 (OpenAI, DeepSeek, OpenRouter, a local vLLM/Ollama, …) or the **Anthropic
 (Claude)** API — you choose, so no provider is baked in.
@@ -646,7 +657,8 @@ Notes:
 ## External ranking / scoring API (optional)
 
 An external ranking system can pull a cross-site, clean-traffic leaderboard in
-one call, authorized with the server-side `API_TOKEN` you set in step 7:
+one call, authorized with the server-side `API_TOKEN` from step 7 (`npm run setup`
+does not set it — add it by hand):
 
 ```bash
 curl -H "Authorization: Bearer $API_TOKEN" \
@@ -656,8 +668,8 @@ curl -H "Authorization: Bearer $API_TOKEN" \
 It returns each active site's clean (bot/crawler/suspect-excluded) pageviews
 split into **internal** (mutual visits from your other sites) and **external**
 traffic; the default `score` is external clean pageviews, so mutual visits can't
-inflate a ranking. Owners also see this as a *Site ranking* table on the console
-home page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
+inflate a ranking. Owners also see this as the *Site ranking · clean traffic* table on
+the console's Sites page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
 
 ## Troubleshooting
 
@@ -668,14 +680,14 @@ home page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
 | `/in` returns 403 | Request has no `Origin`/`Referer` header (server-to-server calls are rejected) |
 | Cards empty, drill-down has data | Rollups run hourly at `:05` — wait for the next run |
 | Can't sign in / "not an admin" | your email isn't in `ADMIN_EMAILS`, or no OAuth provider is configured |
-| API returns 401 | Missing/wrong `Authorization: Bearer <API_TOKEN>` or console session cookie |
+| API returns 401 / 403 | 401: missing or revoked personal API token (`pvuv_…`, ⚙ Settings → API tokens), wrong `API_TOKEN`, or no console session. 403: a site-scoped token was used for another site |
 | Queue errors on deploy | Queues need the Workers Paid plan; both `pvuv-ingest` and `pvuv-ingest-dlq` must exist |
 | "AI is not configured" | Set provider + model + API key under ⚙ Settings → AI analysis reports (or the `AI_API_KEY` secret) |
 | AI report "LLM request failed (401/404)" | Wrong API key, base URL, or model name for the chosen provider — recheck the AI settings |
 | New bot signals never fire | Config not regenerated before deploy — run `npm run config:gen` (or `npm install`) then redeploy `ingest`/`cron` |
 | Funnel numbers lower than expected | Funnels count CLEAN traffic only (bots and crawlers are excluded, as they are for goals and revenue) — the *Traffic quality* section shows how much that removes |
 | Funnel drops show no behaviour chips | The friction signals need the behaviour columns (migration 0017) and a rebuilt `f.js`; a partition older than that reports the funnel without them |
-| Anomaly / distribution strip empty | The daily job runs at 03:30 site-local-ish (UTC cron); needs a few days of baseline before it flags |
+| Anomaly / distribution strip empty | The daily job runs at 03:30 UTC; needs a few days of baseline before it flags |
 | Dashboard stays on "Waiting for the first visit" | No event has reached D1 for that site: wrong `data-api`, page `Origin` not in the site's domains, or the consumer isn't deployed — the self-check pins it down |
 | Ranking shows `—` for External / Internal | Those two columns come from `rollup_source_daily`, filled by the hourly job — check back after `:05` |
 | Daily job never runs: `cluster_flags` empty, `batch_wm_*` frozen | The worker's Cron Triggers have drifted from `wrangler.toml` — see the warning under *Scheduled jobs*. Check `SELECT key, value FROM instance_settings WHERE key LIKE 'batch_wm%'`; if the timestamp is stale the hourly job will self-heal within the hour, but fix the trigger |
@@ -726,7 +738,8 @@ npm run deploy:all            # ingest + consumer + api + console + cron
 npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
 ```
 
-Notes for this release:
+Upgrading a pre-0.1.0 deployment (fresh installs get all 21 migrations in step 6
+and can skip this list):
 
 - **Run the migrations BEFORE deploying the workers.** This is the one step
   whose order matters. Event partitions repair themselves (the consumer and the

@@ -13,9 +13,9 @@
 | 上报 + 快速判定 | `https://in.example.com/in`、`/v` | `workers/ingest` |
 | 队列消费者 | （无路由——消费 `pvuv-ingest`） | `workers/consumer` |
 | 查询 API | `https://api.example.com/v1/...` | `workers/api` |
-| 控制台（后台） | `https://example.com/` | `workers/console` |
+| 控制台（后台） | `https://analytics.example.com/` | `workers/console` |
 | 定时聚合 + 每日反作弊/异常分析 | （无路由——Cron 触发） | `workers/cron` |
-| SDK `f.js` | `https://example.com/f.js`（M1 方案，见第 8 步） | 由 console 托管 |
+| SDK `f.js` | `https://analytics.example.com/f.js`（见第 8 步） | 由 console 托管 |
 
 ---
 
@@ -26,7 +26,7 @@
   D1、KV、Workers 本身的用量对中小站点来说包含额度足够。
 - 一个**已接入 Cloudflare 的域名**（DNS zone 在你的账号下），用于绑定
   `in.<域名>`、`api.<域名>` 和控制台主机。
-- **Node.js 18+** 和 npm。
+- **Node.js 22+** 和 npm（wrangler 4 要求 Node 22 或更高版本）。
 - 登录一次：`npx wrangler login`，然后用 `npx wrangler whoami` 记下 account id。
 
 ## 1. 克隆并安装
@@ -70,12 +70,16 @@ npm run setup            # 建议先加 --dry-run 预览将要执行的每条命
 
 ```bash
 npm run setup -- --domain example.com --admin you@example.com \
-  [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
+  [--console-host analytics.example.com] [--ingest-host in.example.com] [--api-host api.example.com]
 ```
 
 域名只询问一次,随后自动写入所有需要的位置;DNS 记录与证书在部署时自动签发
 (自定义域,见第 5 步)。之后只需完成它无法代劳的一件事:**OAuth 登录**
 (下文有独立章节)。
+
+有两项可选内容 setup **不会**处理：它不设置 `API_TOKEN` 密钥（只有外部排名 API
+需要——`npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml`），也不配置、
+不部署可选的 `workers/proxy`（见「第一方反代」）。
 
 本文余下部分是等价的手动步骤——如果你想理解每一步,或自动安装中途失败想手工
 接续,可以照着做。
@@ -141,9 +145,10 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
 
 - `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`
 - `workers/api/wrangler.toml` → `{ pattern = "api.example.com", custom_domain = true }`
-- `workers/console/wrangler.toml` → `{ pattern = "example.com", custom_domain = true }`
-  （也可以用子域名如 `analytics.example.com`，但要相应调整嵌入代码里的
-  `data-api`，见第 9 步）
+- `workers/console/wrangler.toml` → `{ pattern = "analytics.example.com", custom_domain = true }`
+  （如果就是要部署在主域名上，填 `example.com`）
+- `workers/console/wrangler.toml` 的 `[vars] INGEST_HOST` → 你的上报主机名（如
+  `in.example.com`）；控制台生成的每段嵌入代码里的 `data-api` 都取自它
 - `workers/console/wrangler.toml` 的 `[vars] ADMIN_EMAILS` → 你的管理员邮箱（逗号
   分隔）。本版本是**单租户**：列表里的人共享同一份站点列表（你自己的站点），
   其他人一律拒绝。登录仅支持 OAuth，第 7 步配置。
@@ -203,27 +208,26 @@ cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:console
 ```
 
-现在 `f.js` 在 `https://example.com/f.js` 可访问。
+现在 `f.js` 在 `https://analytics.example.com/f.js` 可访问。
 
-> **说明（M1）。** 参考架构把 SDK 放在独立的 `js.` 子域，这样即使暴露域名进了
-> 拦截列表也不影响后台（PROJECT_PLAN §1）。从 console 主域直接服务是 M1 的
-> 简化方案；以后迁到 `js.<域名>`（Workers Static Assets 或 R2）或第一方反代
-> （§12）不需要改代码。
+> **说明。** SDK 由 console worker 托管。如果不想让后台域名进入拦截列表
+> （PROJECT_PLAN §1），可以改为从独立的 `js.<域名>`（Workers Static Assets 或 R2）
+> 提供 `f.js`，或通过 `workers/proxy` 以第一方方式提供——见下文「第一方反代」。
 
 ## 9. 注册第一个站点
 
-1. 打开 `https://example.com/login.html`，用 Google 或 GitHub 登录(邮箱须在
+1. 打开 `https://analytics.example.com/login.html`，用 Google 或 GitHub 登录(邮箱须在
    `ADMIN_EMAILS` 里)。
-2. 点 **New site** 填：站点名、被统计站点的域名（如
+2. 点 **新建站点** 填：站点名、被统计站点的域名（如
    `blog.example.org, www.blog.example.org`）、adguard 模式、可选 AdSense id，
    以及**时区**。所有统计（今天/本月/每日 rollup）都按这个时区的日历天归集。
-   它默认取你的账号默认时区（在 ⚙ 齿轮 →「默认时区」里设），且**站点创建后
+   它默认取你的账号默认时区（在 ⚙ 设置 →「新站点的默认时区」里设），且**站点创建后
    不可更改**——选你想用来出报表的那个。站长在任何时区都能统计任何时区的站点，
    这个选项只决定「天」怎么切。
 3. 复制生成的嵌入代码，形如：
 
 ```html
-<script defer src="https://example.com/f.js"
+<script defer src="https://analytics.example.com/f.js"
         data-site="Ab3xK9pQ"
         data-api="https://in.example.com"
         data-adguard="balanced"
@@ -267,7 +271,7 @@ npx wrangler tail -c workers/consumer/wrangler.toml
 - **一小时内**：指标卡/趋势图/各维度表填充——它们读预聚合表，cron 每小时
   `:05` 重算。
 - **次日**：每日任务（03:30 UTC）产出群体聚簇封禁、基线 + 分布形态异常
-  （仪表盘「Recent anomalies」条），并清理超出保留期的原始数据。
+  （仪表盘顶部的「近期异常(对比基线)」条），并清理超出保留期的原始数据。
 
 ## 定时任务（自动）
 
@@ -352,8 +356,10 @@ npx wrangler d1 info pvuv-db
 - **站点列表**——每个站点一张卡，显示所选范围内的浏览量/访客/会话、时区和广告
   防护模式；跨站点的清洗流量排名；⚙ 设置（品牌、默认时区、AI 报告、API 令牌、
   爬虫目录、Cloudflare 边缘请求、存储）。
-- **仪表盘**——粘性区块导航（概览 · 趋势 · 来源 · 受众 · 核心网页指标 · 广告
-  系列 · 目标 · 漏斗 · 流量质量 · 广告防护 · 可疑访客 · AI 报告）。点任意一行
+- **仪表盘**——标签栏（概览 · 来源 · 受众 · 广告系列 · 漏斗 · 目标 · 核心网页指标 ·
+  流量质量 · 广告防护 · 可疑访客 · AI 报告）。每个标签页在第一次打开时才加载数据，
+  `#section` 链接会直接打开对应标签。指标卡、告警、异常条和实时在线数固定在标签栏
+  上方；趋势图在「概览」里。点任意一行
   （来源、页面、国家、设备、UTM）即可筛选整个仪表盘；来源按平台折叠（所有
   Google 域名合并为一行「Google」）。渠道（GA4 式分组）、来自干净流量的核心网页
   指标、带转化时延分布的目标，以及广告防护的影子模式横幅。
@@ -417,13 +423,13 @@ npm run deploy:console
 
 部署后的 `/` 是一个公开落地页。三个层级，都不需要 fork 代码：
 
-1. **改名称 + 介绍（零代码）。** 登录 console → *Homepage settings*：填你的
-   网站名称和介绍，默认首页会服务端渲染它们（包括 `<title>` 和
+1. **改名称 + 介绍（零代码）。** 登录 console → ⚙ 设置 →「站点与品牌」：填品牌
+   名称和描述（还可设置 Logo / Favicon），默认首页会服务端渲染它们（包括 `<title>` 和
    `<meta name="description">`）。
 2. **完全自定义页面。** 新建 `workers/console/public/home.html`，写任意 HTML，
    重新部署 console——它会整页替换默认首页，且**原样输出**（不注入任何内容）。
    该文件已 **gitignore**，你的落地页文案永远不会进公开仓库，`git pull` 也不会
-   冲突。官方 pvuv.ai 首页就按这个方式做。
+   冲突。官方 pvuv.ai 首页就是这样做的。
 3. **默认。** 什么都不做，就是自带的极简页面。
 
 自带的默认页页脚有一个小小的「Powered by pvuv.ai」链接。这只是**善意的默认、
@@ -438,9 +444,12 @@ npm run deploy:console
 上报端点变成**被统计域名自己的第一方请求**。它**不在** `npm run deploy:all` 里，需
 单独部署。
 
-1. 改 `workers/proxy/wrangler.toml`：`route` 设成你被统计域名下的路径前缀（如
-   `example.com/_pv/*`），`[vars]` 的 `UPSTREAM_INGEST` / `UPSTREAM_ASSETS` 填你的
-   ingest 主机和 console。
+1. 改 `workers/proxy/wrangler.toml`（`npm run setup` 不会改这个文件）：
+   - `account_id` → 你的 account id（文件里仍是 `PLACEHOLDER_ACCOUNT_ID`）；
+   - 路由的 `pattern` + `zone_name` → 被统计域名下的路径前缀及其 zone（如
+     `example.com/_pv/*` 和 `example.com`）；
+   - `[vars] PROXY_PREFIX` → 同一个前缀（如 `/_pv`）；
+   - `[vars] UPSTREAM_INGEST` / `UPSTREAM_ASSETS` → 你的 ingest 主机和 console 主机。
 2. 在代理和 ingest 之间共享一个密钥，让 ingest 信任代理转发的真实客户端上下文
    （真实 IP/ASN/地理/时区）——否则经代理后请求看起来都来自 Cloudflare，打分会失真：
    ```bash
@@ -455,21 +464,21 @@ npm run deploy:console
            data-site="Ab3xK9pQ" data-api="https://example.com/_pv"></script>
    ```
 
-代理把真实 IP/ASN/时区/地理作为 `x-pv-*` 头转发；ingest **仅当** `x-pv-proxy` 与
+代理把真实 IP/ASN/时区/地理作为 `x-pv-*` 头转发，并用共享的 `x-pv-proxy` 令牌认证；ingest **仅当** `x-pv-proxy` 与
 `PROXY_TOKEN` 匹配时才信任它们,所以普通客户端无法伪造自己的 IP。若 ingest 没设
 `PROXY_TOKEN`,转发头一律忽略（直连嵌入照常工作,不受影响）。
 
 ## AI 分析报告（可选）
 
-每个站点的仪表盘有一个 **AI report** 面板，把真实流量快照生成一份文字分析。它支持
+每个站点的仪表盘有一个 **AI 报告** 标签页，把真实流量快照生成一份文字分析。它支持
 **任意 OpenAI 兼容端点**（OpenAI、DeepSeek、OpenRouter、本地 vLLM/Ollama……）或
 **Anthropic (Claude)** API——由你选，不绑定任何厂商。
 
-在控制台配置一次即可，无需重新部署：登录 → **⚙ 设置** → *AI analysis reports*，
+在控制台配置一次即可，无需重新部署：登录 → **⚙ 设置** →「AI 分析报告」，
 填 **provider**（OpenAI 兼容 或 Anthropic）、**模型名**、可选 **API base URL**
 （留空用默认）、**报告语言**、以及你的 **API key**。key 存在你自己的 D1 里（从
-界面录入，不写进仓库任何文件），且永不回传浏览器。然后打开任意站点 → *AI report*
-→ **Generate**。
+界面录入，不写进仓库任何文件），且永不回传浏览器。然后打开任意站点 →「AI 报告」
+→ **生成**。
 
 > 更想用 Workers Secret 存 key？在 console worker 上设 `AI_API_KEY`
 > （`npx wrangler secret put AI_API_KEY -c workers/console/wrangler.toml`），把
@@ -564,7 +573,7 @@ Create Custom Token*。只给这两个权限，都是只读：
 
 ## 外部排名 / 评分 API（可选）
 
-外部排名系统可以用第 7 步设的服务端 `API_TOKEN`，一次拉取跨站点、基于清洗流量的榜单：
+外部排名系统可以用第 7 步的服务端 `API_TOKEN`（`npm run setup` 不会设置它，需要手动添加），一次拉取跨站点、基于清洗流量的榜单：
 
 ```bash
 curl -H "Authorization: Bearer $API_TOKEN" \
@@ -573,7 +582,7 @@ curl -H "Authorization: Bearer $API_TOKEN" \
 
 返回每个活跃站点的 clean（已排除 bot/crawler/suspect）浏览量，拆分为**内部**
 （你其它站点带来的互访）和**外部**流量；默认 `score` 用外部 clean 浏览量，所以
-互访不会抬高排名。站长也能在控制台首页看到 *Site ranking* 表格。详见
+互访不会抬高排名。站长也能在控制台的站点列表页看到「站点排名 · 清洗流量」表格。详见
 [`PROJECT_PLAN.zh-CN.md` §14](./PROJECT_PLAN.zh-CN.md)。
 
 ## 常见问题排查
@@ -585,14 +594,14 @@ curl -H "Authorization: Bearer $API_TOKEN" \
 | `/in` 返回 403 | 请求没有 `Origin`/`Referer` 头（服务器直发会被拒） |
 | 指标卡空但钻取有数据 | rollup 每小时 `:05` 跑——等下一轮 |
 | 无法登录 / 提示「非管理员」 | 你的邮箱不在 `ADMIN_EMAILS` 里,或没配置任何 OAuth 渠道 |
-| API 返回 401 | 缺少/错误的 `Authorization: Bearer <API_TOKEN>` 或 console 会话 cookie |
+| API 返回 401 / 403 | 401：个人 API 令牌（`pvuv_…`，⚙ 设置 → API 令牌）缺失或已吊销、`API_TOKEN` 不对，或没有 console 会话。403：限定单站点的令牌被用于其他站点 |
 | 部署时 Queue 报错 | Queues 需要 Workers Paid 套餐；`pvuv-ingest` 和 `pvuv-ingest-dlq` 都要先建好 |
-| 提示「AI is not configured」 | 在 ⚙ 设置 → AI analysis reports 里配好 provider + 模型 + API key（或设 `AI_API_KEY` 密钥） |
+| 提示「AI is not configured」 | 在 ⚙ 设置 →「AI 分析报告」里配好 provider + 模型 + API key（或设 `AI_API_KEY` 密钥） |
 | AI 报告「LLM request failed (401/404)」 | 所选厂商的 API key / base URL / 模型名不对——重新核对 AI 设置 |
 | 新的机器人信号一直不触发 | 部署前没重新生成 config——先 `npm run config:gen`（或 `npm install`）再重部署 `ingest`/`cron` |
 | 漏斗数字比预期低 | 漏斗只统计干净流量（和目标、收入一样排除机器人与爬虫）——「流量质量」一节能看到这部分被剔除了多少 |
 | 漏斗流失处没有行为标签 | 行为信号需要行为列（迁移 0017）和重建后的 `f.js`；更早的分区仍会给出漏斗，只是没有这些标签 |
-| 异常 / 分布告警条空 | 每日任务 03:30（UTC cron）才跑，且需要几天基线数据才会告警 |
+| 异常 / 分布告警条空 | 每日任务在 UTC 03:30 运行，且需要几天基线数据才会告警 |
 | 仪表盘一直停在「等待第一次访问」 | 该站点没有任何事件到达 D1：`data-api` 写错、页面 `Origin` 不在站点域名里，或 consumer 没部署——自检能定位到具体一步 |
 | 排名里 External / Internal 显示 `—` | 这两列来自 `rollup_source_daily`，由每小时任务填充——过了整点 05 分再看 |
 | 每日任务从不执行:`cluster_flags` 为空、`batch_wm_*` 冻结 | worker 的 Cron 触发器和 `wrangler.toml` 跑偏了——见「定时任务」里的警告。用 `SELECT key, value FROM instance_settings WHERE key LIKE 'batch_wm%'` 确认;时间戳过期的话每小时任务会在一小时内自愈，但触发器本身要修 |
@@ -642,7 +651,7 @@ npm run deploy:all            # ingest + consumer + api + console + cron
 npm run deploy:proxy          # 仅当你用了第一方反代
 ```
 
-本次升级需要注意：
+从 0.1.0 之前的部署升级（全新安装在第 6 步已应用全部 21 个迁移，可跳过下面这些）：
 
 - **必须先跑迁移，再部署 worker。** 这是本次唯一对顺序有要求的一步。事件分区会自我
   修复（consumer 和每小时 cron 会自动补列），但 `sessions.had_pointer` 只能靠迁移
