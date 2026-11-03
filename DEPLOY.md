@@ -1,0 +1,788 @@
+# Deploying pvuv.ai to Cloudflare
+
+> 中文版 / Chinese: [`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)
+
+This guide takes you from a fresh clone to a working deployment: five Workers,
+a D1 database, two KV namespaces, a Queue, and the collection SDK. It matches
+the code in this repository exactly — every command has been written against
+the current `wrangler.toml` files.
+
+**What you'll end up with** (addresses are examples — use your own domain):
+
+| Component | Address | Worker |
+|---|---|---|
+| Ingest + fast verdict | `https://in.example.com/in`, `/v` | `workers/ingest` |
+| Queue consumer | (no route — consumes `pvuv-ingest`) | `workers/consumer` |
+| Query API | `https://api.example.com/v1/...` | `workers/api` |
+| Console (dashboards) | `https://example.com/` | `workers/console` |
+| Scheduled rollups + daily anti-fraud/anomaly analysis | (no route — cron triggers) | `workers/cron` |
+| SDK `f.js` | `https://example.com/f.js` (M1; see step 8) | served by console |
+
+---
+
+## 0. Prerequisites
+
+- A **Cloudflare account** with the **Workers Paid plan** ($5/mo) — required
+  because the ingest pipeline uses [Cloudflare Queues](https://developers.cloudflare.com/queues/).
+  D1, KV, and Workers usage itself fit comfortably in included quotas for small/medium sites.
+- A **domain added to Cloudflare** (its DNS zone must be on your account) for
+  the routes `in.<domain>`, `api.<domain>`, and the console host.
+- **Node.js 18+** and npm.
+- Log in once: `npx wrangler login`, then note your account id from
+  `npx wrangler whoami`.
+
+## 1. Clone and install
+
+```bash
+git clone https://github.com/qiayue/pvuv.ai.git
+cd pvuv.ai
+npm install        # postinstall generates shared/config.gen.ts from config.example.toml
+```
+
+## 2. (Optional but recommended) private scoring config
+
+Scoring weights and thresholds are read from config, never hardcoded. The
+repo ships example defaults; production values belong in a gitignored file:
+
+```bash
+cp config.example.toml config.local.toml   # gitignored — tune privately
+npm run config:gen                          # regenerate after every edit
+```
+
+If you skip this, the example defaults are used. Either way `config:gen`
+runs automatically on `npm install` and before SDK builds.
+
+## Automated setup (recommended)
+
+Steps 3–8 below are all automatable, and `npm run setup` does them in one go:
+
+```bash
+npm install
+npx wrangler login
+npm run setup            # add --dry-run first to preview every command
+```
+
+It creates the D1 database, KV namespaces and queues; fills in every
+`PLACEHOLDER_*`; points the routes at your domain; generates the shared
+`HMAC_KEY` and installs it on the three workers that need it (never printing
+it); applies the migrations; builds and copies the SDK; and deploys all five
+workers.
+
+**Safe to re-run.** Existing resources are reused, and a file that is already
+configured is reported and left alone — so a partial or failed run is resumed by
+running it again, and an existing deployment can't be repointed by accident.
+
+Non-interactive:
+
+```bash
+npm run setup -- --domain example.com --admin you@example.com \
+  [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
+```
+
+Your domain is asked for once and written everywhere it is needed; DNS records
+and certificates are provisioned during deploy (Custom Domains, see step 5).
+Afterwards, complete the one step it cannot do for you: **OAuth login** (its own
+section further down).
+
+The rest of this guide is the manual equivalent — follow it if you want to
+understand each step, or if setup fails partway and you'd rather finish by hand.
+
+## 3. Create the Cloudflare resources
+
+```bash
+npx wrangler d1 create pvuv-db                 # note the database_id it prints
+npx wrangler kv namespace create BLOCKLIST     # note the id
+npx wrangler kv namespace create SITE_CONFIG   # note the id
+npx wrangler queues create pvuv-ingest
+npx wrangler queues create pvuv-ingest-dlq     # dead-letter queue
+```
+
+## 4. Fill in the placeholders
+
+Every `wrangler.toml` ships with `PLACEHOLDER_*` values. Replace them with
+the ids from step 3 (from the repo root):
+
+```bash
+ACCOUNT_ID=...        # from `npx wrangler whoami`
+D1_ID=...             # from `wrangler d1 create`
+KV_BLOCKLIST_ID=...   # from `wrangler kv namespace create BLOCKLIST`
+KV_SITE_CONFIG_ID=... # from `wrangler kv namespace create SITE_CONFIG`
+
+sed -i "s/PLACEHOLDER_ACCOUNT_ID/$ACCOUNT_ID/" wrangler.toml workers/*/wrangler.toml
+sed -i "s/PLACEHOLDER_D1_DATABASE_ID/$D1_ID/" wrangler.toml workers/*/wrangler.toml
+sed -i "s/PLACEHOLDER_KV_BLOCKLIST_ID/$KV_BLOCKLIST_ID/" workers/*/wrangler.toml
+sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.toml
+```
+
+> **Do not commit real ids to a public fork.** They are not secrets, but the
+> project convention (PROJECT_PLAN.md §21–§22) keeps them out of the repo.
+> Deploy from a private clone, or keep these edits uncommitted.
+
+## 5. Set your domains
+
+**This is the only place your domain is configured** — `npm run setup` asks for
+it here and writes it everywhere. Doing it by hand means editing three files.
+
+Three hostnames, one per worker. Most people already serve a site from their
+root domain, so the console defaults to a subdomain and leaves the apex alone:
+
+| | default | if you deploy on the apex | if `in.`/`api.` are taken |
+|---|---|---|---|
+| console | `analytics.example.com` | `example.com` | `analytics.example.com` |
+| ingest | `in.example.com` | `in.example.com` | `in-analytics.example.com` |
+| api | `api.example.com` | `api.example.com` | `api-analytics.example.com` |
+
+`analytics` is just a readable default — it is your DNS, so name it whatever you
+like with `--subdomain stats`, or set the host outright with `--console-host`.
+
+**Keep every host exactly one level below the root.** Universal SSL covers
+`example.com` and `*.example.com`, and a wildcard matches *one* label — so
+`in.pvuv.example.com` is not covered and needs Advanced Certificate Manager,
+while `in-pvuv.example.com` groups things the same way for free. `npm run setup`
+detects the nested form and prints the hyphenated equivalent of your own hosts.
+
+All of it is overridable — `--subdomain`, or `--console-host` / `--ingest-host` /
+`--api-host` for full control (or just edit the three files).
+
+Each worker owns one hostname, declared as a Cloudflare **Custom Domain**:
+
+- `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`
+- `workers/api/wrangler.toml` → `{ pattern = "api.example.com", custom_domain = true }`
+- `workers/console/wrangler.toml` → `{ pattern = "example.com", custom_domain = true }`
+  (or a subdomain like `analytics.example.com` — then adjust the embed snippet's
+  `data-api`, see step 9)
+- `workers/console/wrangler.toml` `[vars] ADMIN_EMAILS` → your admin email(s),
+  comma-separated. This build is **single-tenant**: everyone listed shares one
+  site list (your own sites); anyone else is refused. Login is OAuth-only —
+  you'll configure a provider in step 7.
+
+**No DNS step is needed.** With `custom_domain`, `wrangler deploy` creates the
+proxied DNS record and provisions the certificate for each hostname. Two things
+this requires:
+
+- the zone must already be **added to this Cloudflare account** (any plan) —
+  otherwise the deploy fails with a zone error;
+- the hostname must be **free**. A worker serves that host entirely, so pick one
+  you are not already serving a site from. If a conflicting DNS record exists,
+  the deploy stops rather than overwriting it.
+
+## 6. Create the database schema
+
+```bash
+npm run db:migrate:remote     # = wrangler d1 migrations apply pvuv-db --remote
+```
+
+This applies the versioned migrations in `migrations/` (0001 onward) — every
+table the platform uses: the analytics rollups, session/visitor profiles, the
+cluster-flag and anomaly-report tables, and the `ai_reports` and
+`instance_settings` stores. Re-running it later is safe — already-applied
+migrations are skipped ("No migrations to apply"). New monthly
+`events_YYYYMM` partitions are created automatically by the consumer as time
+passes, so no manual action is needed there.
+
+## 7. Deploy the Workers, then set secrets
+
+```bash
+npm run deploy:all
+```
+
+Then set the secrets. **Use the same `HMAC_KEY` value for all three
+workers** — the console signs session cookies that the api worker verifies,
+and the ingest worker signs the `_pv_v` verdict cookie:
+
+```bash
+openssl rand -base64 32        # generate one key, reuse it below
+
+npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml   # for external/server-side API access
+```
+
+Secrets take effect immediately; no redeploy needed. Until `HMAC_KEY` is set,
+`/in` and `/v` deliberately return 500 rather than run with a missing key.
+
+**Console login is OAuth-only** — set up Google and/or GitHub before you can
+sign in (next section covers it in detail). At minimum, for Google:
+
+```bash
+# set GOOGLE_CLIENT_ID in workers/console/wrangler.toml [vars], then:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+```
+
+## 8. Build and host the SDK
+
+```bash
+npm run build:sdk                                   # → sdk/dist/f.js (~6.5 KB gzipped)
+cp sdk/dist/f.js workers/console/public/f.js
+npm run deploy:console
+```
+
+`f.js` is now served at `https://example.com/f.js`.
+
+> **Note (M1).** The reference architecture serves the SDK from an isolated
+> `js.` subdomain so that ad-blocker listings of exposed hosts never touch
+> your dashboards (PROJECT_PLAN.md §1). Serving it from the console apex is
+> the simple M1 path; moving it to `js.<domain>` (Workers Static Assets or
+> R2) or a first-party reverse proxy (§12) needs no code changes later.
+
+## 9. Register your first site
+
+1. Open `https://example.com/login.html`, sign in with Google or GitHub
+   (the email must be in `ADMIN_EMAILS`).
+2. Click **New site**: name, the domain(s) the site runs on
+   (e.g. `blog.example.org, www.blog.example.org`), adguard mode, optional
+   AdSense client id, and the **timezone**. All stats (today / this month /
+   daily rollups) are aggregated by this timezone's calendar day. It defaults
+   to your account default (set it under the ⚙ gear → *Default timezone*) and
+   **cannot be changed after the site is created** — pick the one you want to
+   report in. Owners in any timezone can measure sites in any timezone; the
+   choice only affects how days are drawn.
+3. Copy the embed snippet it prints. It looks like:
+
+```html
+<script defer src="https://example.com/f.js"
+        data-site="Ab3xK9pQ"
+        data-api="https://in.example.com"
+        data-adguard="balanced"
+        data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
+```
+
+`data-api` must point at your ingest host — the SDK's built-in default is the
+reference domain `in.pvuv.ai`, so self-hosted deployments should always set
+it (the console generates it from `INGEST_HOST` in
+`workers/console/wrangler.toml [vars]`; adjust it if your ingest host differs).
+
+4. Open the new site's dashboard. Until its first event arrives it shows a
+   **first-run panel** instead of empty charts: the same snippet with a copy
+   button, a link to the self-check, and a live probe. The moment the first
+   pageview lands, the page switches to the dashboard by itself.
+
+## 10. Verify
+
+**Easiest: the built-in self-check.** Sign in to the console and open
+**Self-check** (top bar), or go to `https://<your-console>/health.html`. It
+walks every part of the deployment — database, migrations, secrets, config,
+KV, the ingest endpoint, a real end-to-end test event (ingest → Queue →
+consumer → D1, with enrichment + scoring), and the `/v` verdict — and tells
+you exactly what to fix for anything that fails. It uses a hidden
+`__pvuv_selftest` site, so your real analytics stay untouched.
+
+Or check manually:
+
+```bash
+# ingest is alive (400 "bad json" on an empty body = worker up and reachable):
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://in.example.com/in
+# with a body but a foreign Origin you'll get 204 (event silently dropped);
+# a request with no Origin/Referer at all gets 403
+
+# watch live logs while you visit your site:
+npx wrangler tail -c workers/ingest/wrangler.toml
+npx wrangler tail -c workers/consumer/wrangler.toml
+```
+
+Then visit a page that has the snippet and check, in the browser dev tools,
+that `POST /in` returns **204**. Data timeline:
+
+- **Immediately**: the first-run panel flips to the dashboard; events appear
+  in *Suspicious visitors* and in **Visitor journeys** (`visitors →` in the
+  header) — both read raw events.
+- **Within the hour**: metric cards / charts / breakdowns fill in — they read
+  the pre-aggregated rollups, which the cron worker recomputes at `:05` every
+  hour.
+- **Next day**: the daily job (03:30) produces population-cluster blocks,
+  baseline + distribution anomalies (the dashboard's *Recent anomalies* strip),
+  and purges raw data past the retention window.
+
+## Scheduled jobs (automatic)
+
+The `cron` worker runs two triggers (`workers/cron/wrangler.toml`), no setup
+beyond deploying it:
+
+| Schedule | Job |
+|---|---|
+| `5 * * * *` (hourly) | Recompute the recent daily rollups from raw events + sessions, so cards/charts stay fresh and the just-closed day settles. |
+| `30 3 * * *` (daily) | Population/batch analysis (fingerprint & IP-segment clusters, cookie-reset farms, session identity drift, bipartite score propagation → KV blocklist + batch re-verdict), baseline **and distribution-shape** anomaly detection → `anomaly_reports`, then the **retention purge** (next section), and finally — only if you configured one — the Cloudflare edge-request pull (see below). |
+
+All thresholds are read from your config (`[population]`, `[anomaly]`,
+`[distribution]`, `[retention]` in `config.example.toml` / `config.local.toml`),
+never hardcoded — so regenerate the config (`npm run config:gen`) and redeploy
+`cron` after any tuning.
+
+> **Never edit these triggers in the Cloudflare dashboard.** Its cron editor is
+> an "every N minutes/hours" builder that cannot express *daily at a fixed
+> time*, so merely **opening** the `30 3 * * *` trigger and saving rewrites it
+> to the nearest preset it can represent. Wrangler does not reconcile that back,
+> and the worker dispatches on the exact schedule string — so the daily job then
+> never runs, with **no error and no log**. This happened on the reference
+> deployment and went unnoticed for seven weeks: the daily batch's watermark
+> stayed frozen, `cluster_flags` stayed empty, and every population/cluster
+> detector was dormant the whole time.
+>
+> Two safeguards now exist, but neither replaces the rule above. A schedule that
+> matches no handler is logged loudly (`cron: NOTHING RAN — fired with
+> schedule …`), and if the daily batch's watermark has not moved for over a day
+> the **hourly** job runs it instead, so a drifted trigger costs you at most an
+> hour rather than weeks.
+>
+> To change a schedule, edit `workers/cron/wrangler.toml` and redeploy. To
+> recover one that has already drifted: delete **both** triggers in the
+> dashboard, then `npm run deploy:cron` to let wrangler recreate them. Confirm
+> the dashboard then reads *At 03:30* and *At 5 minutes past the hour*.
+
+## Storage & retention (keep D1 small)
+
+D1 databases are capped at 10 GB, and a few sites can reach several GB in a
+matter of months if nothing is pruned. Know what grows:
+
+| Table | What it is | Footprint |
+|---|---|---|
+| `events_YYYYMM` | every raw event, one partition per UTC month, 8 indexes each | ≈ 0.8 KB per row **including indexes**. A pageview produces 2–5 rows: the pageview, one `page_leave`, and periodic `page_pulse` behavior heartbeats. Bot traffic on a test site is often the majority of rows. |
+| `sessions` | one row per visit | ≈ 0.4 KB |
+| `visitor_profiles` | one row per visitor id ever seen (cross-visit scoring) | ≈ 0.3 KB — grows forever without pruning |
+| `rollup_*` | the pre-aggregated numbers the dashboards read | tiny; **kept forever** |
+
+Everything the dashboard shows (cards, charts, breakdowns, quality, ranking)
+comes from the rollups, so raw rows are only needed for the drill-downs:
+visitor journeys, the suspicious-visitors table, the funnel and the
+anomaly detector's device/entry-page checks. The retention windows in
+`config.local.toml` decide how far back those reach:
+
+```toml
+[retention]
+raw_events_days    = 90    # whole monthly partitions are DROPped once the month is past this
+pulse_events_days  = 14    # page_pulse heartbeats: trimmed early — rollups consumed them within the hour
+bot_events_days    = 30    # raw rows of bot/crawler-judged traffic; already counted, drill-down only
+profiles_idle_days = 180   # visitor_profiles not seen for this long
+```
+
+`0` means keep forever for that pass. A key that is missing from an older
+`config.local.toml` uses the value shown above, so upgrading alone already
+starts trimming. Regenerate and redeploy after changing them:
+
+```bash
+npm run config:gen && npm run deploy:cron && npm run deploy:console
+```
+
+The daily job (03:30 UTC) drops whole months past `raw_events_days` in one
+statement and trims the rest in batches of 5,000 rows (up to 200k rows per
+table per night), so a large backlog is worked off over a few nights without
+hitting D1's per-query budget.
+
+**See it and run it by hand:** ⚙ Settings → **Storage & retention** lists
+every partition with its row count, heartbeat rows, bot rows and an
+estimated size, plus the active windows, and has a **Run purge now** button
+(the same job the cron runs; safe to click repeatedly). The exact database
+size is:
+
+```bash
+npx wrangler d1 info pvuv-db
+```
+
+**Already at several GB?** Lower `bot_events_days` (7–14) and
+`pulse_events_days` (3–7) first — on test or bot-heavy sites that is where
+the rows are — then click *Run purge now* a few times, or wait for the
+nightly runs. The reported size may lag: SQLite marks freed pages for reuse
+before the file shrinks. If you need dashboards to reach further back than
+90 days, raise `raw_events_days` only after checking the partition sizes
+the panel shows — the rollups already cover any range for the charts.
+
+## What the console shows
+
+- **Sites** — one card per site with pageviews/visitors/sessions for the
+  selected range, timezone and ad-guard mode; the clean-traffic ranking
+  across your sites; ⚙ Settings (branding, default timezone, AI reports,
+  API tokens, crawler directory, Cloudflare edge requests, storage).
+- **Dashboard** — sticky section nav (Overview · Trend · Sources · Audience ·
+  Web Vitals · Campaigns · Goals · Funnel · Traffic quality · Ad protection ·
+  Suspicious · AI report). Click any row (source, page, country, device, UTM)
+  to filter the whole dashboard; sources are folded per platform (all Google
+  hosts read as one "Google" row). Channels (GA4-style grouping), Core Web
+  Vitals from clean traffic, goals with conversion-timing distribution, and
+  the shadow-mode banner for ad protection.
+- **Funnels** — several saved funnels per site (page paths and custom events,
+  2–8 steps), measured over clean traffic only. Every drop shows the median
+  time from the previous step and **what the people who left were doing on
+  that step**: dwell, scroll depth, rage clicks, dead clicks and JS errors —
+  the behaviour signals the SDK collects, which is what turns "we lose 61%
+  here" into something fixable. Break the whole funnel down by source,
+  country, device, browser or OS to find a step that only leaks for one
+  audience, and click *see who →* on any drop to open those visitors'
+  journeys. Saved funnels are readable by the API/MCP
+  (`/v1/sites/:id/funnels`, `…/funnel?funnel_id=…&breakdown=source`) and are
+  included in the AI report.
+- **Visitor journeys** (`visitors →`) — find visitors by page path or
+  verdict, then replay one visitor's sessions as a timeline: each page with
+  dwell, scroll depth, clicked elements, JS errors, rage/dead clicks, plus
+  custom events, forms and outbound clicks. Times are shown in the site's
+  timezone.
+- **Ad protection** — a per-tier estimate of what enforcement would do:
+  block rate, blocked pageviews, and an estimated false-positive rate. The
+  tiers are stored as `loose` / `balanced` / `strict` but are *displayed* by
+  what they block, in ascending strength — "loose" blocks everything that is
+  not clean, which is **more** than "balanced", and reading the three words in
+  order gives you the opposite of the truth. The false-positive estimate is the
+  share of blocked traffic that showed **pointer or keyboard** input; scrolling
+  deliberately does not count, because a headless scraper scrolls to trigger
+  lazy-loading. Shadow mode records without blocking so you can read these
+  numbers before committing.
+- **"Non-bot" columns** — `Non-bot PV` / `Non-bot visitors` count everything
+  whose verdict is not `bot` or `crawler`, which **includes `suspect`**. They
+  are not the strictly-clean count, and on a site under attack the two can
+  differ by 3×. The *Traffic quality* section shows the four verdicts
+  separately.
+- **Share link** — a read-only public dashboard (aggregates only, no
+  visitor-level data) with a rotatable token.
+- **Self-check** — `/health.html`, walks the whole deployment end to end.
+
+## Google / GitHub login (required)
+
+The console is **OAuth-only** — sign in with Google and/or GitHub; there is no
+password login. A provider appears on the sign-in page only when both its
+client id and secret are set, so you must configure at least one.
+
+**Single-tenant / admin allowlist.** OAuth is authentication, not open
+registration. Only emails listed in `ADMIN_EMAILS` (comma-separated, in
+`workers/console/wrangler.toml`) may sign in; anyone else is refused with
+"not an admin". Every admin shares **one** site list (your own sites) — a
+verified email is the identity, so Google and GitHub under the same address
+are the same account. (Running a true multi-tenant instance where strangers
+register their own separate accounts is out of scope for this open-source
+build.)
+
+**Google:** in [Google Cloud Console](https://console.cloud.google.com/) →
+APIs & Services → Credentials, create an OAuth client (type: Web application)
+with authorized redirect URI `https://<your-console-domain>/api/auth/google/callback`.
+Then:
+
+```bash
+# set GOOGLE_CLIENT_ID in workers/console/wrangler.toml [vars], and:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+**GitHub:** in GitHub → Settings → Developer settings → OAuth Apps → New OAuth
+App, set Authorization callback URL
+`https://<your-console-domain>/api/auth/github/callback`. Then:
+
+```bash
+# set GITHUB_CLIENT_ID in workers/console/wrangler.toml [vars], and:
+npx wrangler secret put GITHUB_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+Redeploy the console after changing `[vars]`; secrets take effect immediately.
+
+## Customize the homepage
+
+Your deployment's `/` is a public landing page. Three tiers, no forking needed:
+
+1. **Name + description (no code).** Console → sign in → *Homepage settings*:
+   set your site name and description; the default page renders them
+   (server-side, also in `<title>` and `<meta name="description">`).
+2. **Fully custom page.** Create `workers/console/public/home.html` with any
+   HTML you like and redeploy the console — it replaces the default homepage
+   entirely and is served **verbatim** (nothing is injected). The file is
+   **gitignored**, so your landing copy never enters the public repo and
+   `git pull` never conflicts. This is also how the official pvuv.ai homepage
+   is expected to work.
+3. **Default.** Do nothing and you get the minimal shipped page.
+
+The shipped default page carries a small optional "Powered by pvuv.ai" footer
+link. It's a courtesy, **not required** — MIT imposes no attribution — so keep
+it to support the project or remove it freely (a custom `home.html` has no
+footer at all). The default page is intentionally sparse so that thousands of
+deployments don't publish identical landing copy (duplicate content in search
+engines).
+
+## First-party reverse proxy (optional, blocker-resistant)
+
+By default the SDK loads from your console and reports to `in.<domain>` — a
+third-party host that ad/tracker blockers eventually list. For maximum accuracy
+you can serve `f.js` and the reporting endpoints as **first-party** requests on
+the measured site's own domain via `workers/proxy` (§12). It is NOT part of
+`npm run deploy:all` — deploy it separately.
+
+1. Edit `workers/proxy/wrangler.toml`: set the `route` to a path prefix on your
+   measured domain (e.g. `example.com/_pv/*`), and the `[vars]` `UPSTREAM_INGEST`
+   / `UPSTREAM_ASSETS` to your ingest host and console.
+2. Share a secret between the proxy and ingest so ingest trusts the forwarded
+   client context (real IP/ASN/geo) — without it a proxied request would look
+   like it came from Cloudflare and mis-score:
+   ```bash
+   openssl rand -base64 32   # one value, set on BOTH workers
+   npx wrangler secret put PROXY_TOKEN -c workers/proxy/wrangler.toml
+   npx wrangler secret put PROXY_TOKEN -c workers/ingest/wrangler.toml
+   ```
+3. Deploy: `npm run deploy:proxy` (and redeploy ingest so it picks up the secret).
+4. Point the embed at the proxy — first-party src + data-api:
+   ```html
+   <script defer src="https://example.com/_pv/f.js"
+           data-site="Ab3xK9pQ" data-api="https://example.com/_pv"></script>
+   ```
+
+The proxy forwards the real client IP/ASN/timezone/geo as signed `x-pv-*`
+headers; ingest trusts them ONLY when `x-pv-proxy` matches `PROXY_TOKEN`, so a
+direct client can't spoof its IP. If `PROXY_TOKEN` is unset on ingest, forwarded
+headers are ignored (direct embed keeps working unchanged).
+
+## AI analysis reports (optional)
+
+Each site's dashboard has an **AI report** panel that turns a factual traffic
+snapshot into a written summary. It works with **any OpenAI-compatible endpoint**
+(OpenAI, DeepSeek, OpenRouter, a local vLLM/Ollama, …) or the **Anthropic
+(Claude)** API — you choose, so no provider is baked in.
+
+Configure it once in the console, no redeploy needed: sign in → **⚙ Settings** →
+*AI analysis reports*, and set the **provider** (OpenAI-compatible or Anthropic),
+**model name**, optional **API base URL** (blank uses the provider default),
+**report language**, and your **API key**. The key is stored in your own D1
+(entered via the UI, never written into a repo file) and is never returned to the
+browser. Then open any site → *AI report* → **Generate**.
+
+> Prefer a Workers Secret for the key? Set `AI_API_KEY` on the console worker
+> (`npx wrangler secret put AI_API_KEY -c workers/console/wrangler.toml`) and
+> leave the key field blank; the UI value takes precedence when both are set.
+
+## API tokens, MCP server & CLI (optional)
+
+Read your data from outside the console: a REST API, an **MCP server** so your
+own chatbot can answer questions about your traffic, and a **CLI** for terminals
+and cron jobs. All read-only.
+
+Create a token in the console: **⚙ settings → API tokens**. Name it after the
+client that will hold it, and scope it to one site or all of yours. It is shown
+**once** — only an HMAC is stored, so it cannot be recovered. Revoking takes
+effect immediately.
+
+```bash
+export PVUV_API_URL=https://api.example.com
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+For a chatbot (Claude Desktop shown — no install step, the server is a plain
+Node file):
+
+```json
+{"mcpServers":{"pvuv":{"command":"node","args":["/path/to/pvuv.ai/mcp/index.mjs"],
+  "env":{"PVUV_API_URL":"https://api.example.com","PVUV_TOKEN":"pvuv_…"}}}}
+```
+
+Full endpoint and tool reference: [`docs/API.md`](./docs/API.md).
+
+## Crawler categorisation (optional)
+
+By default every crawler is recorded as one undifferentiated `crawler` verdict.
+Import a public bots-and-agents catalogue (Cloudflare Radar's directory, or a
+JSON mirror of it) in **⚙ settings → Crawler directory** — upload the file or
+paste the JSON — and crawler traffic is additionally labelled by kind: search
+engine, AI training, SEO tool, ad verification, monitoring, …
+
+The importer accepts the several shapes these catalogues ship in and reports
+what it parsed (entries, skipped rows, category histogram), so a mis-parsed file
+is obvious rather than silently classifying nothing. A *Crawlers by category*
+panel then appears under Traffic quality.
+
+This is **classification only** — a category never affects scoring, verdicts or
+ad protection. Nothing is imported by default, and no third-party request is
+ever made from your deployment.
+
+## Cloudflare edge requests (optional, advanced)
+
+Everything else in this product is measured by the tracking script, which means
+it can only ever count visitors whose browser **ran JavaScript**. An AI crawler,
+a scraper or a feed reader fetches your HTML and leaves — it never executes a
+script, so it never reaches `/in`. No amount of detection can recover a request
+that was never reported.
+
+Cloudflare, sitting in front of your origin, saw every one of them. Give the
+console a **read-only** Cloudflare API token and the nightly job pulls those
+request counts, so a *What the script never saw* panel can show the difference:
+
+```
+Edge HTML requests   12,480    ← what Cloudflare served
+Browser pageviews     2,773    ← what the script reported
+Gap                   9,707    ← fetched HTML, never ran JS
+```
+
+with the top user agents behind it (GPTBot, ClaudeBot, CCBot, …).
+
+**Creating the token.** In the Cloudflare dashboard: *My Profile → API Tokens →
+Create Token → Create Custom Token*. Give it exactly these two permissions, both
+read-only:
+
+| Type | Resource | Level |
+|---|---|---|
+| Zone | Zone | Read |
+| Zone | Analytics | Read |
+
+Under *Zone Resources* pick the zones your sites are on (or all zones in the
+account). Then paste the token into **⚙ settings → Cloudflare edge requests** and
+press *Save & check* — it is verified immediately and tells you which of your
+sites it matched to which zone, so a wrongly-scoped token is caught now rather
+than by an empty panel a week later.
+
+Notes:
+
+- **Entirely optional.** Leave it empty and nothing changes: the feature is a
+  no-op, the panel stays hidden, and no request is ever made to Cloudflare.
+- The token is stored in your own D1 and is never returned to the browser.
+- Read-only: nothing here writes to your Cloudflare account.
+- **Descriptive only.** Edge counts never feed scoring, verdicts or ad
+  protection — requests and visitors are different populations, and mixing them
+  would corrupt every rate the product computes.
+- Data uses `httpRequestsAdaptiveGroups`, which is available on **all**
+  Cloudflare plans (Logpush/Logpull are Enterprise-only). Days are your site's
+  local days, so edge counts and pageviews line up without any correction.
+- Only completed days are pulled — today is still accumulating. The first run
+  reaches back 14 days; after that the last 3 days are refreshed each night so
+  late-arriving figures correct themselves.
+- If a pull fails, Cloudflare's own error text is shown verbatim in the settings
+  panel. "Authentication error" and a missing permission need different fixes.
+
+## External ranking / scoring API (optional)
+
+An external ranking system can pull a cross-site, clean-traffic leaderboard in
+one call, authorized with the server-side `API_TOKEN` you set in step 7:
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.example.com/v1/ranking?period=30d"
+```
+
+It returns each active site's clean (bot/crawler/suspect-excluded) pageviews
+split into **internal** (mutual visits from your other sites) and **external**
+traffic; the default `score` is external clean pageviews, so mutual visits can't
+inflate a ranking. Owners also see this as a *Site ranking* table on the console
+home page. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `/in` returns 500 | `HMAC_KEY` secret not set on the ingest worker |
+| `/in` returns 204 but no data | The page's `Origin` host doesn't match the site's `allowed_domains` (mismatches are dropped silently by design) — check the domains you registered; note the KV site cache refreshes within 5 minutes of a site edit |
+| `/in` returns 403 | Request has no `Origin`/`Referer` header (server-to-server calls are rejected) |
+| Cards empty, drill-down has data | Rollups run hourly at `:05` — wait for the next run |
+| Can't sign in / "not an admin" | your email isn't in `ADMIN_EMAILS`, or no OAuth provider is configured |
+| API returns 401 | Missing/wrong `Authorization: Bearer <API_TOKEN>` or console session cookie |
+| Queue errors on deploy | Queues need the Workers Paid plan; both `pvuv-ingest` and `pvuv-ingest-dlq` must exist |
+| "AI is not configured" | Set provider + model + API key under ⚙ Settings → AI analysis reports (or the `AI_API_KEY` secret) |
+| AI report "LLM request failed (401/404)" | Wrong API key, base URL, or model name for the chosen provider — recheck the AI settings |
+| New bot signals never fire | Config not regenerated before deploy — run `npm run config:gen` (or `npm install`) then redeploy `ingest`/`cron` |
+| Funnel numbers lower than expected | Funnels count CLEAN traffic only (bots and crawlers are excluded, as they are for goals and revenue) — the *Traffic quality* section shows how much that removes |
+| Funnel drops show no behaviour chips | The friction signals need the behaviour columns (migration 0017) and a rebuilt `f.js`; a partition older than that reports the funnel without them |
+| Anomaly / distribution strip empty | The daily job runs at 03:30 site-local-ish (UTC cron); needs a few days of baseline before it flags |
+| Dashboard stays on "Waiting for the first visit" | No event has reached D1 for that site: wrong `data-api`, page `Origin` not in the site's domains, or the consumer isn't deployed — the self-check pins it down |
+| Ranking shows `—` for External / Internal | Those two columns come from `rollup_source_daily`, filled by the hourly job — check back after `:05` |
+| Daily job never runs: `cluster_flags` empty, `batch_wm_*` frozen | The worker's Cron Triggers have drifted from `wrangler.toml` — see the warning under *Scheduled jobs*. Check `SELECT key, value FROM instance_settings WHERE key LIKE 'batch_wm%'`; if the timestamp is stale the hourly job will self-heal within the hour, but fix the trigger |
+| Cron log says `NOTHING RAN — fired with schedule …` | Same cause, now reported explicitly: that schedule matches no handler. Delete both triggers in the dashboard and `npm run deploy:cron` |
+| Ad-protection false-positive rate looks impossibly high | Reading a period from before the pointer split (migration 0021). Rows written earlier fall back to the old any-interaction bit, which counted scrolling — and scrapers scroll. Look at a period that starts after the deploy |
+| Every visitor suddenly looks like a no-interaction bot | Should not happen: `had_pointer` is NULL for loaders that predate the split and NULL is treated as *unknown*, never as *no pointer*. If you see it, check that migration 0021 ran before the workers were deployed |
+| D1 database keeps growing / approaching 10 GB | Raw `events_YYYYMM` rows (bot traffic + behavior heartbeats). Lower `[retention]` windows, redeploy `cron` + `console`, then ⚙ Settings → Storage → *Run purge now* — see *Storage & retention* |
+
+## Local development
+
+No Cloudflare resources needed — everything runs in miniflare:
+
+```bash
+npm install
+npx wrangler d1 migrations apply pvuv-db --local --persist-to .wrangler/dev
+
+# seed a site for testing (console flow works too):
+npx wrangler d1 execute pvuv-db --local --persist-to .wrangler/dev --command \
+  "INSERT INTO sites (site_id,name,owner_id,allowed_domains,adguard_mode,created_at)
+   VALUES ('Ab3xK9pQ','dev','admin','[\"localhost\"]','balanced',0)"
+
+# ingest + consumer share a local queue when run in ONE dev session:
+npx wrangler dev -c workers/ingest/wrangler.toml -c workers/consumer/wrangler.toml \
+  --persist-to .wrangler/dev --port 8788 --var HMAC_KEY:dev-key
+
+# console (separate terminal is fine — but stop other dev sessions using the
+# same persist dir before starting a new one):
+npx wrangler dev -c workers/console/wrangler.toml --persist-to .wrangler/dev \
+  --port 8790 --var HMAC_KEY:dev-key --var ADMIN_EMAILS:you@example.com \
+  --var GOOGLE_CLIENT_ID:... --var GOOGLE_CLIENT_SECRET:...
+
+# trigger the hourly rollup locally:
+npx wrangler dev -c workers/cron/wrangler.toml --persist-to .wrangler/dev \
+  --port 8791 --test-scheduled
+curl "http://localhost:8791/__scheduled?cron=5+*+*+*+*"
+```
+
+Point a test page's snippet at `data-api="http://localhost:8788"`.
+
+## Updating a deployment
+
+```bash
+git pull
+npm install                   # regenerates config.gen.ts from your config
+npm run db:migrate:remote     # applies any new migrations (no-op otherwise)
+npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
+npm run deploy:all            # ingest + consumer + api + console + cron
+npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
+```
+
+Notes for this release:
+
+- **Run the migrations BEFORE deploying the workers.** This is the one step
+  whose order matters. Event partitions repair themselves (the consumer and the
+  hourly cron add missing columns on the fly), but `sessions.had_pointer` comes
+  only from migration 0021 — deploy the consumer first and every session write
+  fails until the migration lands.
+- **Migrations 0016–0021** apply with the command above: channel + web vitals +
+  public token, behavior-signal columns, transport fingerprint, saved funnels,
+  dropping two never-read `visitor_profiles` indexes, and the pointer/scroll
+  split. No manual `ALTER TABLE` is needed for older monthly partitions.
+- **Interaction is now two signals, not one.** `had_interaction` fired on any of
+  mousemove / touchstart / scroll / keydown — and a scroll costs a headless
+  scraper nothing, since they scroll to trigger lazy-loading. Measured across 11
+  production sites, 12–56% of *bot*-verdicted sessions carried "interaction",
+  while crawler-verdicted sessions (which never execute JS) sat near 0%; on the
+  worst-hit site the suspect bucket appeared *more* engaged than the clean one.
+  `had_pointer` now carries pointer/keyboard only, and the zero-interaction flag
+  plus the ad-guard false-positive estimate read it. Expect the estimate to drop
+  sharply and the *balanced* tier's block rate to rise — on the reference site,
+  balanced went from blocking 57% at an apparent 28% false-positive rate to
+  blocking 85% at 0.5%.
+- **Rebuild and recopy `f.js`.** The pointer signal comes from the loader; until
+  it rolls over (see below) `had_pointer` is NULL, which readers treat as
+  *unknown* and fall back to the old bit. Nothing misfires during the window.
+- **New detection signals.** `UNIDENTIFIED_DESKTOP` (a desktop device whose UA
+  names no known browser family *and* no identifiable OS — 0.1% of healthy
+  traffic across 10 sites, 29.9% on a site under a scraping campaign) and a
+  one-shot farm detector that clusters on /24, ASN and transport fingerprint
+  without needing a fingerprint or a pre-existing bot label. Both are governed
+  by `config.example.toml`; copy the new `[weights] unidentified_desktop` and
+  `[population] oneshot_*` keys into your `config.local.toml` to tune them.
+- **Session dwell is clamped to one day.** A backgrounded tab kept sending
+  `page_pulse`, which refreshed `last_active_at` so the session never idled out;
+  production held single sessions of 4.3 and 7.4 days, dragging one site's mean
+  dwell to 35 minutes against a 4-minute visit duration. New writes are clamped.
+  To fix history: `UPDATE sessions SET duration_ms = 86400000 WHERE duration_ms > 86400000;`
+- **Retention has three windows** (`pulse_events_days`, `bot_events_days`,
+  `profiles_idle_days`). Copy them into your `config.local.toml` from
+  `config.example.toml`; until you do, the shipped defaults apply. The purge is
+  batched, so a database that has gone untrimmed for months comes down over
+  several daily runs rather than all at once.
+- **Redeploy every worker.** Four rounds of database-cost work landed across
+  `cron`, `api` and `console`: the hourly rollup's two heaviest statements
+  (~72% of all database time), two write-only indexes and a settled day being
+  recomputed hourly, the daily job's window scans getting a usable index
+  (`SCAN` → `SEARCH`, one statement was 12.2s), and the dashboard's realtime
+  pair collapsing into a single scan. Results are unchanged; no backfill.
+
+Two things people miss:
+
+- **Always regenerate the config before deploying.** New signal weights and
+  threshold sections only take effect once `shared/config.gen.ts` is
+  regenerated (`npm install` does it, or `npm run config:gen`). Skip it and new
+  detection signals silently score 0.
+- **`f.js` changes reach browsers within ~1 hour.** The loader is served with a
+  bounded, revalidating cache (`max-age=3600, stale-while-revalidate`), so a
+  rebuilt `f.js` propagates to already-embedded sites automatically. Server-side
+  changes (ingest scoring, API, dashboards, cron) take effect immediately on
+  deploy. To force the SDK out at once, purge `/f.js` in the Cloudflare cache.

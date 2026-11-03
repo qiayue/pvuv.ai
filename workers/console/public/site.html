@@ -1,0 +1,2035 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
+<style>
+  /* page-specific: realtime strip, shadow banner, site switcher, chart tooltip,
+     traffic-health strip, funnel, AI report prose */
+  .rt { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--text-3); font-size: 13px; flex-wrap: wrap; }
+  .rt .rt-site { font-weight: 600; color: var(--text); padding-right: 10px; margin-right: 4px; border-right: 1px solid var(--border-2); }
+  .rt .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--text); }
+  .rt .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
+  .rt svg { display: block; }
+  .shadow-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 9px 14px; border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-text); border-radius: var(--radius); font-size: 13px; }
+  .shadow-banner[hidden] { display: none; }
+  .shadow-banner > span { flex: 1 1 320px; min-width: 0; }
+  .shadow-banner .enforce { margin-left: auto; }
+  .switcher { position: relative; }
+  .title-btn { font: 700 16px var(--font); color: var(--text); background: none; border: 0; padding: 4px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 7px; }
+  .title-btn:hover { background: var(--surface-2); }
+  .title-btn .caret { color: var(--muted); font-size: 11px; font-weight: 400; }
+  .switch-pop { position: absolute; top: 100%; left: 0; margin-top: 6px; width: 300px; max-width: 80vw; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 30; padding: 8px; }
+  .switch-pop input { width: 100%; background: var(--bg); margin-bottom: 6px; }
+  .switch-pop ul { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+  .switch-pop li { padding: 7px 9px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+  .switch-pop li:hover, .switch-pop li.active { background: var(--surface-3); }
+  .switch-pop li .nm { font-weight: 600; }
+  .switch-pop li.current .nm::after { content: ' ✓'; color: var(--link); }
+  .switch-pop li .dm { color: var(--muted); font-size: 12px; }
+  .switch-pop .none { color: var(--muted); padding: 8px 9px; font-size: 13px; }
+  .flags { color: var(--muted); font-size: 12px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-3); margin-top: 8px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .gbtn { display: inline-block; margin: 14px 2px 0; padding: 8px 13px; border: 1px solid var(--border-2); border-radius: var(--radius); font-size: 13px; }
+  .gbtn:hover { background: var(--surface-2); border-color: var(--border-3); text-decoration: none; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 2px; }
+  .filters:empty { display: none; }
+  .filters .clear { background: none; border: 0; color: var(--muted); font-size: 12px; text-decoration: underline; }
+  .alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .alerts:empty { display: none; }
+  .alert { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid; font-size: 13px; }
+  .alert .ico { flex: 0 0 auto; }
+  .alert .body b { display: block; margin-bottom: 1px; }
+  .alert .body span { opacity: .85; }
+  .alert-warning { border-color: var(--warn-border); background: var(--warn-bg); color: var(--warn-text); }
+  .alert-critical { border-color: var(--bad-border); background: var(--bad-bg); color: var(--bad-text); }
+  .anomalies { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .anomalies:empty { display: none; }
+  .anomaly-hd { font-size: 12px; color: var(--muted); }
+  .anomaly { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 7px; border: 1px solid #2a3550; background: #141a26; color: var(--text-2); font-size: 12.5px; }
+  .anomaly .ico { flex: 0 0 auto; }
+  .anomaly .day { color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  /* chart hover readout: crosshair + tooltip following the pointer */
+  #chart { position: relative; }
+  .tt { position: absolute; z-index: 5; pointer-events: none; white-space: nowrap; background: var(--bg); border: 1px solid var(--border-2); border-radius: 6px; padding: 7px 9px; font-size: 12px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,.55); transform: translate(-50%, -100%); }
+  .tt[hidden] { display: none; }
+  .tt .tl { color: var(--muted); margin-bottom: 2px; }
+  .tt .tv { font-weight: 600; }
+  .tt .ti { color: var(--bad); }
+  .tt .tp { color: var(--muted); font-style: italic; }
+  /* traffic-health strip */
+  .health { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .hm { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+  .hm .hl { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  .hm .hv { font-size: 20px; font-weight: 600; margin: 3px 0 6px; font-variant-numeric: tabular-nums; }
+  .hm .sub { font-size: 11px; color: var(--muted); }
+  .hbar { height: 4px; border-radius: 3px; background: #21262f; overflow: hidden; position: relative; }
+  .hbar i { display: block; height: 100%; border-radius: 3px; }
+  .hbar .lim { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--muted-2); }
+  .hm.ok   .hv { color: var(--good-text); } .hm.ok   .hbar i { background: var(--good); }
+  .hm.near .hv { color: var(--warn); } .hm.near .hbar i { background: var(--warn); }
+  .hm.over .hv { color: var(--bad); } .hm.over .hbar i { background: var(--bad); }
+  .hm.over { border-color: var(--bad-border); }
+  /* funnel */
+  .fstep { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .fstep .fnum { color: var(--muted); width: 16px; flex: 0 0 auto; }
+  .fstep select, .fstep input { background-color: var(--bg); }
+  .fstep input { flex: 1; min-width: 0; }
+  .fstep .fx { background: #313d50; border: 0; color: var(--text-2); width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto; }
+  .fstep .fx:hover { background: #47566e; }
+  .frow { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
+  .fbar-wrap { position: relative; flex: 1; height: 30px; background: #141a26; border-radius: 6px; overflow: hidden; }
+  .fbar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(59,130,246,.35); }
+  .flabel { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12.5px; white-space: nowrap; }
+  .fstat { flex: 0 0 auto; min-width: 118px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .fhint { color: var(--muted); font-size: 12px; margin: 8px 2px 0; }
+  .fname-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .fname-row input { flex: 0 1 240px; background-color: var(--bg); }
+  /* drop-off annotation between two funnel bars: how many left, and what the
+     behaviour signals say they were doing when they did */
+  .fdrop { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 1px 0 7px; padding: 3px 0 3px 12px; border-left: 2px dashed var(--border-2); font-size: 12.5px; color: var(--muted); }
+  .fdrop .fnum-drop { color: var(--warn); font-weight: 600; }
+  .fchip { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 9px; background: var(--surface-2); color: var(--text-2); font-size: 11.5px; line-height: 19px; white-space: nowrap; }
+  .fchip.bad { background: #331414; color: var(--bad); }
+  .fchip.warn { background: #33290f; color: var(--warn); }
+  .fseg { margin-top: 18px; }
+  .fseg .worst { color: var(--warn); }
+  .fseg td.conv { font-weight: 600; }
+  /* first-run */
+  .onboard { margin: 0 0 18px; border-color: #2a3550; background: #141a26; }
+  .onboard pre { margin: 0; background: #0c1117; border: 1px solid #2b3a2e; border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; word-break: break-all; font: 12.5px/1.5 var(--mono); color: #9ece9e; }
+  body.onboarding main > :not(#onboard):not(.secnav) { display: none; }
+  body.onboarding .secnav { visibility: hidden; }
+  /* mobile: suspicious-visitor cards replace the wide table */
+  .mcards { display: none; }
+  @media (max-width: 720px) { .mtable { display: none; } .mcards { display: block; } }
+  /* AI report prose */
+  .ai-md { font-size: 13.5px; line-height: 1.65; color: var(--text-2); }
+  .ai-md h3 { font-size: 14px; margin: 16px 0 6px; color: #e7ecf3; }
+  .ai-md h3:first-child { margin-top: 0; }
+  .ai-md p { margin: 6px 0; }
+  .ai-md ul { margin: 6px 0; padding-left: 20px; }
+  .ai-md li { margin: 3px 0; }
+  .ai-md strong { color: #e7ecf3; }
+</style>
+</head>
+<body>
+<script src="/i18n.js"></script>
+<header>
+  <a href="/sites.html" data-i18n="← sites">← sites</a>
+  <div class="switcher" id="switcher">
+    <button class="title-btn" id="titleBtn" aria-haspopup="listbox" aria-expanded="false">
+      <span id="titleText">…</span><span class="caret">▾</span>
+    </button>
+    <div class="switch-pop" id="switchPop" hidden>
+      <input id="switchSearch" type="text" placeholder="Search sites…" data-i18n-ph="Search sites…" autocomplete="off" aria-label="Search sites">
+      <ul id="switchList" role="listbox"></ul>
+    </div>
+  </div>
+  <a id="visitorsLink" href="#" data-i18n="visitors →">visitors →</a>
+  <div class="hdr-right">
+  <select id="lang" aria-label="Language"></select>
+  <select id="period" aria-label="Date range">
+    <optgroup label="Rolling" data-i18n-label="Rolling">
+      <option value="24h" data-i18n="Last 24 hours">Last 24 hours</option>
+      <option value="today" selected data-i18n="Today">Today</option>
+      <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+      <option value="30d" data-i18n="Last 30 days">Last 30 days</option>
+      <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
+    </optgroup>
+    <optgroup label="Calendar" data-i18n-label="Calendar">
+      <option value="yesterday" data-i18n="Yesterday">Yesterday</option>
+      <option value="this_week" data-i18n="This week">This week</option>
+      <option value="last_week" data-i18n="Last week">Last week</option>
+      <option value="this_month" data-i18n="This month">This month</option>
+      <option value="last_month" data-i18n="Last month">Last month</option>
+      <option value="this_year" data-i18n="This year">This year</option>
+    </optgroup>
+  </select>
+  <button id="embedBtn" class="btn" title="The tracking snippet for this site" data-i18n-title="The tracking snippet for this site">&lt;/&gt; <span data-i18n="Embed code">Embed code</span></button>
+  <button id="shareBtn" class="btn" title="Read-only public dashboard link">🔗 <span data-i18n="Share link">Share link</span></button>
+  <button id="dlBtn" class="btn" title="Download all data for the selected range as JSON">⬇ <span data-i18n="Download data">Download data</span></button>
+  </div>
+</header>
+<main>
+  <nav class="secnav" aria-label="Sections"><ul id="secnav"></ul></nav>
+  <!-- first-run state: shown instead of the dashboard until the site has recorded a single event -->
+  <section class="onboard panel" id="onboard" hidden>
+    <h2 style="margin:0 0 6px;color:var(--text)" data-i18n="Waiting for the first visit">Waiting for the first visit</h2>
+    <p class="muted" style="margin:0 0 14px" data-i18n="onboard-help">This site has not recorded any event yet. Add the snippet below to every page (before <code>&lt;/head&gt;</code> or at the end of <code>&lt;body&gt;</code>), open your site once, and this page switches to the dashboard by itself.</p>
+    <pre id="onboardSnippet"></pre>
+    <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+      <button class="btn" id="onboardCopy" data-i18n="Copy snippet">Copy snippet</button>
+      <a class="btn" href="/health.html" data-i18n="Run self-check ↗">Run self-check ↗</a>
+      <span class="loading" id="onboardProbe" data-i18n="listening for events…">listening for events…</span>
+    </div>
+    <p class="muted" style="font-size:12px;margin:14px 0 0" data-i18n="onboard-note">The snippet is the same one the site list shows after creation. <b>data-api</b> must be your ingest host; <b>data-adguard</b> only matters if you protect ads.</p>
+  </section>
+  <div class="rt" id="realtime"></div>
+  <div class="shadow-banner" id="shadowBanner" hidden></div>
+  <div class="alerts" id="alerts"></div>
+  <div class="anomalies" id="anomalies"></div>
+  <div class="filters" id="filters"></div>
+  <!-- Only the active section is in the DOM flow, and a section runs its
+       queries the first time it is opened. Everything used to live on one
+       long page and load at once, which on a busy site meant ~15 concurrent
+       live scans and a screen full of skeletons. -->
+  <div class="cards" id="cards"></div>
+
+  <section class="sec" data-sec="overview" hidden>
+  <div class="chart-head">
+    <h2 id="chartTitle">Pageviews</h2>
+    <div class="chart-ctrls">
+      <select id="metric" aria-label="Metric"></select>
+      <select id="interval" aria-label="Interval"></select>
+    </div>
+  </div>
+  <div class="panel" id="chart"></div>
+
+  </section>
+
+  <section class="sec" data-sec="sources" hidden>
+  <div class="grid2">
+    <div><div class="sec-head"><h2 data-i18n="Top sources">Top sources</h2><span class="tabs" data-tabs="sources"></span><button class="all-btn" data-panel="sources" data-i18n="All →">All →</button></div><div class="panel" id="sources"></div></div>
+    <div><div class="sec-head"><h2 data-i18n="Pages">Pages</h2><span class="tabs" data-tabs="pages"></span><button class="all-btn" data-panel="pages" data-i18n="All →">All →</button></div><div class="panel" id="pages"></div></div>
+  </div>
+  </section>
+
+  <section class="sec" data-sec="audience" hidden>
+  <div class="grid2">
+    <div><div class="sec-head"><h2 data-i18n="Locations">Locations</h2><span class="tabs" data-tabs="countries"></span><button class="all-btn" data-panel="countries" data-i18n="All →">All →</button></div><div class="panel" id="countries"></div></div>
+    <div><div class="sec-head"><h2 data-i18n="Devices">Devices</h2><span class="tabs" data-tabs="devices"></span><button class="all-btn" data-panel="devices" data-i18n="All →">All →</button></div><div class="panel" id="devices"></div></div>
+  </div>
+
+  </section>
+
+  <section class="sec" data-sec="vitals" hidden>
+  <div id="vitalsSec" hidden>
+    <h2 data-i18n="Web Vitals">Web Vitals</h2>
+    <div class="panel" id="vitals"></div>
+  </div>
+
+    <p class="muted" id="vitalsEmpty" hidden data-i18n="no data yet">no data yet</p>
+  </section>
+
+  <section class="sec" data-sec="campaigns" hidden>
+  <div class="chart-head">
+    <h2 data-i18n="Campaigns (UTM)">Campaigns (UTM)</h2>
+    <div class="chart-ctrls">
+      <select id="utmDim" aria-label="UTM dimension">
+        <option value="utm_campaign" data-i18n="Campaign">Campaign</option>
+        <option value="utm_medium" data-i18n="Medium">Medium</option>
+        <option value="utm_term" data-i18n="Term">Term</option>
+        <option value="utm_content" data-i18n="Content">Content</option>
+        <option value="ft_source" data-i18n="FT source">FT source</option>
+        <option value="ft_medium" data-i18n="FT medium">FT medium</option>
+        <option value="ft_campaign" data-i18n="FT campaign">FT campaign</option>
+      </select>
+    </div>
+  </div>
+  <div class="panel" id="utm"></div>
+
+  </section>
+
+  <section class="sec" data-sec="goals" hidden>
+  <div id="goalsSection" hidden>
+    <h2 data-i18n="Goals (custom events)">Goals (custom events)</h2>
+    <div class="panel" id="goals"></div>
+  </div>
+  <div id="ctitSection" hidden>
+    <h2 data-i18n="Conversion timing">Conversion timing</h2>
+    <div class="panel" id="ctit"></div>
+  </div>
+
+    <p class="muted" id="goalsEmpty" hidden data-i18n="no data yet">no data yet</p>
+  </section>
+
+  <section class="sec" data-sec="funnel" hidden>
+  <div class="chart-head">
+    <h2 data-i18n="Funnel">Funnel</h2>
+    <div class="chart-ctrls">
+      <select id="funnelPick" aria-label="Saved funnels"></select>
+      <select id="funnelSeg" aria-label="Break down by">
+        <option value="" data-i18n="No breakdown">No breakdown</option>
+        <option value="source" data-i18n="By source">By source</option>
+        <option value="country" data-i18n="By country">By country</option>
+        <option value="device" data-i18n="By device">By device</option>
+        <option value="browser" data-i18n="By browser">By browser</option>
+        <option value="os" data-i18n="By OS">By OS</option>
+      </select>
+      <button id="funnelAdd" class="btn" data-i18n="+ step">+ step</button>
+      <button id="funnelRun" class="btn primary" data-i18n="Run">Run</button>
+    </div>
+  </div>
+  <p class="sec-desc" data-i18n="Clean traffic only — bots and crawlers never enter a funnel. Each drop shows what the people who left were doing on that step.">Clean traffic only — bots and crawlers never enter a funnel. Each drop shows what the people who left were doing on that step.</p>
+  <div class="panel">
+    <div id="funnelSteps"></div>
+    <div class="fname-row">
+      <input id="funnelName" maxlength="60" placeholder="Funnel name" data-i18n-ph="Funnel name">
+      <button id="funnelSave" class="btn" data-i18n="Save funnel">Save funnel</button>
+      <button id="funnelDel" class="btn danger" hidden data-i18n="Delete">Delete</button>
+      <span class="muted" id="funnelMsg" style="font-size:12px"></span>
+    </div>
+    <div id="funnelResult"></div>
+  </div>
+
+  </section>
+
+  <section class="sec" data-sec="quality" hidden>
+  <h2 data-i18n="Traffic quality">Traffic quality</h2>
+  <p class="sec-desc" data-i18n="How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.">How much of this range's traffic was invalid, which checks caught it, and how close each ratio is to its alert line.</p>
+  <div class="panel" id="health"></div>
+  <div class="grid2">
+    <div class="panel" id="quality"></div>
+    <div class="panel" id="flags"></div>
+  </div>
+  <div id="crawlerSec" hidden><div class="sec-head"><h2 data-i18n="Crawlers by category">Crawlers by category</h2></div><div class="panel" id="crawlers"></div></div>
+  <div id="edgeSec" hidden><div class="sec-head"><h2 data-i18n="What the script never saw">What the script never saw</h2></div><div class="panel" id="edge"></div></div>
+
+  </section>
+
+  <section class="sec" data-sec="adguard" hidden>
+  <h2 data-i18n="Ad protection">Ad protection</h2>
+  <div class="panel" id="adguard"></div>
+
+  </section>
+
+  <section class="sec" data-sec="suspicious" hidden>
+  <div class="sec-head"><h2 data-i18n="Suspicious visitors">Suspicious visitors</h2><a class="all-btn" id="trafficAll" href="#" data-i18n="All visitors →">All visitors →</a></div>
+  <p class="sec-desc" data-i18n="Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.">Visitors whose bot score reached 30 or more in this range, worst first — click one to replay its journey.</p>
+  <div class="panel" id="traffic"></div>
+
+  </section>
+
+  <section class="sec" data-sec="ai" hidden>
+  <div class="chart-head">
+    <h2 data-i18n="AI report">AI report</h2>
+    <div class="chart-ctrls">
+      <button id="aiGen" class="btn primary" data-i18n="Generate">Generate</button>
+    </div>
+  </div>
+  <div class="panel" id="aiReport"></div>
+  </section>
+
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head"><b id="modalTitle"></b><button class="modal-x" id="modalClose" aria-label="Close">×</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+<script>
+const site = new URLSearchParams(location.search).get('id');
+if (!site) location.href = '/sites.html';
+document.getElementById('visitorsLink').href = `/visitor.html?site=${encodeURIComponent(site)}`;
+document.getElementById('trafficAll').href = `/visitor.html?site=${encodeURIComponent(site)}&verdict=bot`;
+// deep link into the journey finder pre-filtered to one page path
+const visitorsByPath = (path) =>
+  `/visitor.html?site=${encodeURIComponent(site)}&path=${encodeURIComponent(path)}`;
+let siteName = site; // replaced with the friendly name once /api/sites loads
+let brandName = 'pvuv.ai'; // instance brand (configurable), for the tab title suffix
+const PREF_KEY = 'pvuv.chartPrefs';
+const FILTER_KEY = 'pvuv.filters.' + site;
+
+// ── faceted filtering (Plausible-style): click any dimension value to narrow
+// the whole dashboard; filters stack (AND), one per dimension. Persisted per
+// site so a reload keeps the view. Only cleanly-supported dims are clickable.
+let filters = [];
+const FILTER_UI = new Set(['source', 'page', 'country', 'region', 'city', 'device', 'browser', 'os', 'utm_campaign', 'utm_medium']);
+const FILTER_LABEL = { source: 'Source', page: 'Page', country: 'Country', region: 'Region', city: 'City', device: 'Device', browser: 'Browser', os: 'OS', utm_campaign: 'Campaign', utm_medium: 'Medium' };
+function loadFilters() {
+  try { filters = JSON.parse(localStorage.getItem(FILTER_KEY)) || []; } catch { filters = []; }
+  if (!Array.isArray(filters)) filters = [];
+}
+function saveFilters() { try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch { /* non-fatal */ } }
+function filterQS() { return filters.length ? `&filters=${encodeURIComponent(JSON.stringify(filters))}` : ''; }
+// `values` carries every raw key a merged display row stands for (see
+// mergeSources) so the server matches all of them; `value` stays the label.
+function addFilter(dim, value, values) {
+  if (!FILTER_UI.has(dim) || value == null) return;
+  value = String(value);
+  if (filters.some((f) => f.dim === dim && f.value === value)) return;
+  filters = filters.filter((f) => f.dim !== dim); // one filter per dimension
+  filters.push(values && values.length > 1 ? { dim, value, values } : { dim, value });
+  saveFilters(); renderFilters(); load();
+}
+function removeFilter(i) { filters.splice(i, 1); saveFilters(); renderFilters(); load(); }
+function clearFilters() { filters = []; saveFilters(); renderFilters(); load(); }
+function renderFilters() {
+  const el = document.getElementById('filters');
+  const label = (f) => f.dim === 'source' ? sourceLabel(f.value) : f.value;
+  el.innerHTML = filters.map((f, i) =>
+    `<span class="chip"><span>${te(FILTER_LABEL[f.dim] || f.dim)}: <b title="${esc((f.values || [f.value]).join(', '))}">${esc(label(f))}</b></span><button class="x" data-i="${i}" aria-label="Remove filter" title="Remove">×</button></span>`).join('')
+    + (filters.length > 1 ? `<button class="clear">${te('Clear all')}</button>` : '');
+  el.querySelectorAll('.chip .x').forEach((b) => b.addEventListener('click', () => removeFilter(Number(b.dataset.i))));
+  const c = el.querySelector('.clear');
+  if (c) c.addEventListener('click', clearFilters);
+}
+
+// browser-tab title: "{metric} - {site} - {brand}" so tabs are distinguishable.
+function setTitle() {
+  const m = document.getElementById('metric');
+  const label = m && m.value ? t(METRIC_LABEL[m.value] || '') : '';
+  document.title = `${label ? label + ' - ' : ''}${siteName} - ${brandName}`;
+}
+async function loadBrand() {
+  try { const b = await (await fetch('/api/home')).json(); if (b && b.name) brandName = b.name; } catch { /* keep default */ }
+  setTitle();
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// i18n: t() translates a UI string for the current language (English falls
+// through unchanged). te() = escape(translate) for safe interpolation.
+const t = (s) => window.PVI18N.t(s);
+const te = (s) => esc(t(s));
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+
+// country code → flag emoji + human name (Intl.DisplayNames, no lookup table)
+let regionNames;
+try { regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); } catch { regionNames = null; }
+function flagEmoji(cc) {
+  if (!/^[A-Za-z]{2}$/.test(cc || '')) return '';
+  const A = 0x1F1E6;
+  return `<span class="flag">${String.fromCodePoint(A + cc.toUpperCase().charCodeAt(0) - 65, A + cc.toUpperCase().charCodeAt(1) - 65)}</span>`;
+}
+function countryLabel(cc) {
+  if (regionNames && /^[A-Za-z]{2}$/.test(cc || '')) { try { return regionNames.of(cc.toUpperCase()) || cc; } catch { return cc; } }
+  return cc || '(unknown)';
+}
+
+// source favicon (admin dashboard only): resolve common engines to their domain,
+// use DuckDuckGo's icon service (privacy-respecting), fall back to a link glyph.
+const SOURCE_DOMAIN = {
+  google: 'google.com', bing: 'bing.com', duckduckgo: 'duckduckgo.com', yahoo: 'yahoo.com',
+  baidu: 'baidu.com', yandex: 'yandex.com', twitter: 'twitter.com', x: 'x.com',
+  facebook: 'facebook.com', instagram: 'instagram.com', linkedin: 'linkedin.com',
+  youtube: 'youtube.com', reddit: 'reddit.com', github: 'github.com', bilibili: 'bilibili.com',
+  weibo: 'weibo.com', zhihu: 'zhihu.com', newsletter: '', email: '',
+};
+const GENERIC_ICON = "this.outerHTML='<span class=\\'favi-generic\\'>🔗</span>'";
+// Display-side twin of shared/source.ts canonicalSource(): rows recorded
+// before ingest-time canonicalisation (www.google.com, google.com.hk, t.co …)
+// still read as one platform. Filtering keeps the raw stored key.
+const SOURCE_CANON = [
+  [/(^|\.)google\.[a-z.]+$/, 'google.com'], [/^com\.google\.android\.googlequicksearchbox$/, 'google.com'],
+  [/(^|\.)bing\.com$/, 'bing.com'], [/(^|\.)yahoo\.[a-z.]+$/, 'yahoo.com'], [/(^|\.)duckduckgo\.com$/, 'duckduckgo.com'],
+  [/(^|\.)yandex\.[a-z.]+$/, 'yandex.com'], [/(^|\.)baidu\.com$/, 'baidu.com'],
+  [/^t\.co$/, 'x.com'], [/(^|\.)twitter\.com$/, 'x.com'], [/(^|\.)x\.com$/, 'x.com'],
+  [/(^|\.)facebook\.com$/, 'facebook.com'], [/^fb\.com$/, 'facebook.com'], [/(^|\.)instagram\.com$/, 'instagram.com'],
+  [/(^|\.)linkedin\.com$/, 'linkedin.com'], [/^lnkd\.in$/, 'linkedin.com'], [/(^|\.)reddit\.com$/, 'reddit.com'],
+  [/(^|\.)youtube\.com$/, 'youtube.com'], [/^youtu\.be$/, 'youtube.com'], [/(^|\.)pinterest\.[a-z.]+$/, 'pinterest.com'],
+  [/(^|\.)chatgpt\.com$/, 'chatgpt.com'], [/^chat\.openai\.com$/, 'chatgpt.com'], [/(^|\.)perplexity\.ai$/, 'perplexity.ai'],
+  [/(^|\.)bilibili\.com$/, 'bilibili.com'], [/^b23\.tv$/, 'bilibili.com'], [/(^|\.)weibo\.(com|cn)$/, 'weibo.com'],
+  [/(^|\.)zhihu\.com$/, 'zhihu.com'], [/^t\.me$/, 'telegram.org'],
+];
+const SOURCE_NAME = {
+  'google.com': 'Google', 'bing.com': 'Bing', 'yahoo.com': 'Yahoo', 'duckduckgo.com': 'DuckDuckGo', 'yandex.com': 'Yandex',
+  'baidu.com': 'Baidu', 'x.com': 'X (Twitter)', 'facebook.com': 'Facebook', 'instagram.com': 'Instagram',
+  'linkedin.com': 'LinkedIn', 'reddit.com': 'Reddit', 'youtube.com': 'YouTube', 'pinterest.com': 'Pinterest',
+  'chatgpt.com': 'ChatGPT', 'perplexity.ai': 'Perplexity', 'bilibili.com': 'Bilibili', 'weibo.com': 'Weibo',
+  'zhihu.com': 'Zhihu', 'telegram.org': 'Telegram', 'github.com': 'GitHub', 'news.ycombinator.com': 'Hacker News',
+  'producthunt.com': 'Product Hunt', 'search.brave.com': 'Brave Search', 'claude.ai': 'Claude', 'mail.google.com': 'Gmail',
+};
+function canonicalSource(src) {
+  if (!src || src === '(direct)') return src;
+  let h = src.toLowerCase().replace(/^(www|m|l|lm|amp|mobile)\./, '');
+  if (!h.includes('.') && SOURCE_DOMAIN[h]) h = SOURCE_DOMAIN[h]; // bare utm_source=google
+  for (const [re, canon] of SOURCE_CANON) if (re.test(h)) { h = canon; break; }
+  return h;
+}
+function sourceLabel(src) {
+  if (!src || src === '(direct)') return t('Direct');
+  const c = canonicalSource(src);
+  return SOURCE_NAME[c] || (src.includes('.') ? c : src);
+}
+function sourceIcon(src) {
+  if (!src || src === '(direct)') return '<span class="favi-generic" title="Direct / none">↗</span>';
+  const key = src.toLowerCase();
+  const domain = src.includes('.') ? canonicalSource(src) : SOURCE_DOMAIN[key];
+  if (!domain) return '<span class="favi-generic">🔗</span>';
+  return `<img class="favi" loading="lazy" alt="" src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico" onerror="${GENERIC_ICON}">`;
+}
+const pctf = (x) => (x * 100).toFixed(1) + '%';
+const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+const get = async (p, qs = '') =>
+  (await guard(await fetch(`/api/sites/${site}/${p}?period=${document.getElementById('period').value}${qs}${filterQS()}`))).json();
+
+// mirrors shared/flags.ts bit definitions (evidence labels, §11.2)
+const FLAG_LABELS = {
+  0x0001: 'webdriver', 0x0002: 'automation residue', 0x0004: 'UA/env contradiction',
+  0x0008: 'datacenter ASN', 0x0010: 'Sec-Fetch missing', 0x0020: 'timezone/IP mismatch',
+  0x0040: 'no interaction & no leave', 0x0080: 'software WebGL', 0x0100: 'mechanical timing',
+  0x0200: 'blocklisted cluster', 0x0400: 'honeypot', 0x0800: 'screen/device contradiction',
+  0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
+  0x4000: 'search referrer from datacenter', 0x8000: 'forged search referrer',
+  0x10000: 'headless UA', 0x20000: 'headless window', 0x40000: 'platform/UA mismatch',
+  0x80000: 'synthetic render env', 0x100000: 'HTTP/1 + modern browser',
+  0x200000: 'mechanical pointer', 0x400000: 'session drift',
+};
+const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
+
+// Plain-English names + one-line explanations for the fired-signal panel — the
+// raw enum names (TZ_IP_MISMATCH …) mean nothing to a site owner. Keyed by the
+// FlagName the /quality endpoint returns.
+const SIGNAL_INFO = {
+  WEBDRIVER: ['Automated browser', 'Reports navigator.webdriver — a real automation/headless browser'],
+  AUTOMATION_RESIDUE: ['Automation tool traces', 'Globals left behind by PhantomJS / Selenium-style tools'],
+  UA_CH_MISMATCH: ['Browser identity mismatch', 'The declared browser contradicts its own capabilities'],
+  DATACENTER_ASN: ['Datacenter / hosting network', 'Request came from a server network, not a home/mobile ISP'],
+  SEC_FETCH_MISSING: ['Missing security headers', 'Real browsers send Sec-Fetch-* headers; these did not'],
+  TZ_IP_MISMATCH: ['Timezone ≠ location', "Browser timezone doesn't match the IP's country"],
+  ZERO_INTERACTION_NO_LEAVE: ['No interaction at all', 'No clicks, scroll, or page-leave — nobody was really there'],
+  SOFTWARE_WEBGL: ['No real GPU', 'Graphics rendered in software (SwiftShader/llvmpipe) — typical of bots'],
+  MECHANICAL_TIMING: ['Machine-like timing', 'Events spaced too evenly to be human'],
+  BLOCKLIST_CLUSTER: ['Known bad cluster', 'Matches a fingerprint/IP group flagged by batch analysis'],
+  HONEYPOT: ['Fell for a hidden trap', 'Followed an invisible link no human can see'],
+  SCREEN_DEVICE_MISMATCH: ['Fake screen / device', 'Impossible screen size or device characteristics'],
+  MOBILE_NO_MOTION: ['Mobile without sensors', 'Claims to be a phone but reports no motion sensors'],
+  MOTION_STATIC: ['Frozen motion sensors', 'Motion readings never change — a spoofed device'],
+  SEARCH_REF_DATACENTER: ['Fake search visit (datacenter)', 'Claims a Google/Bing referral but comes from a cloud/hosting network — real searchers are on home/mobile ISPs'],
+  FORGED_SEARCH_REFERRER: ['Forged search referrer', 'Referrer claims a search engine but is malformed: http, a leaked ?q= query, or navigation headers that contradict an external click'],
+  HEADLESS_UA: ['Headless browser', 'The browser identifies itself as a headless automation engine (HeadlessChrome)'],
+  HEADLESS_WINDOW: ['Windowless browser', 'The browser window reports zero outer size — typical of a headless / windowless runtime'],
+  UA_PLATFORM_MISMATCH: ['OS spoofing', "The claimed operating system (Windows/macOS/iOS) contradicts the browser's actual platform"],
+  SYNTHETIC_ENV: ['Synthetic environment', 'Renders color emoji in monochrome and has no real system fonts — a bare headless/container browser, not a real device'],
+  HTTP1_MODERN_BROWSER: ['HTTP/1 with modern browser', 'Claims a modern Chrome but spoke HTTP/1.x to the edge — real Chrome negotiates HTTP/2/3; typical of scripted TLS stacks behind a spoofed UA (corporate proxies can also cause this)'],
+  MOUSE_MECHANICAL: ['Mechanical pointer', 'Pointer moved with machine-like dynamics: constant speed, zero curvature, or clicks landing with no nearby movement'],
+  SESSION_DRIFT: ['Session identity drift', 'Browser family, OS or language changed within one session — impossible for a real visitor; a replayed session cookie or an environment-rotating farm'],
+  UNIDENTIFIED_DESKTOP: ['Unidentifiable desktop', 'A desktop device whose user agent names no known browser family and no identifiable OS. Real desktop browsers are one of six families (including the Chromium-based Chinese ones); the three conditions together measured 0.1% of healthy traffic'],
+};
+const signalLabel = (name) => (SIGNAL_INFO[name] || [name.toLowerCase().replace(/_/g, ' '), ''])[0];
+const signalHelp = (name) => (SIGNAL_INFO[name] || ['', ''])[1];
+
+// Per-dimension display config: tab label, column headers, filter value, the
+// bar-length basis (Visitors), an optional leading icon (flag / favicon), and
+// the row cells. Drives the panels, their sub-tabs, and the "All …" modal.
+const utmCell = (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)];
+const geoCell = (r) => [esc(r.key), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)];
+// GA4-style channel groups (sessions.channel) — label + glyph per key
+const CHANNEL_LABEL = {
+  direct: 'Direct', organic_search: 'Organic search', paid_search: 'Paid search',
+  organic_social: 'Organic social', paid_social: 'Paid social', email: 'Email',
+  ai: 'AI assistants', video: 'Video', referral: 'Referral', '(unknown)': '(unknown)',
+};
+const CHANNEL_ICON = {
+  direct: '↗', organic_search: '🔍', paid_search: '💰', organic_social: '💬',
+  paid_social: '📣', email: '✉️', ai: '🤖', video: '▶', referral: '🔗',
+};
+const dimConfig = {
+  source:      { label: 'Sources',   note: '* Sessions that STARTED in this period, from session-level attribution. The Sessions card above counts sessions that recorded a pageview, so the two differ by sessions that only sent behaviour beacons — almost entirely bots.', headers: ['Source', 'Sessions*', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => sourceIcon(r.key), cells: (r) => [`<span title="${esc(r.key)}">${esc(sourceLabel(r.key))}</span>`, fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  channel:     { label: 'Channels',  note: '* Sessions that STARTED in this period, from session-level attribution. The Sessions card above counts sessions that recorded a pageview, so the two differ by sessions that only sent behaviour beacons — almost entirely bots.', headers: ['Channel', 'Sessions*', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => `<span class="favi-generic">${CHANNEL_ICON[r.key] || '🔗'}</span>`, cells: (r) => [te(CHANNEL_LABEL[r.key] || r.key), fmt(r.sessions), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  page:        { label: 'Pages',     headers: ['Path', 'PV', 'Non-bot PV', 'Visitors', 'Bounces'], val: (r) => r.path, bar: (r) => r.uv, cells: (r) => [esc(r.path), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv), fmt(r.bounces)] },
+  entry_page:  { label: 'Entry',     headers: ['Entry page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
+  exit_page:   { label: 'Exit',      headers: ['Exit page', 'Sessions', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.sessions), fmt(r.uv)] },
+  country:     { label: 'Countries', headers: ['Country', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, icon: (r) => flagEmoji(r.key), cells: (r) => [esc(countryLabel(r.key)), fmt(r.pv), fmt(r.pv_clean), fmt(r.uv)] },
+  region:      { label: 'Regions',   headers: ['Region', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  city:        { label: 'Cities',    headers: ['City', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  browser:     { label: 'Browser',   headers: ['Browser', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  os:          { label: 'OS',        headers: ['OS', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  device:      { label: 'Device',    headers: ['Device', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  size:        { label: 'Size',      headers: ['Screen', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: geoCell },
+  utm_medium:   { label: 'Medium',   headers: ['Medium', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_campaign: { label: 'Campaign', headers: ['Campaign', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_term:     { label: 'Term',     headers: ['Term', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  utm_content:  { label: 'Content',  headers: ['Content', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_source:    { label: 'FT source',   headers: ['First-touch source', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_medium:    { label: 'FT medium',   headers: ['First-touch medium', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  ft_campaign:  { label: 'FT campaign', headers: ['First-touch campaign', 'PV', 'Non-bot PV', 'Visitors'], val: (r) => r.key, bar: (r) => r.uv, cells: utmCell },
+  goal: { label: 'Goals', headers: ['Event', 'Fires', 'Visitors', 'Revenue'], val: (r) => r.key, bar: (r) => r.uv, cells: (r) => [esc(r.key), fmt(r.pv), fmt(r.uv), r.revenue ? money(r.revenue) : '–'] },
+};
+
+// Shared table markup: proportion bar behind the first column + optional icon.
+function breakdownTableHTML(dim, rows, clickable) {
+  const cfg = dimConfig[dim];
+  const max = Math.max(1, ...rows.map((r) => Number(cfg.bar(r)) || 0));
+  return `<table><tr>${cfg.headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${te(h)}</th>`).join('')}</tr>`
+    + rows.map((r, idx) => {
+        const cells = cfg.cells(r);
+        const pct = Math.max(2, (Number(cfg.bar(r)) || 0) / max * 100);
+        const icon = cfg.icon ? cfg.icon(r) : '';
+        const lead = `<td class="lead"><span class="bar" style="width:${pct.toFixed(1)}%"></span>`
+          + `<span class="lead-in">${icon}<span class="txt">${cells[0]}</span>${clickable ? `<span class="drill">${te('+ filter')}</span>` : ''}</span></td>`;
+        return `<tr${clickable ? ' class="clickable"' : ''} data-i="${idx}">${lead}${cells.slice(1).map((c) => `<td class="num">${c}</td>`).join('')}</tr>`;
+      }).join('') + '</table>'
+    + (cfg.note ? `<p class="muted" style="margin:8px 0 0;font-size:11.5px">${te(cfg.note)}</p>` : '');
+}
+
+// Fold rows that canonicalise to the same platform into one (legacy data
+// recorded www.google.com / google.com.hk / google as separate keys). Counts
+// sum; visitors can double-count across variants, which is the lesser evil
+// versus three "Google" rows. `keys` remembers the raw keys for filtering.
+function mergeSources(rows) {
+  const out = new Map();
+  for (const r of rows) {
+    const c = canonicalSource(r.key) || r.key;
+    const m = out.get(c);
+    if (!m) { out.set(c, { ...r, key: c, keys: [r.key] }); continue; }
+    m.keys.push(r.key);
+    for (const k of ['sessions', 'pv', 'pv_clean', 'uv']) if (r[k] != null) m[k] = (Number(m[k]) || 0) + Number(r[k]);
+  }
+  return [...out.values()].sort((a, b) => (Number(b.pv) || 0) - (Number(a.pv) || 0));
+}
+function prepRows(dim, rows) { return dim === 'source' ? mergeSources(rows) : rows; }
+
+function renderBreakdown(elId, dim, rows) {
+  const el = document.getElementById(elId);
+  const clickable = FILTER_UI.has(dim);
+  rows = prepRows(dim, rows);
+  el.innerHTML = rows.length ? breakdownTableHTML(dim, rows, clickable) : `<p class="muted">${te('no data yet')}</p>`;
+  if (clickable) el.querySelectorAll('tr.clickable').forEach((tr) =>
+    tr.addEventListener('click', () => { const r = rows[Number(tr.dataset.i)]; addFilter(dim, dimConfig[dim].val(r), r.keys); }));
+}
+
+// ── tabbed breakdown panels (Plausible-style dimension switchers)
+const PANELS = {
+  sources:   ['source', 'channel'],
+  pages:     ['page', 'entry_page', 'exit_page'],
+  countries: ['country', 'region', 'city'],
+  devices:   ['browser', 'os', 'device', 'size'],
+};
+const panelState = {}; // mount id → active dim
+function buildTabs() {
+  for (const [mount, dims] of Object.entries(PANELS)) {
+    panelState[mount] = panelState[mount] || dims[0];
+    const host = document.querySelector(`.tabs[data-tabs="${mount}"]`);
+    if (!host) continue;
+    if (dims.length <= 1) { host.innerHTML = ''; continue; }
+    host.innerHTML = dims.map((d) => `<button data-dim="${d}"${d === panelState[mount] ? ' class="active"' : ''}>${te(dimConfig[d].label)}</button>`).join('');
+    host.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      panelState[mount] = b.dataset.dim;
+      host.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+      loadPanel(mount);
+    }));
+  }
+}
+async function loadPanel(mount) {
+  const dim = panelState[mount];
+  const d = await get('breakdown', `&dim=${dim}`);
+  renderBreakdown(mount, dim, d.rows || []);
+}
+
+// "All …" — full (top-100) list of the panel's ACTIVE dimension in the modal.
+async function openAll(mount) {
+  const dim = panelState[mount];
+  const cfg = dimConfig[dim];
+  document.getElementById('modalTitle').textContent = `${t('All')} · ${t(cfg.label)}`;
+  document.getElementById('modalBody').innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  document.getElementById('modal').hidden = false;
+  const d = await get('breakdown', `&dim=${dim}&limit=100`);
+  const rows = prepRows(dim, d.rows || []);
+  const clickable = FILTER_UI.has(dim);
+  document.getElementById('modalBody').innerHTML = rows.length
+    ? breakdownTableHTML(dim, rows, clickable)
+      + (clickable ? `<p class="muted" style="font-size:12px;margin:10px 2px 0">${te('Click a row to filter the dashboard by it.')}</p>` : '')
+    : `<p class="muted">${te('no data yet')}</p>`;
+  if (clickable) document.getElementById('modalBody').querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => {
+    const r = rows[Number(tr.dataset.i)]; addFilter(dim, cfg.val(r), r.keys); closeModal();
+  }));
+}
+document.querySelectorAll('.all-btn').forEach((b) => b.addEventListener('click', () => openAll(b.dataset.panel)));
+
+// Embed code — available at any time, not only on the first-run screen.
+document.getElementById('embedBtn').addEventListener('click', async () => {
+  const s = allSites.find((x) => x.site_id === site) || { site_id: site };
+  document.getElementById('modalTitle').textContent = t('Embed code');
+  document.getElementById('modalBody').innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  document.getElementById('modal').hidden = false;
+  const code = await snippetFor(s);
+  document.getElementById('modalBody').innerHTML = `
+    <p class="muted" style="margin:0 0 10px;font-size:13px">${te('Add this to every page, before </head> or at the end of <body>.')}</p>
+    <pre id="embedCode" style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:12.5px;font-family:var(--mono);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px">${esc(code)}</pre>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+      <button class="btn" id="embedCopy">${te('Copy snippet')}</button>
+      <a class="btn" href="/health.html" target="_blank" rel="noopener">${te('Run self-check')} ↗</a>
+    </div>
+    <p class="muted" style="font-size:12px;margin:12px 0 0">${esc(window.PVI18N.tk('embed-note', 'data-api must be your ingest host; data-adguard only matters if you protect ads. Changes reach already-embedded pages within about an hour, as the f.js cache revalidates.'))}</p>`;
+  document.getElementById('embedCopy').onclick = async (ev) => {
+    try { await navigator.clipboard.writeText(code); ev.target.textContent = t('Copied'); } catch { /* clipboard blocked */ }
+  };
+});
+
+function closeModal() { document.getElementById('modal').hidden = true; }
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+// metric + interval controls (Plausible-style). First interval per period = default.
+const METRICS = [
+  ['pv', 'Pageviews'], ['uv', 'Visitors'], ['sessions', 'Sessions'],
+  ['pv_per_visitor', 'Pages / visitor'],
+  ['bounce_rate', 'Bounce rate (engaged)'], ['bounce_rate_single', 'Bounce rate (1-page)'],
+  ['avg_duration_ms', 'Engaged time'], ['visit_duration_ms', 'Visit duration'],
+];
+const METRIC_LABEL = Object.fromEntries(METRICS);
+const INTERVALS = {
+  '24h': ['hour', 'minute'],
+  today: ['hour', 'minute'], yesterday: ['hour', 'minute'],
+  '7d': ['day', 'hour'], this_week: ['day', 'hour'], last_week: ['day', 'hour'],
+  '30d': ['day', 'week'], this_month: ['day', 'week'], last_month: ['day', 'week'], '90d': ['day', 'week'],
+  this_year: ['month', 'week', 'day'],
+};
+const INTERVAL_LABEL = { minute: 'Minutes', hour: 'Hours', day: 'Days', week: 'Weeks', month: 'Months' };
+
+function fmtMetric(metric, v) {
+  if (v == null) return '–';
+  if (metric === 'bounce_rate' || metric === 'bounce_rate_single') return (v * 100).toFixed(1) + '%';
+  if (metric === 'avg_duration_ms' || metric === 'visit_duration_ms') return dur(v);
+  if (metric === 'pv_per_visitor') return Number(v).toFixed(2);
+  return fmt(v);
+}
+
+// Pick a "nice" axis top + gridline step so the max sits just under a round
+// number and lines land on 1/2/5×10ⁿ values (462 → top 500 step 100; a few
+// thousand → step 500 or 1000). Targets ~5 gridlines.
+function niceScale(max) {
+  if (!(max > 0)) return { top: 1, step: 1 };
+  const raw = max / 5;                             // aim for ~5 intervals
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const frac = raw / pow;
+  const nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  const step = nice * pow;
+  return { top: Math.ceil(max / step) * step, step };
+}
+
+function lineChart(points, metric) {
+  const el = document.getElementById('chart');
+  // future buckets (time hasn't arrived) are never drawn — otherwise the line
+  // would dive to 0 and look like missing data. The in-progress bucket (status
+  // 'partial') is drawn with a dashed connector to show it's still filling.
+  const drawn = points.filter((p) => p.status !== 'future');
+  const hasData = drawn.some((p) => p.value != null && p.value !== 0);
+  if (!drawn.length || !hasData) { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
+  const W = 980, H = 190, P = 46, PT = 12;
+  const max = Math.max(...drawn.map((p) => p.value ?? 0), 1);
+  const { top, step } = niceScale(max);
+  // x spans the full range (axis shows the whole period); future area stays empty
+  const xs = (i) => P + (i * (W - P - 12)) / Math.max(points.length - 1, 1);
+  const ys = (v) => H - P - ((v ?? 0) * (H - P - PT)) / top;
+
+  // horizontal gridlines + left-axis value labels at each nice step
+  const grid = [];
+  for (let g = 0; g <= top + 1e-9; g += step) {
+    const y = ys(g).toFixed(1);
+    grid.push(`<line x1="${P}" y1="${y}" x2="${W - 12}" y2="${y}" stroke="#222834" stroke-width="1"/>`
+      + `<text x="${P - 8}" y="${(Number(y) + 3.5).toFixed(1)}" text-anchor="end">${esc(fmtMetric(metric, g))}</text>`);
+  }
+
+  const complete = points.map((p, i) => ({ p, i })).filter((x) => x.p.status === 'complete');
+  const solid = complete.map((x) => `${xs(x.i).toFixed(1)},${ys(x.p.value).toFixed(1)}`).join(' ');
+  const partialIdx = points.findIndex((p) => p.status === 'partial');
+  let dashed = '';
+  if (partialIdx >= 0) {
+    const prev = complete.length ? complete[complete.length - 1].i : partialIdx;
+    dashed = `${xs(prev).toFixed(1)},${ys(points[prev].value).toFixed(1)} ${xs(partialIdx).toFixed(1)},${ys(points[partialIdx].value).toFixed(1)}`;
+  }
+
+  // no <title> here — the crosshair readout below covers every x-position, and a
+  // native tooltip would pop up alongside it
+  const dot = (p, i) => p.status === 'future' ? '' :
+    `<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.value).toFixed(1)}" r="2.5" fill="${p.status === 'partial' ? '#0f1115' : '#3b82f6'}" stroke="#3b82f6" stroke-width="${p.status === 'partial' ? 1.5 : 0}"/>`;
+  const lstep = Math.ceil(points.length / 8);
+  const labels = points.filter((_, i) => i % lstep === 0);
+
+  // Invalid-traffic strip: one cell per bucket, opacity = that bucket's share of
+  // bot/suspect pageviews. Deliberately NOT a second line on the main axis — the
+  // selected metric may be visitors / sessions / a rate, while invalid traffic is
+  // counted in pageviews, so overlaying them would compare different units. As a
+  // share it stays readable under any metric and answers the real question:
+  // was the bad traffic one short burst, or spread across the whole period?
+  const hasInvalid = drawn.some((p) => (p.invalid ?? 0) > 0);
+  const SY = H - P + 12, SH = 9;               // strip sits just under the x-axis
+  let strip = '';
+  if (hasInvalid) {
+    const cw = (W - P - 12) / Math.max(points.length, 1);
+    strip = points.map((p, i) => {
+      if (p.status === 'future' || !p.pv) return '';
+      const share = (p.invalid ?? 0) / p.pv;
+      if (share <= 0) return '';
+      const x = P + i * cw;
+      // floor the opacity so a small but real share is still visible
+      const op = (0.18 + 0.82 * Math.min(share, 1)).toFixed(2);
+      return `<rect x="${x.toFixed(1)}" y="${SY}" width="${Math.max(cw - 1, 1).toFixed(1)}" height="${SH}" rx="1.5" fill="#f87171" opacity="${op}"/>`;
+    }).join('');
+  }
+
+  const VH = H + (hasInvalid ? 20 : 0);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${VH}" style="width:100%;display:block">
+    ${grid.join('')}
+    ${solid ? `<polyline points="${solid}" fill="none" stroke="#3b82f6" stroke-width="2"/>` : ''}
+    ${dashed ? `<polyline points="${dashed}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 3" opacity="0.75"/>` : ''}
+    ${points.map(dot).join('')}
+    ${strip}
+    ${hasInvalid ? `<text x="${P - 8}" y="${SY + SH - 1}" text-anchor="end" opacity="0.75">${esc(t('invalid'))}</text>` : ''}
+    ${labels.map((p) => `<text x="${xs(points.indexOf(p))}" y="${VH - 6}" text-anchor="middle" ${p.status === 'future' ? 'opacity="0.4"' : ''}>${esc(p.label)}</text>`).join('')}
+    <g id="chairG" opacity="0">
+      <line id="chairL" y1="${PT}" y2="${H - P}" stroke="#5b6472" stroke-width="1" stroke-dasharray="3 3"/>
+      <circle id="chairD" r="4" fill="#3b82f6" stroke="#0f1115" stroke-width="2"/>
+    </g>
+    <rect id="chairHit" x="${P}" y="0" width="${W - P - 12}" height="${VH}" fill="transparent" style="cursor:crosshair"/>
+  </svg>
+  <div class="tt" id="chartTip" hidden></div>`;
+
+  attachChartHover(el, points, metric, { W, VH, P, xs, ys });
+}
+
+// Crosshair readout: hovering anywhere along the plot snaps to the nearest
+// bucket and shows its numbers — the metric value plus, when present, that
+// bucket's invalid-traffic share. Bound per render; replacing el.innerHTML
+// discards the previous listeners with their nodes, so nothing accumulates.
+function attachChartHover(el, points, metric, geo) {
+  const svg = el.querySelector('svg');
+  const hit = el.querySelector('#chairHit');
+  const g = el.querySelector('#chairG');
+  const line = el.querySelector('#chairL');
+  const dotEl = el.querySelector('#chairD');
+  const tip = el.querySelector('#chartTip');
+  if (!svg || !hit || !tip) return;
+  // buckets that can actually be read (a 'future' one has no data yet)
+  const readable = points.map((p, i) => i).filter((i) => points[i].status !== 'future');
+  if (!readable.length) return;
+
+  const pt = svg.createSVGPoint();
+  const toViewX = (evt) => {
+    const m = svg.getScreenCTM();
+    if (!m) return null;
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    return pt.matrixTransform(m.inverse()).x;
+  };
+
+  const show = (evt) => {
+    const vx = toViewX(evt);
+    if (vx == null) return;
+    // nearest readable bucket to the pointer's x
+    let idx = readable[0], best = Infinity;
+    for (const i of readable) {
+      const d = Math.abs(geo.xs(i) - vx);
+      if (d < best) { best = d; idx = i; }
+    }
+    const p = points[idx];
+    const x = geo.xs(idx), y = geo.ys(p.value);
+    line.setAttribute('x1', x.toFixed(1)); line.setAttribute('x2', x.toFixed(1));
+    dotEl.setAttribute('cx', x.toFixed(1)); dotEl.setAttribute('cy', y.toFixed(1));
+    g.setAttribute('opacity', '1');
+
+    const rows = [`<div class="tl">${esc(p.label)}${p.status === 'partial' ? ` <span class="tp">${esc(t('in progress'))}</span>` : ''}</div>`,
+      `<div class="tv">${esc(t(METRIC_LABEL[metric] || metric))}: ${esc(fmtMetric(metric, p.value))}</div>`];
+    if (p.pv) {
+      const share = (p.invalid || 0) / p.pv;
+      rows.push(`<div class="${share > 0 ? 'ti' : 'tl'}">${esc(t('invalid'))}: ${pctf(share)}`
+        + ` <span class="tl">(${fmt(p.invalid || 0)}/${fmt(p.pv)} ${esc(t('pageviews'))})</span></div>`);
+    }
+    tip.innerHTML = rows.join('');
+    tip.hidden = false;
+    // position in CSS pixels: the viewBox is scaled to the element's width
+    const rect = svg.getBoundingClientRect();
+    const sx = rect.width / geo.W;
+    tip.style.left = Math.max(60, Math.min(rect.width - 60, x * sx)) + 'px';
+    tip.style.top = Math.max(tip.offsetHeight, y * (rect.height / geo.VH) - 10) + 'px';
+  };
+  const hide = () => { g.setAttribute('opacity', '0'); tip.hidden = true; };
+
+  hit.addEventListener('pointermove', show);
+  hit.addEventListener('pointerdown', show);   // tap-to-read on touch devices
+  hit.addEventListener('pointerleave', hide);
+  el.addEventListener('pointerleave', hide);
+}
+
+function populateControls() {
+  const mSel = document.getElementById('metric');
+  // rebuild each call so labels follow the current language; preserve selection
+  const mCur = mSel.value;
+  mSel.innerHTML = METRICS.map(([v, l]) => `<option value="${v}">${te(l)}</option>`).join('');
+  if (mCur) mSel.value = mCur;
+  const period = document.getElementById('period').value;
+  const opts = INTERVALS[period] || ['day'];
+  const iSel = document.getElementById('interval');
+  const cur = iSel.value;
+  iSel.innerHTML = opts.map((v) => `<option value="${v}">${te(INTERVAL_LABEL[v])}</option>`).join('');
+  iSel.value = opts.includes(cur) ? cur : opts[0]; // keep choice if still valid, else default
+}
+
+// KPI cards. The two bounce definitions are shown as separate cards (more
+// direct than a toggle): "engaged" = GA4 style, "1-page" = UA/Plausible/Similarweb.
+function renderCards(o, al) {
+  const cleanShare = (o.pv ? ((o.clean_count + o.suspect_count) / o.pv) * 100 : 0).toFixed(1);
+  const perVisitor = o.uv ? (o.pv / o.uv).toFixed(2) : '–';
+  const pct = (v) => v == null ? '–' : (v * 100).toFixed(1) + '%';
+  // k (label) and h (sub-label) are UI strings → translated; v is a value;
+  // help is the long explanation, shown as a tooltip so labels stay one line.
+  const card = (k, v, h, help, cls) =>
+    `<div class="card${cls ? ' ' + cls : ''}"${help ? ` title="${esc(t(help))}"` : ''}><div class="v">${v}</div><div class="k">${te(k)}</div><div class="h">${h ? te(h) : ''}</div></div>`;
+  // forged search-referrer traffic (the two new signals) + its share of
+  // search-referred visits — makes "fake Google" visible without SQL.
+  const st = (al && al.stats) || {};
+  const fakeN = st.fake_search || 0;
+  const fakeShare = st.search_pv ? `${(fakeN / st.search_pv * 100).toFixed(1)}% ${t('of search visits')}` : t('of search visits');
+  // Two rows of six: audience volume on top, quality & outcomes below. The
+  // conversion cards always render so the grid never goes ragged — a site
+  // without custom events simply shows a dash.
+  document.getElementById('cards').innerHTML =
+    card('Visitors', fmt(o.uv), 'unique people', 'Distinct visitors (by visitor id) in this range, bots and crawlers excluded') +
+    card('Sessions', fmt(o.sessions), 'visits', 'Visits — a new session starts after 30 minutes idle or at midnight') +
+    card('Pageviews', fmt(o.pv), 'all traffic', 'Every recorded pageview, including traffic later judged invalid') +
+    card('Pages / visitor', perVisitor, 'depth', 'Pageviews divided by visitors') +
+    card('Engaged time', dur(o.avg_duration_ms), 'visible dwell', 'Average time the page was actually visible per visit, exit page included (measured, not inferred)') +
+    card('Visit duration', dur(o.visit_duration_ms), 'first → last event', 'Classic session length: first to last event in the visit (Universal Analytics / Plausible definition — exit page counts as 0)') +
+    card('Human share', cleanShare + '%', 'of pageviews', 'Share of pageviews not judged bot or crawler') +
+    card('Bounce (engaged)', pct(o.bounce_rate), 'GA4 style', 'Visits with no engagement: under 10s, no second page, no conversion (GA4 definition)') +
+    card('Bounce (1-page)', pct(o.bounce_rate_single), 'Plausible style', 'Visits that saw exactly one page (Universal Analytics / Plausible definition)') +
+    card('Forged search', fmt(fakeN), fakeShare, 'Visits claiming a Google/Bing referral that the forgery checks rejected', fakeN > 0 ? 'card-warn' : '') +
+    card('Conversions', o.conversions ? fmt(o.conversions) : '–', 'custom events', 'Custom events sent by your site (signup, purchase …) from clean traffic') +
+    card('Revenue', o.revenue ? money(o.revenue) : '–', 'from events with revenue', 'Sum of the revenue property on custom events, in USD');
+}
+const money = (v) => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function loadChart() {
+  const metric = document.getElementById('metric').value;
+  const interval = document.getElementById('interval').value;
+  document.getElementById('chartTitle').textContent = t(METRIC_LABEL[metric]);
+  setTitle(); // reflect the selected metric in the tab title
+  const ts = await get('timeseries', `&metric=${metric}&interval=${interval}`);
+  lineChart(ts.points, metric);
+}
+
+function donut(t) {
+  const total = t.clean + t.suspect + t.bot + t.crawler || 1;
+  const colors = { clean: '#34d399', suspect: '#fbbf24', bot: '#f87171', crawler: '#64748b' };
+  let off = 0;
+  const C = 2 * Math.PI * 40;
+  const segs = Object.keys(colors).map((k) => {
+    const frac = t[k] / total;
+    const seg = `<circle r="40" cx="60" cy="60" fill="none" stroke="${colors[k]}" stroke-width="16"
+      stroke-dasharray="${(frac * C).toFixed(1)} ${C.toFixed(1)}" stroke-dashoffset="${(-off * C).toFixed(1)}"
+      transform="rotate(-90 60 60)"/>`;
+    off += frac;
+    return seg;
+  }).join('');
+  const T = window.PVI18N.t; // `t` is the totals param here, so alias the translator
+  document.getElementById('quality').innerHTML = `
+    <div style="display:flex;gap:20px;align-items:center">
+      <svg viewBox="0 0 120 120" width="130">${segs}
+        <text x="60" y="58" text-anchor="middle" style="font-size:15px;fill:#e6e8eb;font-weight:700">${((t.clean + t.suspect) / total * 100).toFixed(1)}%</text>
+        <text x="60" y="74" text-anchor="middle">${esc(T('counted'))}</text></svg>
+      <div class="legend" style="flex-direction:column;align-items:flex-start">
+        <span><i class="dot" style="background:#34d399"></i>${esc(T('clean'))} ${fmt(t.clean)}</span>
+        <span><i class="dot" style="background:#fbbf24"></i>${esc(T('suspect'))} ${fmt(t.suspect)} <span class="muted">${esc(T('(counted, flagged)'))}</span></span>
+        <span><i class="dot" style="background:#f87171"></i>${esc(T('bot'))} ${fmt(t.bot)} <span class="muted">${esc(T('(excluded)'))}</span></span>
+        <span><i class="dot" style="background:#64748b"></i>${esc(T('verified crawler'))} ${fmt(t.crawler)} <span class="muted">${esc(T('(separate)'))}</span></span>
+      </div>
+    </div>`;
+}
+
+// "Unreasonable data" alerts — self-contained plausibility checks (server-side).
+// Crawler categories (§6.6) — only rendered when the deployer has imported a
+// bot directory AND some traffic matched it. Descriptive: it says which KINDS
+// of crawlers visited, and changes nothing about how they were scored.
+async function loadCrawlers() {
+  const sec = document.getElementById('crawlerSec');
+  const el = document.getElementById('crawlers');
+  let rows = [];
+  try { rows = (await get('breakdown', '&dim=bot_category&limit=50')).rows || []; }
+  catch { sec.hidden = true; return; }
+  if (!rows.length) { sec.hidden = true; return; }   // no directory, or no match
+  sec.hidden = false;
+  const total = rows.reduce((a, r) => a + (r.pv || 0), 0) || 1;
+  el.innerHTML = `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Identified crawler traffic grouped by what the crawler is for. Classification only — these visits are scored exactly as before.')}</p>`
+    + `<table><tr><th>${te('Category')}</th><th class="num">${te('PV')}</th><th class="num">${te('Visitors')}</th><th class="num">${te('Share')}</th></tr>`
+    + rows.map((r) => `<tr><td>${esc(t(CRAWLER_CAT[r.key] || r.key))}</td>`
+        + `<td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.uv)}</td>`
+        + `<td class="num">${pctf((r.pv || 0) / total)}</td></tr>`).join('')
+    + '</table>';
+}
+// Cloudflare edge requests (§6.7) — only rendered when the deployer configured
+// a Cloudflare API token AND at least one completed day has been pulled.
+//
+// This panel exists because the beacon has a blind spot it cannot report on:
+// anything that fetches HTML without running JavaScript is absent from every
+// other number on this page. Cloudflare counted those requests, so the gap
+// between the two is measurable — and it is where AI crawlers live.
+async function loadEdge() {
+  const sec = document.getElementById('edgeSec');
+  const el = document.getElementById('edge');
+  let d;
+  try { d = await get('edge'); } catch { sec.hidden = true; return; }
+  if (!d || !d.available) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const tt = d.totals || {};
+  // today is deliberately absent (its edge counts are still accumulating), so
+  // say which range these numbers actually cover rather than implying the
+  // selected period
+  const covered = d.days && d.days.length
+    ? `${esc(d.days[0].day)} → ${esc(d.days[d.days.length - 1].day)}` : '';
+  const agents = (d.agents || []).slice(0, 15);
+  el.innerHTML =
+    `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Requests Cloudflare served for this site, next to the pageviews the tracking script reported. The difference is HTML that was fetched without ever running JavaScript — AI crawlers, scrapers and feed readers. Descriptive only: none of this affects scoring, verdicts or ad protection.')}`
+      + (covered ? ` <span style="opacity:.7">(${covered})</span>` : '') + '</p>'
+    + '<div class="grid2" style="margin-bottom:12px">'
+      + `<div><table><tr><th>${te('Measure')}</th><th class="num">${te('Requests')}</th></tr>`
+        + `<tr><td>${te('Edge HTML requests')}</td><td class="num">${fmt(tt.html_requests)}</td></tr>`
+        + `<tr><td>${te('Browser pageviews')}</td><td class="num">${fmt(tt.pv)}</td></tr>`
+        + `<tr><td><b>${te('Gap — fetched, never ran JS')}</b></td>`
+          + `<td class="num"><b>${fmt(tt.gap)}</b> <span class="muted">${pctf(tt.gap_share)}</span></td></tr>`
+        + `<tr><td class="muted">${te('All edge requests (assets included)')}</td><td class="num muted">${fmt(tt.requests)}</td></tr>`
+        + '</table></div>'
+      + '<div>' + (agents.length
+        ? `<table><tr><th>${te('User agent')}</th><th class="num">${te('Requests')}</th></tr>`
+          + agents.map((a) => `<tr><td title="${esc(a.user_agent)}" style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.user_agent)}</td>`
+            + `<td class="num">${fmt(a.requests)}</td></tr>`).join('')
+          + '</table>'
+        : `<p class="muted">${te('no data yet')}</p>`) + '</div>'
+    + '</div>';
+}
+
+// friendly names for the categories the public directories use; unknown keys
+// fall through to the raw value so a new category is never hidden
+const CRAWLER_CAT = {
+  ai_agent_declared: 'AI agent (declared)',
+  search: 'Search engine', ai_training: 'AI training', ai: 'AI', ai_assistant: 'AI assistant',
+  ai_search: 'AI search', seo: 'SEO tool', advertising: 'Ad verification', ads: 'Ad verification',
+  monitoring: 'Monitoring', security: 'Security scanner', archive: 'Archiving',
+  social: 'Social preview', academic: 'Academic', accessibility: 'Accessibility',
+  aggregator: 'Aggregator', page_preview: 'Link preview', uncategorized: 'Uncategorised',
+};
+
+// Traffic-health strip — every ratio the alert rules watch, shown ALWAYS with
+// its distance to the threshold. Alerts only appear once a line is crossed, so
+// without this a site owner can't see where they actually stand (or that a
+// number is climbing) until it is already a problem.
+function renderHealth(res) {
+  const el = document.getElementById('health');
+  if (!el) return;
+  const st = (res && res.stats) || {};
+  const th = (res && res.thresholds) || {};
+  const pv = st.pv || 0;
+  if (!pv) { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
+
+  // value/limit are fractions; `of` names the denominator so the number is unambiguous
+  const metrics = [
+    { k: 'Invalid traffic', v: (st.invalid || 0) / pv, lim: th.invalid_share,
+      n: st.invalid || 0, of: 'of pageviews', help: 'Pageviews judged bot or suspect' },
+    { k: 'Datacenter traffic', v: (st.datacenter || 0) / pv, lim: th.datacenter_share,
+      n: st.datacenter || 0, of: 'of pageviews', help: 'From cloud/hosting networks rather than home or mobile ISPs' },
+    { k: 'No-interaction visits', v: (st.zero_interaction || 0) / pv, lim: th.zero_interaction_share,
+      n: st.zero_interaction || 0, of: 'of pageviews', help: 'No click, scroll or page-leave in the whole session' },
+    // MUST use the same ratio the alert rule uses (forged / all pageviews), or
+    // the strip would show "over the line" while no alert fires. The share of
+    // search visits is context only — it rides in the sub-line, not the bar.
+    { k: 'Forged search referrals', v: (st.fake_search || 0) / pv, lim: th.fake_search_share,
+      n: st.fake_search || 0, of: 'of pageviews', help: 'Claim a search-engine referral that looks forged',
+      extra: st.search_pv
+        ? t('{n} of {m} search visits').replace('{n}', fmt(st.fake_search || 0)).replace('{m}', fmt(st.search_pv))
+        : t('no search traffic in this period') },
+  ];
+
+  el.innerHTML = `<div class="health">` + metrics.map((m) => {
+    const lim = typeof m.lim === 'number' && m.lim > 0 ? m.lim : null;
+    const ratio = lim ? m.v / lim : 0;                       // 1.0 = exactly at the line
+    const cls = !lim ? 'ok' : ratio >= 1 ? 'over' : ratio >= 0.75 ? 'near' : 'ok';
+    // scale so the threshold marker sits at 75% of the bar; clamp the fill
+    const fill = Math.max(2, Math.min(100, (lim ? ratio * 75 : m.v * 100)));
+    const note = !lim ? ''
+      : cls === 'over' ? t('over the {x} alert line').replace('{x}', pctf(lim))
+      : t('alert line {x}').replace('{x}', pctf(lim));
+    return `<div class="hm ${cls}" title="${esc(t(m.help))}">
+      <div class="hl"><span>${te(m.k)}</span><span>${fmt(m.n)}</span></div>
+      <div class="hv">${pctf(m.v)}</div>
+      <div class="hbar"><i style="width:${fill.toFixed(1)}%"></i>${lim ? '<span class="lim" style="left:75%"></span>' : ''}</div>
+      <div class="sub">${te(m.of)}${note ? ' · ' + esc(note) : ''}${m.extra ? '<br>' + esc(m.extra) : ''}</div>
+    </div>`;
+  }).join('') + `</div>`
+    + (res && res.muted ? `<p class="muted" style="margin:10px 0 0;font-size:12px">${te('Sample too small for alerts — shown for reference only.')}</p>` : '');
+}
+
+// Alert bodies arrive from the API as finished English sentences with the
+// numbers already interpolated, so they can't go through the plain string
+// table. Each alert also carries `values`, which lets the console rebuild the
+// same sentence from a translatable template — same approach as anomalyText.
+// Falls back to the server's English detail for any id added later.
+const ALERT_DETAIL = {
+  invalid_share: ['alert-invalid', '{share} of pageviews are bot/suspect (alert above {threshold}).'],
+  datacenter: ['alert-datacenter', '{share} of pageviews come from cloud/hosting IPs (alert above {threshold}).'],
+  fake_search: ['alert-fake-search', '{share} of pageviews claim a search referrer but look forged (alert above {threshold}).'],
+  zero_interaction: ['alert-zero-interaction', '{share} of pageviews had no pointer / keyboard input and no leave signal (alert above {threshold}).'],
+  bounce_low: ['alert-bounce-low', 'Single-page bounce is only {share} — real audiences rarely fall below {threshold}; often automated multi-hit traffic.'],
+  pages_per_visitor: ['alert-ppv', '{value} pages/visitor (alert above {threshold}) — can indicate scraping.'],
+  source_concentration: ['alert-source-concentration', '“{key}” is {share} of sessions (alert above {threshold}) — check for referral spam or forged referrers.'],
+};
+function alertText(a) {
+  const tpl = ALERT_DETAIL[a.id];
+  if (!tpl || !a.values) return a.detail;
+  return Object.entries(a.values).reduce((str, [k, v]) => str.split(`{${k}}`).join(v), window.PVI18N.tk(tpl[0], tpl[1]));
+}
+
+// Returns the full payload so renderCards can reuse its stats (forged-search etc.).
+async function loadAlerts() {
+  const el = document.getElementById('alerts');
+  let res = { alerts: [], stats: {} };
+  try { res = await get('alerts'); } catch { el.innerHTML = ''; renderHealth(null); return res; }
+  el.innerHTML = (res.alerts || []).map((x) => {
+    const crit = x.severity === 'critical';
+    // say so when the numbers describe the filtered slice rather than the site
+    const scope = res.filtered ? ` <span class="muted" style="font-weight:400">${te('· within the current filter')}</span>` : '';
+    return `<div class="alert alert-${crit ? 'critical' : 'warning'}"><span class="ico">${crit ? '⛔' : '⚠️'}</span>`
+      + `<span class="body"><b>${esc(te(x.title))}</b>${scope}<span>${esc(alertText(x))}</span></span></div>`;
+  }).join('');
+  renderHealth(res); // the strip shows the same ratios even when nothing trips
+  return res;
+}
+
+// Baseline anomalies (daily cron output) — historical, not period-scoped, so
+// fetched directly once rather than through the period-aware get().
+async function loadAnomalies() {
+  const el = document.getElementById('anomalies');
+  let list = [];
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/anomalies`));
+    list = (await r.json()).anomalies || [];
+  } catch { el.innerHTML = ''; return; }
+  el.innerHTML = list.length
+    ? `<div class="anomaly-hd">${te('Recent anomalies (vs baseline)')}</div>`
+      + list.map((a) => `<div class="anomaly"><span class="ico">${a.kind === 'drop' ? '📉' : a.kind === 'concentration' ? '🎯' : '📈'}</span>`
+        + `<span class="day">${esc(a.day)}</span><span>${esc(anomalyText(a))}</span></div>`).join('')
+    : '';
+}
+// The cron stores an English sentence; other languages rebuild it from the
+// structured fields (dimension / baseline / actual / deviation) so the banner
+// reads natively. Shapes without enough structure (distribution findings)
+// keep the server text.
+function anomalyText(a) {
+  if (window.PVI18N.lang === 'en') return a.message;
+  const x = (n, d = 1) => Number(n).toFixed(d);
+  // ratio recomputed from the raw numbers so the text never depends on how a
+  // given cron version encoded `deviation`
+  const ratio = a.baseline ? a.actual / a.baseline : a.deviation;
+  const fill = (key, en, vars) => Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(v), window.PVI18N.tk(key, en));
+  if ((a.dimension === 'pageviews' || a.dimension === 'pv') && a.kind === 'spike')
+    return fill('anom-pv-spike', 'Pageviews {x}× the recent average ({from} → {to})', { x: x(ratio), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
+  if ((a.dimension === 'pageviews' || a.dimension === 'pv') && a.kind === 'drop')
+    return fill('anom-pv-drop', 'Pageviews fell to {pct}% of the recent average ({from} → {to})', { pct: Math.round(ratio * 100), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
+  if (a.dimension === 'invalid_share')
+    return fill('anom-invalid', 'Invalid traffic {now}% of pageviews vs {base}% baseline', { now: Math.round(a.actual * 100), base: Math.round(a.baseline * 100) });
+  if (String(a.dimension).startsWith('dist:') && a.top_sig)
+    return fill('anom-dist', '{what}: “{top}” is {now}% of clean {unit} vs {base}% baseline', {
+      what: t(a.dimension === 'dist:device' ? 'Clean traffic collapsed onto one device profile' : 'Clean visits concentrated on one landing page'),
+      top: a.top_sig, now: Math.round(a.actual * 100), base: Math.round(a.baseline * 100), unit: t(a.unit || 'pageviews') });
+  if (String(a.dimension).startsWith('source:'))
+    return fill('anom-source', 'Traffic from “{src}” {x}× its recent average ({from} → {to} visitors)', { src: sourceLabel(a.dimension.slice(7)), x: x(ratio), from: fmt(Math.round(a.baseline)), to: fmt(a.actual) });
+  return a.message;
+}
+
+// ── AI report ──────────────────────────────────────────────────────────────
+// Tiny, safe Markdown → HTML (headings / bold / code / bullet lists / paras).
+// Content is escaped BEFORE any formatting, so the model's output can never
+// inject markup — only the whitelisted transforms below produce tags.
+function mdInline(s) {
+  return s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+function mdToHtml(src) {
+  const lines = String(src ?? '').replace(/\r/g, '').split('\n');
+  let html = '', inList = false, m;
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+  for (const raw of lines) {
+    const t = esc(raw).trim();
+    if (!t) { closeList(); continue; }
+    if ((m = t.match(/^#{1,6}\s+(.*)$/))) { closeList(); html += `<h3>${mdInline(m[1])}</h3>`; }
+    else if ((m = t.match(/^[-*]\s+(.*)$/))) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${mdInline(m[1])}</li>`; }
+    else { closeList(); html += `<p>${mdInline(t)}</p>`; }
+  }
+  closeList();
+  return html;
+}
+function renderReport(rep) {
+  const el = document.getElementById('aiReport');
+  if (!rep || !rep.content) { el.innerHTML = `<p class="muted">${te('No report yet — click Generate to analyze the selected period.')}</p>`; return; }
+  const when = rep.created_at ? new Date(rep.created_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '';
+  el.innerHTML = `<div class="ai-md">${mdToHtml(rep.content)}</div>`
+    + `<p class="muted" style="margin:12px 0 0;font-size:12px">${esc(rep.period || '')}${when ? ' · generated ' + esc(when) : ''}</p>`;
+}
+async function loadAiReport() {
+  const btn = document.getElementById('aiGen');
+  try {
+    const d = await (await guard(await fetch(`/api/sites/${site}/ai_report`))).json();
+    if (!d.configured) {
+      btn.disabled = true;
+      btn.title = 'Configure an AI provider in Settings first';
+      document.getElementById('aiReport').innerHTML =
+        '<p class="muted">AI reports are not configured. Set a provider, model and API key under <a href="/sites.html" style="color:#7ab3ff;text-decoration:none">Settings ⚙</a>.</p>';
+      return;
+    }
+    btn.disabled = false;
+    renderReport(d.report);
+  } catch { /* non-fatal */ }
+}
+document.getElementById('aiGen').addEventListener('click', async () => {
+  const btn = document.getElementById('aiGen'), el = document.getElementById('aiReport');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = t('Generating…');
+  el.innerHTML = '<p class="muted">Analyzing traffic and writing the report — this can take up to a minute.</p>';
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/ai_report?period=${document.getElementById('period').value}`, { method: 'POST' }));
+    const d = await r.json();
+    if (!r.ok) el.innerHTML = `<p class="err" style="color:#f87171">${esc(d.error || t('generation failed'))}</p>`;
+    else renderReport(d);
+  } catch { el.innerHTML = `<p class="err" style="color:#f87171">${te('generation failed')}</p>`; }
+  finally { btn.disabled = false; btn.textContent = label; }
+});
+
+// ── Ad protection panel (§7.5 / §11.5): current tier + per-tier impact estimate
+// (block rate & est. false-positive), block reasons, top blocked sources, and a
+// block-volume sparkline. The tier can be switched here and applies via /v with
+// no re-embed.
+// The stored values stay loose/balanced/strict (the SDK and /v depend on them),
+// but they are NOT displayed under those names: "loose" blocks everything that
+// isn't clean, which is MORE than "balanced" — on one production site 84.2% vs
+// 56.8%. Anyone reading the three words in order concluded the opposite of what
+// the tiers do, so the UI names them by what they block and lists them in
+// ascending strength.
+const MODE_HELP = {
+  off: 'ads always load — protection disabled',
+  loose: 'load ads only for clean traffic (blocks all suspect + bad)',
+  balanced: 'block bots/crawlers always; suspect only without interaction',
+  strict: 'load ads only for clean traffic that also interacted',
+};
+const MODE_LABEL = {
+  off: 'Off',
+  balanced: 'Balanced — bots & crawlers',
+  loose: 'Aggressive — everything not clean',
+  strict: 'Strictest — clean + interacted',
+};
+// ascending block rate, so the table reads as a strength ladder
+const TIER_ORDER = ['balanced', 'loose', 'strict'];
+async function loadAdguard() {
+  const el = document.getElementById('adguard');
+  let d;
+  try { d = await get('adguard'); } catch { el.innerHTML = `<p class="muted">${te('no data yet')}</p>`; return; }
+  const MODES = ['off', ...TIER_ORDER];
+  const tierRow = (name) => {
+    const t = d.tiers[name]; if (!t) return '';
+    const cur = d.current_mode === name;
+    return `<tr${cur ? ' style="background:#141a26"' : ''}>
+      <td>${te(MODE_LABEL[name] || name)}${cur ? ` <span class="muted">${te('· current')}</span>` : ''}</td>
+      <td class="num">${pctf(t.block_rate)}</td>
+      <td class="num">${fmt(t.block)}</td>
+      <td class="num">${pctf(t.fp_rate)}</td></tr>`;
+  };
+  const reasons = (d.reasons || []).map((r) =>
+    `<tr><td title="${esc(signalHelp(r.flag))}">${esc(signalLabel(r.flag))}</td><td class="num">${fmt(r.n)}</td></tr>`).join('');
+  // same platform folding as the Top-sources panel, so "Google" is one row here too
+  const sources = mergeSources((d.sources || []).map((s) => ({ ...s, key: s.source ?? '(direct)' }))).map((s) =>
+    `<tr><td title="${esc(s.keys.join(', '))}">${esc(sourceLabel(s.key))}</td><td class="num">${fmt(s.sessions)}</td><td class="num">${fmt(s.pv)}</td></tr>`).join('');
+  const trend = (d.trend || []).map((x) => x.blocked);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="font-size:13px">${te('Mode')}
+        <select id="agModeSel" style="margin-left:6px;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:5px 8px;font:inherit">
+          ${MODES.map((m) => `<option value="${m}"${m === d.current_mode ? ' selected' : ''}>${te(MODE_LABEL[m] || m)}</option>`).join('')}
+        </select>
+      </label>
+      <span class="muted" id="agModeMsg" style="font-size:12px">${te(MODE_HELP[d.current_mode] || '')}</span>
+    </div>
+    <p class="muted" style="margin:14px 0 6px;font-size:12px">${te('Estimated impact over this period')} (${fmt(d.pv)} ${te('pageviews')}). ${esc(window.PVI18N.tk('fp-explainer', '"Est. false-positive" = share of blocked traffic that showed pointer or keyboard input. Visits recorded before the pointer split fall back to the old any-interaction bit, which counted scrolling — a scraper scrolls too, so those days read high.'))}</p>
+    <table><tr><th>${te('Tier')}</th><th class="num">${te('Block rate')}</th><th class="num">${te('Blocked PV')}</th><th class="num">${te('Est. false-positive')}</th></tr>
+      ${TIER_ORDER.map(tierRow).join('')}</table>
+    ${trend.some((v) => v > 0) ? `<div style="margin-top:12px;display:flex;align-items:center;gap:10px"><span class="muted" style="font-size:12px">${te('Blocked/day')}</span>${sparkline(trend)}</div>` : ''}
+    <div class="grid2" style="margin-top:16px">
+      <div><h3 style="font-size:13px;margin:0 0 8px">${te('Block reasons')}</h3>
+        ${reasons ? `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>${reasons}</table>` : `<p class="muted">${te('none')}</p>`}</div>
+      <div><h3 style="font-size:13px;margin:0 0 8px">${te('Top blocked sources')}</h3>
+        ${sources ? `<table><tr><th>${te('Source')}</th><th class="num">${te('Sessions')}</th><th class="num">PV</th></tr>${sources}</table>` : `<p class="muted">${te('none')}</p>`}</div>
+    </div>`;
+  document.getElementById('agModeSel').addEventListener('change', async (e) => {
+    const mode = e.target.value;
+    const msg = document.getElementById('agModeMsg');
+    msg.textContent = t('saving…');
+    try {
+      const r = await guard(await fetch(`/api/sites/${site}/adguard`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode }),
+      }));
+      if (r.ok) { msg.textContent = t(MODE_HELP[mode] || '') + ' · ' + t('saved, applies on next page load'); loadAdguard(); }
+      else msg.textContent = t('save failed');
+    } catch { msg.textContent = t('save failed'); }
+  });
+}
+
+// ── Data export ─────────────────────────────────────────────────────────────
+// Bundle every endpoint the dashboard reads — for the CURRENTLY selected period
+// AND active filters — into one JSON file. Limits are generous (not the on-screen
+// top-N) so the export is the full data for the range, easy to audit offline.
+const DL_DIMS = ['source', 'channel', 'page', 'entry_page', 'exit_page', 'country', 'region', 'city',
+  'browser', 'os', 'device', 'size', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'ft_source', 'ft_medium', 'ft_campaign', 'goal'];
+async function downloadData() {
+  const btn = document.getElementById('dlBtn');
+  const label = btn.querySelector('span');
+  const orig = label.textContent;
+  btn.disabled = true; label.textContent = t('Preparing…');
+  // each fetch is isolated so one failure doesn't abort the whole export
+  const safe = async (p, extra = '') => { try { return await get(p, extra); } catch (e) { return { error: String((e && e.message) || e) }; } };
+  try {
+    const period = document.getElementById('period').value;
+    const metric = document.getElementById('metric').value;
+    const interval = document.getElementById('interval').value;
+    const bundle = {
+      meta: {
+        app: 'pvuv.ai', schema: 1, generated_at: new Date().toISOString(),
+        site_id: site, site_name: siteName, period, filters, metric, interval,
+        note: 'Values reflect the selected period and any active filters. Breakdowns/traffic use generous limits, so this is the full data for the range, not the on-screen top-N.',
+      },
+      overview: await safe('overview'),
+      realtime: await safe('realtime'),
+      quality: await safe('quality'),
+      timeseries: await (async () => {
+        const out = {}; // every metric at the current interval, so any chart can be cross-checked
+        for (const [mv] of METRICS) out[mv] = await safe('timeseries', `&metric=${mv}&interval=${interval}`);
+        return { interval, selected_metric: metric, metrics: out };
+      })(),
+      alerts: await safe('alerts'),
+      adguard: await safe('adguard'),
+      traffic: await safe('traffic', '&min_score=0&limit=1000'),
+      breakdowns: {},
+    };
+    // anomalies is not period-scoped (matches the dashboard's own direct fetch)
+    try { bundle.anomalies = await (await guard(await fetch(`/api/sites/${site}/anomalies`))).json(); }
+    catch (e) { bundle.anomalies = { error: String(e) }; }
+    for (const d of DL_DIMS) bundle.breakdowns[d] = await safe('breakdown', `&dim=${d}&limit=1000`);
+    const validFunnel = (typeof funnelSteps !== 'undefined' ? funnelSteps : []).filter((s) => s && s.value);
+    if (validFunnel.length >= 2) bundle.funnel = await safe('funnel', `&steps=${encodeURIComponent(JSON.stringify(validFunnel))}`);
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `pvuv-${site}-${period}-${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  } finally {
+    btn.disabled = false; label.textContent = orig;
+  }
+}
+document.getElementById('dlBtn').addEventListener('click', downloadData);
+
+// ── sections load ON DEMAND ────────────────────────────────────────────────
+// Everything used to sit on one long page and load at once: ~15 concurrent
+// requests, nearly all of them live scans over the period. On a busy site that
+// meant nothing rendered at all until the slowest finished. Now opening the
+// page costs the header (cards + alerts) plus ONE section, and a section runs
+// its queries the first time it is opened.
+const SECTION_LOADERS = {
+  overview:   () => loadChart(),
+  sources:    () => Promise.all([loadPanel('sources'), loadPanel('pages')]),
+  audience:   () => Promise.all([loadPanel('countries'), loadPanel('devices')]),
+  vitals:     async () => { await loadVitals(); document.getElementById('vitalsEmpty').hidden = !document.getElementById('vitalsSec').hidden; },
+  campaigns:  () => loadUtm(),
+  goals:      async () => { await loadGoals(); document.getElementById('goalsEmpty').hidden = !document.getElementById('goalsSection').hidden; },
+  funnel:     async () => { await funnelsReady; runFunnel(); },
+  quality:    () => Promise.all([loadQuality(), loadCrawlers(), loadEdge()]),
+  adguard:    () => loadAdguard(),
+  suspicious: async () => {
+    // aggregated by VISITOR (one row per suspicious visitor, not per event):
+    // event/session counts, worst score/verdict, union of evidence
+    const tr = await get('traffic', '&min_score=30&limit=50');
+    renderTraffic(tr.rows || [], TRAFFIC_FOLD);
+  },
+  ai:         () => loadAiReport(),
+};
+const SECTION_ORDER = ['overview', 'sources', 'audience', 'campaigns', 'funnel', 'goals', 'vitals', 'quality', 'adguard', 'suspicious', 'ai'];
+
+let activeSec = 'overview';
+// bumped whenever the period or the filters change, so every section reloads
+// the next time it is opened instead of showing the previous range's numbers
+let dataGen = 0;
+const secLoadedAt = new Map();
+
+async function loadQuality() {
+  const qy = await get('quality');
+  donut(qy.totals);
+  const firedFlags = Object.entries(qy.flags).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  document.getElementById('flags').innerHTML = firedFlags.length
+    ? `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Bot-detection checks that fired on suspicious traffic — one visit can trip several.')}</p>`
+      + `<table><tr><th>${te('Signal')}</th><th class="num">${te('Events')}</th></tr>` +
+      firedFlags.map(([k, n]) => `<tr><td title="${esc(signalHelp(k))}">${esc(signalLabel(k))}</td><td class="num">${fmt(n)}</td></tr>`).join('') + '</table>'
+    : `<p class="muted">${te('no signals fired — traffic looks clean')}</p>`;
+}
+
+async function showSection(sec, { push = true } = {}) {
+  if (!SECTION_LOADERS[sec]) sec = 'overview';
+  activeSec = sec;
+  document.querySelectorAll('section.sec').forEach((el) => { el.hidden = el.dataset.sec !== sec; });
+  document.querySelectorAll('#secnav a').forEach((a) => a.classList.toggle('active', a.dataset.target === sec));
+  if (push) history.replaceState(null, '', '#' + sec);
+  if (secLoadedAt.get(sec) === dataGen) return;      // already current
+  secLoadedAt.set(sec, dataGen);
+  try { await SECTION_LOADERS[sec](); } catch { secLoadedAt.delete(sec); }
+}
+
+async function load() {
+  dataGen += 1;
+  secLoadedAt.clear();
+  // the header is the "overview" the page owes you immediately
+  const ov = await get('overview');
+  renderCards(ov, null);          // paint 11/12 cards the instant overview lands
+  renderShadowBanner(ov);
+  renderSecNav();
+  const section = showSection(activeSec, { push: false });
+  const al = await loadAlerts();  // alerts scans more — refine the Forged-search card when it arrives
+  renderCards(ov, al);
+  await section;
+}
+
+// Suspicious-visitor table: folded to the top rows so the page doesn't grow
+// by fifty rows of evidence; "show all" expands in place.
+const TRAFFIC_FOLD = 12;
+function renderTraffic(rows, fold) {
+  const el = document.getElementById('traffic');
+  if (!rows.length) { el.innerHTML = `<p class="muted">${te('nothing above the threshold — looking clean')}</p>`; return; }
+  const shown = rows.slice(0, fold);
+  el.innerHTML = `<table class="mtable"><tr><th>${te('Visitor')}</th><th class="num">${te('Events')}</th><th class="num">${te('Sessions')}</th><th>${te('Last seen')}</th><th>${te('Where')}</th><th>${te('Agent')}</th><th class="num">${te('Max score')}</th><th>${te('Verdict')}</th><th>${te('Evidence')}</th></tr>` +
+    shown.map((r) => `<tr>
+      <td class="nowrap"><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}" title="${esc(t('Journey timeline'))}">${esc(String(r.visitor_id).slice(0, 8))}…</a></td>
+      <td class="num">${fmt(r.events)}</td>
+      <td class="num">${fmt(r.sessions)}</td>
+      <td class="nowrap muted">${new Date(r.last_ts).toISOString().slice(5, 16).replace('T', ' ')}</td>
+      <td class="nowrap">${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''}</td>
+      <td class="nowrap">${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</td>
+      <td class="num">${r.bot_score}</td>
+      <td><span class="badge b-${esc(r.verdict)}">${te(r.verdict)}</span></td>
+      <td class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</td>
+    </tr>`).join('') + '</table>'
+    + `<div class="mcards">${shown.map((r) => `<a class="mcard" href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}">
+      <div class="row"><b>${esc(String(r.visitor_id).slice(0, 8))}…</b><span class="badge b-${esc(r.verdict)}">${te(r.verdict)}</span></div>
+      <div class="row muted"><span>${esc(r.country ?? '–')}${r.asn_type === 'datacenter' ? ' · DC' : ''} · ${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</span><span>${te('Max score')} ${r.bot_score}</span></div>
+      <div class="row muted"><span>${fmt(r.events)} ${te('Events')} · ${fmt(r.sessions)} ${te('Sessions')}</span><span>${new Date(r.last_ts).toISOString().slice(5, 16).replace('T', ' ')}</span></div>
+      <div class="flags">${flagNames(r.bot_flags).map(esc).join(', ') || '–'}</div></a>`).join('')}</div>`
+    + (rows.length > shown.length
+      ? `<button class="more-btn" id="trafficMore">${te('Show all')} ${rows.length}</button>`
+      : (fold < rows.length + 1 && rows.length > TRAFFIC_FOLD ? `<button class="more-btn" id="trafficLess">${te('Show fewer')}</button>` : ''));
+  const more = document.getElementById('trafficMore');
+  if (more) more.addEventListener('click', () => renderTraffic(rows, rows.length));
+  const less = document.getElementById('trafficLess');
+  if (less) less.addEventListener('click', () => renderTraffic(rows, TRAFFIC_FOLD));
+}
+
+// live "online now" — polls independently of the selected period (always the
+// last 30 minutes), so the header updates without reloading the whole page.
+function sparkline(minutes) {
+  const w = 90, h = 20, n = minutes.length, max = Math.max(...minutes, 1);
+  const pts = minutes.map((v, i) => `${(i * w / Math.max(n - 1, 1)).toFixed(1)},${(h - 2 - v * (h - 4) / max).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="#34d399" stroke-width="1.5"/></svg>`;
+}
+async function pollRealtime() {
+  try {
+    const r = await fetch(`/api/sites/${site}/realtime`);
+    if (r.status === 401) { location.href = '/login.html'; return; }
+    const d = await r.json();
+    document.getElementById('realtime').innerHTML =
+      `<span class="rt-site">${esc(siteName)}</span>` +
+      `<span class="live"><span class="pulse"></span>${fmt(d.online)} ${te('online now')}</span>` +
+      `<span class="muted">${fmt(d.pageviews)} ${te('views')} / ${d.window_minutes}m</span>` +
+      sparkline(d.minutes || []);
+  } catch { /* transient — keep the last value */ }
+}
+
+// remember the last period / metric / interval across refreshes (localStorage)
+function savePrefs() {
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify({
+      period: document.getElementById('period').value,
+      metric: document.getElementById('metric').value,
+      interval: document.getElementById('interval').value,
+    }));
+  } catch { /* storage unavailable — non-fatal */ }
+}
+function restorePrefs() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { p = {}; }
+  const has = (sel, v) => v && [...sel.options].some((o) => o.value === v);
+  const periodSel = document.getElementById('period');
+  if (has(periodSel, p.period)) periodSel.value = p.period; // else HTML default (today)
+  populateControls();                                       // fills metric + interval opts
+  const mSel = document.getElementById('metric'), iSel = document.getElementById('interval');
+  if (has(mSel, p.metric)) mSel.value = p.metric;
+  if (has(iSel, p.interval)) iSel.value = p.interval;
+}
+
+// fetch the owner's sites: names the header/realtime row + powers the switcher
+let allSites = [];
+let siteDomainPrimary = ''; // this site's first allowed domain (for the Google-search helper)
+let siteShadowUntil = 0;    // record-only until this instant (0 = enforcing)
+async function loadSiteName() {
+  try {
+    const { sites } = await (await guard(await fetch('/api/sites'))).json();
+    allSites = sites || [];
+    const s = allSites.find((x) => x.site_id === site);
+    if (s) { if (s.name) siteName = s.name; siteDomainPrimary = siteDomain(s); siteShadowUntil = s.shadow_until || 0; }
+  } catch { /* fall back to the id */ }
+  document.getElementById('titleText').textContent = siteName;
+  setTitle();
+  const me = allSites.find((x) => x.site_id === site);
+  if (me && me.has_data === 0) startOnboarding(me);
+}
+
+// ── the tracking snippet. ONE builder, used by both the first-run screen and
+// the Embed-code button, so the two can never drift — the snippet has to stay
+// reachable after the first visit lands, since that is when people actually go
+// looking for it (adding a second domain, moving hosts, re-checking data-api).
+let ingestHostCache = null;
+async function ingestHost() {
+  if (ingestHostCache === null) {
+    let h = '';
+    try { h = ((await (await fetch('/api/me')).json()).ingest_host) || ''; } catch { /* fall through */ }
+    // sibling-subdomain guess only for deployments predating INGEST_HOST
+    ingestHostCache = h || 'in.' + location.hostname.replace(/^(www|console)\./, '');
+  }
+  return ingestHostCache;
+}
+async function snippetFor(s) {
+  const attrs = [`data-site="${s.site_id}"`, `data-api="https://${await ingestHost()}"`];
+  if (s.adguard_mode && s.adguard_mode !== 'off') attrs.push(`data-adguard="${s.adguard_mode}"`);
+  if (s.adclient) attrs.push(`data-adclient="${s.adclient}"`);
+  return `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+}
+
+// ── first-run: no event recorded yet → snippet + live probe instead of an
+// empty dashboard. Polls /realtime every 5s; the first pageview reloads.
+let onboardTimer = null;
+async function startOnboarding(s) {
+  document.body.classList.add('onboarding');
+  document.getElementById('onboard').hidden = false;
+  const code = await snippetFor(s);
+  document.getElementById('onboardSnippet').textContent = code;
+  document.getElementById('onboardCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(code); document.getElementById('onboardCopy').textContent = t('Copied'); } catch { /* clipboard blocked */ }
+  };
+  const probe = async () => {
+    try {
+      const d = await (await fetch(`/api/sites/${site}/realtime`)).json();
+      if ((d.pageviews || 0) > 0 || (d.online || 0) > 0) { location.reload(); return; }
+    } catch { /* keep listening */ }
+    onboardTimer = setTimeout(probe, 5000);
+  };
+  probe();
+}
+
+// shadow mode (§7): while record-only, ads still load — show days left + the
+// backtested "would block X%" over the selected period, and an Enforce-now button.
+function renderShadowBanner(o) {
+  const el = document.getElementById('shadowBanner');
+  const now = Date.now();
+  if (!siteShadowUntil || now >= siteShadowUntil) { el.hidden = true; return; }
+  const days = Math.ceil((siteShadowUntil - now) / 86400000);
+  const blocked = o && o.pv ? (((o.pv - o.clean_count) / o.pv) * 100).toFixed(1) : '0.0';
+  el.hidden = false;
+  const SHADOW_EN = `recording only, ads still load for {days} more day${days === 1 ? '' : 's'}. At the current tier, {blocked} of pageviews in this range would be blocked once enforcing.`;
+  const body = window.PVI18N.tk('shadow-banner', SHADOW_EN)
+    .replace('{days}', `<b>${days}</b>`)
+    .replace('{blocked}', `<b>${esc(blocked)}%</b>`);
+  el.innerHTML = `<span><b>${te('Shadow mode')}</b> — ${body}</span>`
+    + `<button id="enforceBtn" class="btn warn enforce">${te('Enforce now')}</button>`;
+  document.getElementById('enforceBtn').addEventListener('click', async () => {
+    if (!confirm(t('Start blocking ads for suspected invalid traffic now? This ends the record-only window and can\'t be undone.'))) return;
+    const r = await guard(await fetch(`/api/sites/${site}/enforce`, { method: 'POST' }));
+    if (r.ok) { siteShadowUntil = 0; el.hidden = true; }
+  });
+}
+
+// ── site switcher: click the name → searchable dropdown to jump to another site
+function siteDomain(s) { try { return (JSON.parse(s.allowed_domains || '[]')[0]) || ''; } catch { return ''; } }
+function renderSwitchList(filter) {
+  const f = (filter || '').trim().toLowerCase();
+  const items = allSites.filter((s) => !f
+    || (s.name || '').toLowerCase().includes(f)
+    || s.site_id.toLowerCase().includes(f)
+    || siteDomain(s).toLowerCase().includes(f));
+  const ul = document.getElementById('switchList');
+  ul.innerHTML = items.length
+    ? items.map((s, i) => `<li role="option" data-id="${esc(s.site_id)}" class="${s.site_id === site ? 'current' : ''}${i === 0 ? ' active' : ''}">
+        <span class="nm">${esc(s.name || s.site_id)}</span>${siteDomain(s) ? `<span class="dm">${esc(siteDomain(s))}</span>` : ''}</li>`).join('')
+    : '<div class="none">No sites found</div>';
+  ul.querySelectorAll('li').forEach((li) => li.addEventListener('click', () => gotoSite(li.dataset.id)));
+}
+function gotoSite(id) {
+  if (id && id !== site) location.href = '/site.html?id=' + encodeURIComponent(id);
+  else closeSwitch();
+}
+function openSwitch() {
+  const pop = document.getElementById('switchPop');
+  pop.hidden = false;
+  document.getElementById('titleBtn').setAttribute('aria-expanded', 'true');
+  const s = document.getElementById('switchSearch');
+  s.value = ''; renderSwitchList(''); s.focus();
+}
+function closeSwitch() {
+  document.getElementById('switchPop').hidden = true;
+  document.getElementById('titleBtn').setAttribute('aria-expanded', 'false');
+}
+function moveActive(delta) {
+  const lis = [...document.querySelectorAll('#switchList li')];
+  if (!lis.length) return;
+  let idx = lis.findIndex((li) => li.classList.contains('active'));
+  if (idx >= 0) lis[idx].classList.remove('active');
+  idx = ((idx < 0 ? 0 : idx) + delta + lis.length) % lis.length;
+  lis[idx].classList.add('active');
+  lis[idx].scrollIntoView({ block: 'nearest' });
+}
+document.getElementById('titleBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('switchPop').hidden ? openSwitch() : closeSwitch();
+});
+document.getElementById('switchSearch').addEventListener('input', (e) => renderSwitchList(e.target.value));
+document.getElementById('switchSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeSwitch(); document.getElementById('titleBtn').focus(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); moveActive(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); }
+  else if (e.key === 'Enter') { const a = document.querySelector('#switchList li.active'); if (a) gotoSite(a.dataset.id); }
+});
+document.addEventListener('click', (e) => { if (!document.getElementById('switcher').contains(e.target)) closeSwitch(); });
+
+async function loadUtm() {
+  const dim = document.getElementById('utmDim').value;
+  const d = await get('breakdown', `&dim=${dim}`);
+  // rows are clickable-to-filter only for the fully-supported UTM dims
+  // (utm_campaign / utm_medium); the rest render as a plain table.
+  renderBreakdown('utm', dim, d.rows || []);
+}
+
+// ── Funnel: user builds ordered steps (page path or event), we compute the
+// first-occurrence-ordered funnel over the selected period. Steps persist per site.
+// ── Funnel ────────────────────────────────────────────────────────────────
+// A funnel answers three questions, in this order: how many get through, WHO
+// falls out, and WHAT they were doing when they did. The last one is the
+// reason we collect dwell / scroll / rage clicks / dead clicks / JS errors at
+// all — a drop with "31% of them rage-clicked here" is a bug report; a drop
+// without it is just a number.
+//
+// Definitions live on the server (saved funnels), so they follow you across
+// devices and are readable by the API and the AI report. The working copy is
+// still mirrored to localStorage so an unsaved edit survives a refresh.
+const FUNNEL_KEY = 'pvuv.funnel.' + site;
+const DEFAULT_STEPS = [{ type: 'page', value: '/' }, { type: 'event', value: '' }];
+let funnels = [];            // saved definitions for this site
+let currentFunnelId = null;  // null = an unsaved working copy
+let funnelSteps = (() => { try { return JSON.parse(localStorage.getItem(FUNNEL_KEY)) || []; } catch { return []; } })();
+if (!Array.isArray(funnelSteps) || funnelSteps.length < 2) funnelSteps = DEFAULT_STEPS.map((x) => ({ ...x }));
+let funnelSuggested = false;
+
+function saveFunnel() { try { localStorage.setItem(FUNNEL_KEY, JSON.stringify(funnelSteps)); } catch { /* non-fatal */ } }
+
+async function loadFunnels() {
+  try { funnels = (await (await guard(await fetch(`/api/sites/${site}/funnels`))).json()).funnels || []; }
+  catch { funnels = []; }
+  // open the first saved funnel on arrival — a saved definition is what the
+  // owner meant, the local working copy is only a scratchpad
+  if (funnels.length && currentFunnelId === null && !localStorage.getItem(FUNNEL_KEY)) applyFunnel(funnels[0].funnel_id, true);
+  renderFunnelPicker();
+}
+const funnelsReady = loadFunnels();
+
+function renderFunnelPicker() {
+  const sel = document.getElementById('funnelPick');
+  sel.innerHTML = funnels.map((f) => `<option value="${esc(f.funnel_id)}"${f.funnel_id === currentFunnelId ? ' selected' : ''}>${esc(f.name)}</option>`).join('')
+    + `<option value=""${currentFunnelId === null ? ' selected' : ''}>${te('Unsaved funnel')}</option>`;
+  sel.hidden = false;
+  document.getElementById('funnelDel').hidden = currentFunnelId === null;
+  const cur = funnels.find((f) => f.funnel_id === currentFunnelId);
+  document.getElementById('funnelName').value = cur ? cur.name : '';
+}
+function applyFunnel(id, quiet) {
+  const f = funnels.find((x) => x.funnel_id === id);
+  currentFunnelId = f ? f.funnel_id : null;
+  if (f) funnelSteps = f.steps.map((x) => ({ ...x }));
+  else { try { funnelSteps = JSON.parse(localStorage.getItem(FUNNEL_KEY)) || DEFAULT_STEPS.map((x) => ({ ...x })); } catch { funnelSteps = DEFAULT_STEPS.map((x) => ({ ...x })); } }
+  renderFunnelSteps();
+  renderFunnelPicker();
+  if (!quiet) runFunnel();
+}
+
+function renderFunnelSteps() {
+  const el = document.getElementById('funnelSteps');
+  el.innerHTML = funnelSteps.map((s, i) => `<div class="fstep" data-i="${i}">
+      <span class="fnum">${i + 1}</span>
+      <select class="ftype"><option value="page"${s.type === 'page' ? ' selected' : ''}>${te('Page path')}</option><option value="event"${s.type === 'event' ? ' selected' : ''}>${te('Event')}</option></select>
+      <input class="fval" value="${esc(s.value)}" placeholder="${s.type === 'page' ? '/pricing' : 'signup'}" aria-label="Step ${i + 1} value">
+      ${funnelSteps.length > 2 ? `<button class="fx" title="${esc(t('Remove step'))}">×</button>` : ''}
+    </div>`).join('');
+  el.querySelectorAll('.fstep').forEach((row) => {
+    const i = Number(row.dataset.i);
+    row.querySelector('.ftype').addEventListener('change', (e) => { funnelSteps[i].type = e.target.value; saveFunnel(); renderFunnelSteps(); });
+    row.querySelector('.fval').addEventListener('input', (e) => { funnelSteps[i].value = e.target.value; saveFunnel(); });
+    const x = row.querySelector('.fx');
+    if (x) x.addEventListener('click', () => { funnelSteps.splice(i, 1); saveFunnel(); renderFunnelSteps(); });
+  });
+}
+
+const fmsg = (text, bad) => {
+  const el = document.getElementById('funnelMsg');
+  el.textContent = text; el.style.color = bad ? '#f87171' : '';
+  if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 4000);
+};
+
+async function saveFunnelServer() {
+  const valid = funnelSteps.filter((s) => s.value && s.value.trim());
+  if (valid.length < 2) { fmsg(t('Add at least 2 steps with a value, then Run.'), true); return; }
+  const name = document.getElementById('funnelName').value.trim() || t('Funnel');
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/funnels`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ funnel_id: currentFunnelId || undefined, name, steps: valid }),
+    }));
+    const d = await r.json();
+    if (!r.ok) { fmsg(d.error || t('save failed'), true); return; }
+    currentFunnelId = d.funnel_id;
+    const existing = funnels.find((f) => f.funnel_id === d.funnel_id);
+    if (existing) { existing.name = d.name; existing.steps = d.steps; }
+    else funnels.push({ funnel_id: d.funnel_id, name: d.name, steps: d.steps });
+    try { localStorage.removeItem(FUNNEL_KEY); } catch { /* non-fatal */ }
+    renderFunnelPicker();
+    fmsg(t('saved'));
+  } catch { fmsg(t('save failed'), true); }
+}
+async function deleteFunnelServer() {
+  if (!currentFunnelId) return;
+  if (!confirm(t('Delete this funnel?'))) return;
+  try {
+    await guard(await fetch(`/api/sites/${site}/funnels/${encodeURIComponent(currentFunnelId)}`, { method: 'DELETE' }));
+    funnels = funnels.filter((f) => f.funnel_id !== currentFunnelId);
+    currentFunnelId = null;
+    applyFunnel(null);
+  } catch { fmsg(t('failed'), true); }
+}
+
+// ── run + render
+async function runFunnel() {
+  await funnelsReady;
+  const valid = funnelSteps.filter((s) => s.value && s.value.trim());
+  const out = document.getElementById('funnelResult');
+  if (valid.length < 2) { out.innerHTML = `<p class="fhint">${te('Add at least 2 steps with a value, then Run.')}</p>`; return; }
+  const seg = document.getElementById('funnelSeg').value;
+  out.innerHTML = `<p class="loading" style="margin-top:10px">${te('loading…')}</p>`;
+  let d;
+  try {
+    d = await get('funnel', `&steps=${encodeURIComponent(JSON.stringify(valid))}${seg ? `&breakdown=${seg}` : ''}`);
+  } catch { out.innerHTML = `<p class="muted">${te('funnel failed')}</p>`; return; }
+  renderFunnel(d, valid);
+}
+
+/** One drop annotation: how many left, and the behaviour of the people who
+ *  left, measured on the step's own page from the moment they reached it. */
+function funnelDropRow(step, i, reached) {
+  const f = step.friction;
+  const pct = reached ? Math.round(step.dropped / reached * 100) : 0;
+  const bits = [`<span class="fnum-drop">−${fmt(step.dropped)}</span> <span>${pct}% ${te('dropped here')}</span>`];
+  if (f && f.droppers) {
+    const share = (n) => Math.round(n / f.droppers * 100);
+    if (f.avg_dwell_ms) bits.push(`<span class="fchip">${te('stayed')} ${dur(f.avg_dwell_ms)}</span>`);
+    if (f.avg_scroll != null) bits.push(`<span class="fchip">${te('scrolled')} ${f.avg_scroll}%</span>`);
+    if (f.rage_visitors) bits.push(`<span class="fchip bad">${share(f.rage_visitors)}% ${te('rage-clicked')}</span>`);
+    if (f.dead_visitors) bits.push(`<span class="fchip warn">${share(f.dead_visitors)}% ${te('clicked something dead')}</span>`);
+    if (f.err_visitors) bits.push(`<span class="fchip bad">${share(f.err_visitors)}% ${te('hit a JS error')}</span>`);
+  }
+  bits.push(`<button class="all-btn" data-drop="${i}">${te('see who →')}</button>`);
+  return `<div class="fdrop">${bits.join(' ')}</div>`;
+}
+
+const funnelStepLabel = (s) => `${s.type === 'page' ? t('Page') : t('Event')} ${s.value}`;
+
+function renderFunnel(d, valid) {
+  const out = document.getElementById('funnelResult');
+  const steps = d.steps || [];
+  const top = steps[0] ? steps[0].visitors : 0;
+  let html = '<div style="margin-top:10px">';
+  steps.forEach((s, i) => {
+    const v = s.visitors || 0;
+    const pctTop = top ? (v / top * 100) : 0;
+    const gap = s.median_gap_ms != null ? ` <span class="muted">· ${te('after')} ${dur(s.median_gap_ms)}</span>` : '';
+    html += `<div class="frow"><div class="fbar-wrap"><div class="fbar" style="width:${Math.max(pctTop, 1).toFixed(1)}%"></div>`
+      + `<span class="flabel">${i + 1}. ${esc(funnelStepLabel(s))}${gap}</span></div>`
+      + `<div class="fstat"><b>${fmt(v)}</b> <span class="muted">${pctTop.toFixed(0)}%</span></div></div>`;
+    if (i < steps.length - 1 && s.dropped > 0) html += funnelDropRow(s, i, v);
+  });
+  html += '</div>';
+  if (d.breakdown) html += funnelSegTable(d.breakdown, steps);
+  if (funnelSuggested) html += `<p class="fhint">${te('Suggested from your homepage and first goal — edit the steps freely; your edits are remembered.')}</p>`;
+  funnelSuggested = false;
+  out.innerHTML = html;
+  out.querySelectorAll('[data-drop]').forEach((b) =>
+    b.addEventListener('click', () => openDropoff(Number(b.dataset.drop), valid, steps)));
+}
+
+/** Per-segment ladder: where a step leaks for one audience but not the rest.
+ *  "Biggest loss" names the transition that costs that segment the most, so
+ *  the row is directly actionable instead of just a conversion number. */
+function funnelSegTable(bd, steps) {
+  let rows = (bd.rows || []).filter((r) => r.counts && r.counts[0] > 0);
+  if (!rows.length) return '';
+  const N = steps.length;
+  // fold platform variants the same way the sources panel does, or the table
+  // shows two rows both labelled "Google"
+  if (bd.dim === 'source') {
+    const merged = new Map();
+    for (const r of rows) {
+      const key = canonicalSource(r.key) || r.key;
+      const m = merged.get(key);
+      if (!m) { merged.set(key, { key, counts: r.counts.slice(), conv: 0 }); continue; }
+      r.counts.forEach((c, i) => { m.counts[i] += c; });
+    }
+    rows = [...merged.values()].map((r) => ({ ...r, conv: r.counts[0] ? r.counts[N - 1] / r.counts[0] : 0 }))
+      .sort((a, b) => b.counts[0] - a.counts[0]);
+  }
+  const enough = rows.filter((r) => r.counts[0] >= 20);
+  const worst = enough.length ? enough.reduce((a, b) => (b.conv < a.conv ? b : a)) : null;
+  const label = { source: 'Source', country: 'Country', device: 'Device', browser: 'Browser', os: 'OS' }[bd.dim] || bd.dim;
+  const body = rows.map((r) => {
+    let bi = 0, bl = -1;
+    for (let i = 0; i < N - 1; i++) { const lost = r.counts[i] - r.counts[i + 1]; if (lost > bl) { bl = lost; bi = i; } }
+    const isWorst = worst && r.key === worst.key;
+    const name = bd.dim === 'source' ? sourceLabel(r.key) : r.key;
+    return `<tr${isWorst ? ' class="worst"' : ''}>
+      <td class="lead"><span class="lead-in"><span class="txt" title="${esc(r.key)}">${esc(name)}</span></span></td>
+      <td class="num">${fmt(r.counts[0])}</td>
+      <td class="num">${fmt(r.counts[N - 1])}</td>
+      <td class="num conv">${(r.conv * 100).toFixed(1)}%</td>
+      <td class="muted nowrap">${bl > 0 ? `${bi + 1}→${bi + 2} <span class="fnum-drop">−${fmt(bl)}</span>` : '–'}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="fseg"><h3>${te('Conversion by')} ${te(label)}</h3>
+    <table><tr><th>${te(label)}</th><th class="num">${te('Entered')}</th><th class="num">${te('Converted')}</th><th class="num">${te('Rate')}</th><th>${te('Biggest loss')}</th></tr>
+    ${body}</table>
+    ${worst ? `<p class="fhint">${te('Worst converting segment with enough volume is highlighted.')}</p>` : ''}</div>`;
+}
+
+/** The people behind a drop number — one click from here to their full trail. */
+async function openDropoff(i, valid, steps) {
+  const title = `${t('Dropped at step')} ${i + 1} · ${funnelStepLabel(steps[i])}`;
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  document.getElementById('modal').hidden = false;
+  let d;
+  try {
+    d = await get('funnel_dropoff', `&steps=${encodeURIComponent(JSON.stringify(valid))}&step=${i}&limit=100`);
+  } catch { document.getElementById('modalBody').innerHTML = `<p class="muted">${te('funnel failed')}</p>`; return; }
+  const rows = d.rows || [];
+  document.getElementById('modalBody').innerHTML = rows.length
+    ? `<table><tr><th>${te('Visitor')}</th><th>${te('Reached this step')}</th><th>${te('Where')}</th><th>${te('Device')}</th></tr>`
+      + rows.map((r) => `<tr>
+          <td><a href="/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}">${esc(String(r.visitor_id).slice(0, 8))}…</a></td>
+          <td class="muted nowrap">${new Date(r.reached_at).toISOString().slice(0, 16).replace('T', ' ')}</td>
+          <td class="nowrap">${flagEmoji(r.country)} ${esc(r.country || '–')}</td>
+          <td class="nowrap">${esc(r.device_type || '–')}</td>
+        </tr>`).join('') + '</table>'
+      + `<p class="muted" style="font-size:12px;margin:10px 2px 0">${te('Open a visitor to replay everything they did before they left.')}`
+        + `${rows.length >= 100 ? ` ${te('Showing the 100 most recent.')}` : ''}</p>`
+    : `<p class="muted">${te('no visitors matched in this period')}</p>`;
+}
+
+document.getElementById('funnelAdd').addEventListener('click', () => { if (funnelSteps.length < 8) { funnelSteps.push({ type: 'event', value: '' }); saveFunnel(); renderFunnelSteps(); } });
+document.getElementById('funnelRun').addEventListener('click', runFunnel);
+document.getElementById('funnelSave').addEventListener('click', saveFunnelServer);
+document.getElementById('funnelDel').addEventListener('click', deleteFunnelServer);
+document.getElementById('funnelPick').addEventListener('change', (e) => applyFunnel(e.target.value || null));
+document.getElementById('funnelSeg').addEventListener('change', runFunnel);
+
+// ── Core Web Vitals: p75 + Google rating per metric, slowest pages by LCP.
+// Hidden until the SDK has reported at least one measured load (clean traffic
+// only, server-side). Sub-second values shown in ms, larger in seconds.
+const VITAL_META = { // key → [label, help]
+  lcp_ms: ['LCP', 'Largest Contentful Paint — when the main content became visible'],
+  inp_ms: ['INP*', 'Interaction latency (approximation: slowest observed interaction)'],
+  cls: ['CLS', 'Cumulative Layout Shift — how much the page jumped around'],
+  fcp_ms: ['FCP', 'First Contentful Paint'],
+  ttfb_ms: ['TTFB', 'Time To First Byte — server response speed'],
+};
+const RATING_META = {
+  good: ['#34d399', 'Good'], needs_improvement: ['#fbbf24', 'Needs improvement'], poor: ['#f87171', 'Poor'],
+};
+const fmtVital = (key, v) => v == null ? '–'
+  : key === 'cls' ? Number(v).toFixed(3)
+  : v >= 1000 ? (v / 1000).toFixed(2) + 's' : Math.round(v) + 'ms';
+async function loadVitals() {
+  const sec = document.getElementById('vitalsSec');
+  const el = document.getElementById('vitals');
+  let d;
+  try { d = await get('vitals'); } catch { sec.hidden = true; return; }
+  if (!d || !d.samples) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const tiles = Object.keys(VITAL_META).map((k) => {
+    const m = (d.metrics || {})[k] || {};
+    const r = RATING_META[m.rating] || ['#8b93a1', ''];
+    return `<div class="card" title="${esc(t(VITAL_META[k][1]))}" style="border-left:3px solid ${r[0]}">
+      <div class="v">${fmtVital(k, m.p75)}</div>
+      <div class="k">${esc(VITAL_META[k][0])} <span class="muted">p75</span></div>
+      <div class="h" style="color:${r[0]}">${te(r[1] || '')}</div>
+      <div class="h">${m.count ? `${fmt(m.count)} ${te('loads')}` : ''}</div>
+    </div>`;
+  }).join('');
+  const pages = (d.pages || []).length
+    ? `<h3 style="font-size:13px;margin:16px 0 8px">${te('Slowest pages (LCP p75)')}</h3>`
+      + `<table><tr><th>${te('Path')}</th><th class="num">${te('Loads')}</th><th class="num">LCP p75</th></tr>`
+      + d.pages.map((p) => `<tr><td>${esc(p.path)}</td><td class="num">${fmt(p.n)}</td>`
+        + `<td class="num" style="color:${(RATING_META[p.rating] || ['#8b93a1'])[0]}">${fmtVital('lcp_ms', p.lcp_p75)}</td></tr>`).join('')
+      + '</table>'
+    : '';
+  el.innerHTML = `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Real-user Core Web Vitals from clean traffic — the same metrics Google Search uses. p75 = 75% of page loads were at least this fast.')}</p>`
+    + `<div class="cards cards-5">${tiles}</div>` + pages
+    + `<p class="muted" style="margin:10px 0 0;font-size:11.5px">${te('*INP is approximated from the slowest observed interaction.')}</p>`;
+}
+
+// ── Public share: enable mints a read-only dashboard link (rotate = new link,
+// disable kills it). State rides on /api/sites (public_token).
+function shareState() { const s = allSites.find((x) => x.site_id === site); return s ? s.public_token : null; }
+function renderShareModal() {
+  const tok = shareState();
+  document.getElementById('modalTitle').textContent = t('Public dashboard');
+  const body = document.getElementById('modalBody');
+  if (tok) {
+    const shareUrl = `${location.origin}/public.html?site=${encodeURIComponent(site)}&k=${encodeURIComponent(tok)}`;
+    body.innerHTML = `<p style="margin:4px 0 10px">${te('Sharing is ON — anyone with this link can view a read-only dashboard (aggregates only, no visitor-level data).')}</p>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <input id="shareUrl" readonly value="${esc(shareUrl)}" style="flex:1;background:#0f1115;color:inherit;border:1px solid #313847;border-radius:6px;padding:7px 9px;font:12.5px ui-monospace,monospace">
+        <button id="shareCopy" class="btn">${te('Copy')}</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="shareRotate" class="btn">${te('Rotate link')}</button>
+        <button id="shareOff" class="btn danger">${te('Disable sharing')}</button>
+      </div>`;
+    document.getElementById('shareCopy').addEventListener('click', async () => {
+      const inp = document.getElementById('shareUrl');
+      inp.select();
+      try { await navigator.clipboard.writeText(inp.value); } catch { document.execCommand('copy'); }
+      document.getElementById('shareCopy').textContent = t('Copied!');
+    });
+    document.getElementById('shareRotate').addEventListener('click', () => setShare(true));
+    document.getElementById('shareOff').addEventListener('click', () => setShare(false));
+  } else {
+    body.innerHTML = `<p style="margin:4px 0 14px">${te('Create a read-only public link for this site — overview, trend, top pages, channels, quality and Web Vitals. No visitor-level data is exposed, and you can revoke the link at any time.')}</p>
+      <button id="shareOn" class="btn primary">${te('Enable sharing')}</button>`;
+    document.getElementById('shareOn').addEventListener('click', () => setShare(true));
+  }
+  document.getElementById('modal').hidden = false;
+}
+async function setShare(enable) {
+  try {
+    const r = await guard(await fetch(`/api/sites/${site}/share`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enable }),
+    }));
+    const d = await r.json();
+    if (!r.ok) return;
+    const s = allSites.find((x) => x.site_id === site);
+    if (s) s.public_token = enable ? d.token : null;
+    renderShareModal();
+  } catch { /* leave the modal as-is */ }
+}
+document.getElementById('shareBtn').addEventListener('click', renderShareModal);
+
+// Goals = custom (non-lifecycle) events; the panel hides itself when the site
+// sends none, so it never clutters sites that don't use pvuv('event', …).
+async function loadGoals() {
+  const sec = document.getElementById('goalsSection');
+  let rows = [];
+  try { rows = (await get('breakdown', '&dim=goal')).rows || []; } catch { sec.hidden = true; loadCtit(false); return; }
+  if (!rows.length) { sec.hidden = true; loadCtit(false); return; }
+  sec.hidden = false;
+  renderBreakdown('goals', 'goal', rows);
+  loadCtit(true);
+  // first visit: the default funnel is "/ → (event)". Fill the event with the
+  // site's first goal and run it, so the section shows a result instead of a
+  // "add a step" prompt. Only touches an untouched default (never a saved one).
+  await funnelsReady;
+  const untouched = !funnels.length && currentFunnelId === null
+    && funnelSteps.length === 2 && funnelSteps[0].type === 'page' && funnelSteps[0].value === '/'
+    && funnelSteps[1].type === 'event' && !funnelSteps[1].value && !localStorage.getItem(FUNNEL_KEY);
+  if (untouched && rows[0] && rows[0].key) {
+    funnelSteps[1].value = rows[0].key; renderFunnelSteps(); funnelSuggested = true; runFunnel();
+  }
+}
+
+// Conversion-timing distribution (CTIT): how long after the session started
+// each goal event fired. Fraud shapes: a 0–10s spike = conversions faster than
+// a human plausibly acts; a near-flat histogram at volume = flooding-like.
+async function loadCtit(hasGoals) {
+  const sec = document.getElementById('ctitSection');
+  if (!hasGoals) { sec.hidden = true; return; }
+  const el = document.getElementById('ctit');
+  let d;
+  try { d = await get('ctit'); } catch { sec.hidden = true; return; }
+  if (!d || !d.n) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const max = Math.max(1, ...d.buckets.map((b) => b.n));
+  const bars = d.buckets.map((b) => `
+    <div style="display:flex;align-items:center;gap:10px;margin:3px 0">
+      <span class="muted" style="width:56px;text-align:right;font-size:12px">${esc(b.label)}</span>
+      <div style="flex:1;background:#1d222c;border-radius:4px;height:14px;overflow:hidden">
+        <div style="width:${(b.n / max * 100).toFixed(1)}%;height:100%;background:${b.label === '<10s' && d.flag ? '#f87171' : '#3b82f6'}"></div>
+      </div>
+      <span class="num" style="width:70px;font-size:12px">${fmt(b.n)} <span class="muted">${pctf(b.n / d.n)}</span></span>
+    </div>`).join('');
+  el.innerHTML =
+    `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Time from session start to each conversion (clean traffic). A spike under 10s means conversions faster than a human plausibly acts; a flat spread at volume suggests flooding.')}</p>`
+    + bars
+    + `<p class="muted" style="margin:10px 0 0;font-size:12.5px">${fmt(d.n)} ${te('conversions')} · ${te('median')} ${dur(d.median_ms)}`
+    + (d.flag === 'fast_spike'
+      ? ` · <span style="color:#f87171">${te('⚠ suspicious: ')}${pctf(d.fast_share)} ${te('convert within 10s of arriving')}</span>` : '')
+    + '</p>';
+}
+document.getElementById('utmDim').addEventListener('change', loadUtm);
+document.getElementById('period').addEventListener('change', () => { populateControls(); savePrefs(); load(); });
+document.getElementById('metric').addEventListener('change', () => { savePrefs(); loadChart(); });
+document.getElementById('interval').addEventListener('change', () => { savePrefs(); loadChart(); });
+
+restorePrefs();
+loadFilters();
+renderFilters();
+buildTabs();
+renderFunnelSteps();
+
+// ── section nav: one pill per visible section; the active pill follows the
+// scroll position. Hidden sections (no goals / no vitals yet) are skipped, so
+// the nav always reflects what the page actually shows.
+const SEC_LABEL = { overview: 'Overview', trend: 'Trend', sources: 'Sources', audience: 'Audience', vitals: 'Web Vitals', campaigns: 'Campaigns', goals: 'Goals', funnel: 'Funnel', quality: 'Traffic quality', adguard: 'Ad protection', suspicious: 'Suspicious', ai: 'AI report' };
+// The nav is a TAB BAR now, not a scroll-spy: every entry is always listed
+// (a stable set is easier to navigate than one that grows as data loads), and
+// clicking one swaps the visible section and loads it if it has not been
+// opened for the current period/filters yet.
+function renderSecNav() {
+  const ul = document.getElementById('secnav');
+  ul.innerHTML = SECTION_ORDER
+    .map((sec) => `<li><a href="#${sec}" data-target="${sec}"${sec === activeSec ? ' class="active"' : ''}>${te(SEC_LABEL[sec] || sec)}</a></li>`)
+    .join('');
+  ul.querySelectorAll('a').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    showSection(a.dataset.target);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+}
+window.addEventListener('hashchange', () => showSection(location.hash.slice(1), { push: false }));
+// load the site meta (name, domain, shadow_until) before the first render so the
+// header and shadow banner are correct on first paint
+loadBrand();
+// language switcher: mount the picker, apply static labels, and on change
+// re-render everything that builds text dynamically (charts, tables, panels).
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => {
+  buildTabs();
+  populateControls();
+  renderFilters();
+  renderFunnelSteps();
+  setTitle();
+  load();          // reloads the header + whichever section is open
+  pollRealtime();
+  loadAnomalies();
+});
+
+(async () => {
+  const deep = location.hash.slice(1);
+  if (SECTION_LOADERS[deep]) activeSec = deep;   // honour a shared #section link
+  await loadSiteName(); load(); pollRealtime(); loadAnomalies();
+})();
+setInterval(pollRealtime, 15000);
+</script>
+</body>
+</html>

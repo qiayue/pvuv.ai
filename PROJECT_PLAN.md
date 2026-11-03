@@ -1,7 +1,7 @@
 # pvuv.ai — Self-hosted Web Analytics with Invalid-Traffic Detection & Ad Protection
 
 > **Project planning document** (build spec / handoff to Claude Code) · v1.1
-> Repo: https://github.com/qiayue/pvuv.ai · License: AGPL-3.0
+> Repo: https://github.com/qiayue/pvuv.ai · License: MIT
 > 中文版 / Chinese version: [`PROJECT_PLAN.zh-CN.md`](./PROJECT_PLAN.zh-CN.md)
 
 **pvuv.ai** is a self-hosted, privacy-conscious web analytics platform running on Cloudflare Workers + D1. It combines full-dimension traffic analytics (multi-site, multi-subdomain, per-page PV/UV, referrers, UTM & all tracking params, bounce rate, dwell time, custom events with revenue, session- and user-level attribution) with a three-layer invalid-traffic (bot) detection system and an optional ad-protection layer that loads ad code only for traffic judged trustworthy.
@@ -86,7 +86,7 @@ Four ID layers: `site_id → visitor_id → session_id → user_id`.
 - **session_id**: UUID. A new session starts on any of: 30 min inactivity / UTM change / calendar-day rollover. Stored in cookie `_pv_sid` + last-active timestamp.
 - **user_id**: bound after `identify()`. The `identities` table maintains a user↔visitor map, merging one user's multiple visitor_ids across devices/sessions.
 - **First-touch attribution snapshot**: on first visit, referrer + UTM are stored in cookie `_pv_ft` (never overwritten). Conversion events carry both first-touch and last-touch attribution.
-- **Verdict-state cookie** `_pv_v`: HMAC-signed; holds current verdict, pages seen, whether interaction occurred, and previous-page dwell — tamper-proof on the client, used by `/v` for re-checks.
+- **Verdict-state cookie** `_pv_v`: HMAC-signed; holds current verdict, pages seen, and whether interaction occurred — tamper-proof on the client, used by `/v` for re-checks.
 
 ---
 
@@ -211,13 +211,111 @@ Body: JSON (single or array; SDK batches ≤10 events or every 3s)
 | 0x0800 | screen/device contradiction | +10 each |
 | 0x1000 | mobile UA but no motion data (Android) | +15 |
 | 0x2000 | motion readings perfectly static | +10 |
+| 0x4000 | search-engine referrer from a datacenter ASN | +35 |
+| 0x8000 | structurally implausible search referrer (http / ?q= leak / Sec-Fetch) | +40 |
+| 0x10000 | UA advertises a headless engine ("HeadlessChrome") | +70 |
+| 0x20000 | headless window geometry (outerWidth/Height === 0, desktop) | +30 |
+| 0x40000 | navigator.platform contradicts UA OS (Win/Mac/iOS on Linux) | +30 |
+| 0x80000 | synthetic render env (monochrome color emoji / no real system fonts) | 0 — recorded only, see note |
 | — | residential/mobile ASN + interaction + page_leave | trust credit −10 each |
 
+> **Corroboration guard (global-audience safety).** Signals inferred from
+> client-reported, locale/device-sensitive properties — fonts/emoji rendering,
+> window geometry, screen metrics, UA & platform strings, browser timezone
+> (`ENV_ONLY_FLAGS` in `shared/flags.ts`) — are corroboration, never proof. On a
+> worldwide audience each eventually fires on an entire region of real people:
+> measured on live traffic, the browser-timezone/IP check fired on **96% of
+> Japanese** visitors and the font/emoji probe on **34% of Chinese** visitors,
+> while both were essentially absent from confirmed bots. So when a visitor's
+> ONLY evidence is environmental, the scorer caps them at `bands.clean_max`;
+> reaching `suspect` requires a network, behavioural or self-declared-automation
+> signal to agree. It only ever caps a score, never raises one, and hard signals
+> bypass it — on the validation sample it moved 79 visitors back to clean and
+> changed **zero** of the 162 bot / 71 crawler verdicts. Toggle:
+> `detection.env_signals_need_corroboration`.
+>
+> **0x80000 is weighted 0 pending a fix.** Its first production sample showed it
+> tracks geography, not synthetic environments: **0 of 209** headless/webdriver-
+> flagged visitors and 2 of 209 datacenter visitors tripped it, while **34% of CN
+> visitors** and ~0% of every other country did (US 0/113, SG 0/84, JP 0/15, HK
+> 0/14). Two tells scored 40 on their own, so it was moving real users into
+> `suspect` with no corroborating signal. The flag is still recorded as evidence;
+> re-enable only after the canvas probe is diagnosed on a real CN Windows/Chrome
+> profile and the geographic skew is gone.
+
 **Example bands:** 0–29 clean │ 30–69 suspect │ 70+ bot. Verified crawlers are classified separately. `score_stage` records which pass assigned the score, so the UI can show the "first-pass → batch re-verdict" change.
+
+### 6.6 Crawler categorisation (optional, classification only)
+
+Crawlers are not interchangeable: a search engine that sends visitors, an AI
+training scraper, an SEO competitor tool and an ad-verification bot all look
+like `verdict='crawler'` today, but a site owner wants to tell them apart.
+
+Cloudflare's BotBase is Enterprise Bot Management only, so a self-hosted
+deployment cannot read it at runtime. The same catalogue is published publicly
+(Cloudflare Radar's bots-and-agents directory and community mirrors), so the
+deployer downloads it once and imports it in the console
+(`/api/settings/botdir`). It is stored in `instance_settings` and mirrored to KV;
+ingest matches each request's User-Agent and records `events.bot_category`.
+
+Deliberate constraints:
+
+* **Classification only.** The category is never passed to the scorer and never
+  reaches the ad-guard decision — importing a directory cannot change anyone's
+  verdict. Policy built on categories is a separate, later decision.
+* **Optional.** With nothing imported the column stays NULL and the dashboard
+  panel hides itself; no account, token or third-party request is involved.
+* **Substring matching, never imported regexes** — an untrusted file must not be
+  able to run catastrophic backtracking on every event. Regex-looking patterns
+  are reduced to their longest literal run.
+* **Format-tolerant import with a preview.** The published shapes differ between
+  sources and versions, so the parser accepts a bare array or a wrapper object
+  and reads conventional field-name variants; the console reports what it
+  actually understood (count, skipped, category histogram) so a mis-parsed file
+  is obvious instead of silently classifying nothing.
+
+### 6.7 Cloudflare edge requests (optional, observation only)
+
+Every other measurement in this product comes from the JS beacon, which imposes
+a hard limit: it can only report visitors whose browser **executed JavaScript**.
+An AI crawler, a scraper or a feed reader fetches the HTML and leaves — it never
+runs a script, so it never reaches `/in`. This is not a detection weakness that
+better scoring could close; the request was never reported at all.
+
+Cloudflare sat in front of the origin and counted all of them. If the deployer
+supplies a **read-only** Cloudflare API token (console `/api/settings/cfedge`,
+stored in `instance_settings`, never returned to the browser), the daily cron
+queries `httpRequestsAdaptiveGroups` — available on **all** Cloudflare plans,
+unlike Logpush/Logpull — and stores per-day counts in `rollup_edge_daily` plus a
+top-N user-agent breakdown in `rollup_edge_agent_daily`. The dashboard then shows
+the gap: edge HTML requests − reported pageviews.
+
+Deliberate constraints:
+
+* **Observation only.** Edge counts never feed scoring, verdicts or the ad-guard
+  decision. Requests and visitors are different populations; mixing them would
+  corrupt every rate the product computes.
+* **Optional and inert.** With no token configured the pull is a single D1 read
+  that returns immediately, the API answers `available:false`, and the panel
+  hides itself. No Cloudflare request is ever made.
+* **Read-only, and last in the daily chain.** It is the only job that depends on
+  a third-party API, so it runs after rollups, retention and anomaly detection
+  and is wrapped so it can never hold up or break them.
+* **Site-local days.** Windows are the site's own local day (`datetime_geq` /
+  `datetime_lt`), matching `rollup_site_daily`'s key, so the two sides subtract
+  without a timezone correction. Only completed days are pulled; the first run
+  reaches back 14 days and each later run refreshes the last 3, so late-arriving
+  figures self-correct.
+* **Errors surface verbatim.** Cloudflare's GraphQL schema is unversioned and
+  field availability varies by plan, so the upstream message is stored in
+  `instance_settings.cf_edge_status` and shown in the console — a missing
+  permission and a bad token need different fixes.
 
 ### 6.3 Session layer (hourly Cron)
 
 Stitch events into sessions; compute session-level features (inter-page interval, path pattern, zero-interaction/no-leave); correct the verdict (`score_stage='session'`).
+
+The zero-interaction/no-leave tell (0x0040) is set here rather than at realtime because "no page_leave in the *whole* session" is only final once the session is idle-closed. The hourly rollup marks the pageviews of closed sessions with `had_interaction = 0 AND duration_ms = 0` (past the session-idle window), giving the drill-down evidence and the "no-interaction visits" alert real data. It is an evidence/reporting marker only — the *score* separation for these visits already comes from the withheld has_interaction / has_page_leave trust credits (§6.2), so the flag's weight is not added a second time.
 
 ### 6.4 Population layer batch analysis (daily Cron) — find "the same hand"
 
@@ -310,6 +408,7 @@ All lookups are edge-local: `cf.asn` for datacenter, request-header completeness
 
 - **Raw layer:** `events_YYYYMM` monthly-partitioned; `sessions`; `identities`; `visitor_profiles`.
 - **Aggregate layer:** `rollup_page_daily`, `rollup_source_daily`, `rollup_site_daily`. Dashboards hit aggregate tables 95% of the time.
+- **External layer (optional):** `rollup_edge_daily`, `rollup_edge_agent_daily` — Cloudflare edge request counts (§6.7). Populated only when a Cloudflare API token is configured; empty otherwise, and never joined into any of the layers above.
 
 ### 9.2 D1 schema (M1 DDL)
 
@@ -488,6 +587,21 @@ GET /sites/:id/traffic?verdict=bot&min_score=70&period=...
 
 Breakdown supports multi-dimension combined filtering. External ranking systems and AI analysis reuse the same API. Auth: owners query only their own site; external systems/AI use a server-side token.
 
+**Programmatic access (§10).** Three surfaces share one credential — the REST
+API (`/v1/*`), an MCP server so an owner's own chatbot can query their data, and
+a CLI. All are read-only.
+
+Personal API tokens are minted in the console: per-owner, optionally narrowed to
+a single site, individually revocable, stored only as an HMAC (the plaintext is
+shown once and is unrecoverable), and prefixed `pvuv_` so secret scanners
+recognise a leaked one. The deployment-wide `API_TOKEN` secret still works for
+cross-site `/v1/ranking`, but it cannot be scoped, revoked individually or
+attributed, so it is not what a chatbot config or a laptop shell should hold.
+
+The MCP server and CLI are dependency-free single files (`mcp/`, `cli/`) sharing
+one client, so adding chatbot access introduces no supply chain around a token.
+See `docs/API.md`.
+
 ---
 
 ## 11. Console (pvuv.ai)
@@ -596,7 +710,7 @@ May skip in M1 (create tables / stub endpoints only): population batch analysis,
 
 ```
 pvuv.ai/
-├── LICENSE                        # AGPL-3.0 (see §22)
+├── LICENSE                        # MIT (see §22)
 ├── README.md                      # bilingual: intro / architecture / deploy
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -651,7 +765,7 @@ A public repo can't hide client-side logic from anyone reading the code, so the 
 
 ## 22. License & security
 
-**License: AGPL-3.0.** Rationale: it permits self-hosting and free use, but anyone (including those offering it as a SaaS) who modifies it must open-source their changes — preventing others from turning this project into a closed-source commercial competitor, while not affecting self-hosting users. Open-source analytics tools that also commercialize (Plausible / Umami / PostHog) all use this license.
+**License: MIT (open core).** The self-hosted edition in this repo is MIT — use, modify, redistribute, or commercialize it with no copyleft and no attribution requirement, so adopters can use it without reservation. Commercialization is handled by a separately-offered, closed-source hosted **multi-tenant SaaS** edition (managed accounts, billing, org isolation, support) that is not part of this repository; the two do not overlap or conflict.
 
 **Pre-open-source security checklist (confirm every item):**
 - [ ] No secrets anywhere in the repo (HMAC key, Cloudflare token, AI API key, `.dev.vars`)

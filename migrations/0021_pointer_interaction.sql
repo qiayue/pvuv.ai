@@ -1,0 +1,33 @@
+-- ============================================================================
+-- Split the interaction bit into two channels.
+--
+-- `had_interaction` is set by ANY of mousemove / touchstart / scroll / keydown.
+-- A scroll costs a headless scraper nothing — they scroll to trigger
+-- lazy-loading — so the bit says "the page moved", not "a human is here".
+-- Measured across 11 production sites:
+--
+--   * 12–56% of bot-verdicted sessions carried had_interaction = 1, while
+--     crawler-verdicted sessions (which never execute JS at all) sat at ~0%.
+--     The gap is exactly the JS-executing headless browsers.
+--   * on the worst-hit site the SUSPECT bucket interacted more than the CLEAN
+--     bucket (0.907 vs 0.662) — an inversion no real population produces.
+--
+-- Two things were built on that bit and were quietly measuring scrolls:
+-- ZERO_INTERACTION_NO_LEAVE (0x0040) and the ad-guard false-positive estimate,
+-- which is why that estimate reported 28–51% "false positives" and could not be
+-- used to decide whether enforcement was safe.
+--
+-- `had_pointer` carries pointer/keyboard only. It is NULLABLE and NULL means
+-- UNKNOWN, not "no pointer": every loader already cached in a browser predates
+-- the split and sends no `hp` field, so for the ~1h the cached f.js takes to
+-- roll over, reading NULL as 0 would flag every real visitor. Consumers use
+-- COALESCE(had_pointer, had_interaction) so historical rows keep their old
+-- meaning and only explicit evidence changes a verdict.
+--
+-- This migration alters the initial partition it can name; all other
+-- partitions are repaired by shared/events.ts EVENT_LATE_COLUMNS via the
+-- consumer/cron ensureEventColumns pass.
+-- ============================================================================
+
+ALTER TABLE events_202607 ADD COLUMN had_pointer INTEGER;
+ALTER TABLE sessions      ADD COLUMN had_pointer INTEGER;

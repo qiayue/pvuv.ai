@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visitor journeys — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
+<style>
+  .card .v { font-size: 18px; }
+  td { white-space: nowrap; }
+  .mcards { display: none; }
+  @media (max-width: 720px) { .mtable { display: none; } .mcards { display: block; } }
+  .filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .filter input { flex: 1 1 260px; min-width: 0; max-width: 460px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  /* journey header */
+  .ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; color: var(--text-2); }
+  .ctx .flag { font-size: 15px; }
+  .ctx .dc { color: var(--warn); }
+  .evidence { margin: 8px 0 0; font-size: 12.5px; color: var(--bad-text); }
+  .evidence b { color: var(--muted); font-weight: 500; }
+  /* timeline */
+  .session { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
+  .session-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #1d222c; font-size: 13px; }
+  .session-head b { font-size: 13.5px; }
+  .tl { list-style: none; margin: 0; padding: 8px 16px 12px; }
+  .tl li { position: relative; padding: 6px 0 6px 118px; }
+  .tl li::before { content: ''; position: absolute; left: 88px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .tl li::after { content: ''; position: absolute; left: 84px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  .tl li.ev-out::after { background: #a78bfa; }
+  .tl li.ev-custom::after { background: var(--good); }
+  .tl li.ev-form::after { background: #22d3ee; }
+  .tl li.ev-sys::after { background: #64748b; }
+  .tl li.hit { background: #16233a; border-radius: 6px; }
+  .tl .t { position: absolute; left: 0; width: 76px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; padding-top: 1px; }
+  .tl .what { font-weight: 600; word-break: break-all; }
+  .tl .meta { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .tl .meta .warn { color: var(--warn); }
+  .tl .meta .err { color: var(--bad); }
+  .tl .meta code { background: var(--bg); padding: 0 5px; border-radius: 4px; font-size: 11.5px; color: var(--text-2); }
+  .ev-tag { display: inline-block; min-width: 44px; margin-right: 8px; padding: 0 7px; border-radius: 9px; font-size: 11.5px; text-align: center; background: var(--info-bg); color: var(--info); vertical-align: 1px; }
+  .ev-custom .ev-tag { background: #143324; color: var(--good-text); }
+  .ev-form .ev-tag { background: #103038; color: #67e8f9; }
+  .ev-out .ev-tag { background: #2a2140; color: #c4b5fd; }
+  @media (max-width: 560px) {
+    .tl li { padding-left: 70px; }
+    .tl li::before { left: 56px; } .tl li::after { left: 52px; }
+    .tl .t { width: 48px; font-size: 11.5px; }
+  }
+</style>
+</head>
+<body>
+<script src="/i18n.js"></script>
+<header>
+  <a id="back" href="/sites.html" data-i18n="← dashboard">← dashboard</a><b id="title" data-i18n="Visitor journeys">Visitor journeys</b><span class="sub" id="siteLabel"></span>
+  <div class="hdr-right">
+    <select id="lang" aria-label="Language"></select>
+    <select id="period" aria-label="Date range">
+      <option value="today" data-i18n="Today">Today</option>
+      <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+      <option value="30d" selected data-i18n="Last 30 days">Last 30 days</option>
+      <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
+    </select>
+  </div>
+</header>
+<main>
+  <!-- finder mode: recent visitors, optionally only those who opened a path / of one verdict -->
+  <section id="finder" hidden>
+    <h2 data-i18n="Find visitors">Find visitors</h2>
+    <div class="filter">
+      <input id="path" placeholder="Page path, e.g. /pay — trailing * matches a prefix (/pay*)" data-i18n-ph="Page path, e.g. /pay — trailing * matches a prefix (/pay*)">
+      <select id="verdict" aria-label="Verdict">
+        <option value="" data-i18n="All verdicts">All verdicts</option>
+        <option value="clean" data-i18n="clean">clean</option>
+        <option value="suspect" data-i18n="suspect">suspect</option>
+        <option value="bot" data-i18n="bot">bot</option>
+        <option value="crawler" data-i18n="crawler">crawler</option>
+      </select>
+      <button id="apply" class="btn primary" data-i18n="Filter">Filter</button>
+    </div>
+    <p class="hint" data-i18n="Show visitors who opened a page, or only a verdict class. Click a visitor to replay the full journey.">Show visitors who opened a page, or only a verdict class. Click a visitor to replay the full journey.</p>
+    <div class="panel" id="list"><p class="loading" data-i18n="loading…">loading…</p></div>
+  </section>
+
+  <!-- journey mode: one visitor's trail, grouped by session, chronological -->
+  <section id="journey" hidden>
+    <h2 id="vidTitle" data-i18n="Journey">Journey</h2>
+    <div class="cards" id="summary"></div>
+    <div class="ctx" id="ctx"></div>
+    <div class="evidence" id="evidence" hidden></div>
+    <h2><span data-i18n="Sessions">Sessions</span> <span class="muted" id="trailNote"></span></h2>
+    <div id="sessions"></div>
+  </section>
+</main>
+<script>
+const qs = new URLSearchParams(location.search);
+const site = qs.get('site');
+const vid = qs.get('vid');
+if (!site) location.href = '/sites.html';
+document.getElementById('back').href = `/site.html?id=${encodeURIComponent(site)}`;
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const t = (s) => window.PVI18N.t(s);
+const te = (s) => esc(t(s));
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+const dur = (ms) => ms == null ? '–' : ms >= 60000 ? `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s` : `${Math.round(ms/1000)}s`;
+const badge = (v) => `<span class="badge b-${esc(v)}">${te(v)}</span>`;
+const shortId = (id) => `${String(id).slice(0, 8)}…`;
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+const get = async (p, extra = '') =>
+  (await guard(await fetch(`/api/sites/${site}/${p}?period=${document.getElementById('period').value}${extra}`))).json();
+
+// Timestamps render in the SITE's timezone (the one its days are cut on), not
+// the browser's or UTC — "12:09" must mean the same thing here and on the
+// dashboard. Resolved from /api/sites; falls back to UTC.
+let siteTz = 'UTC';
+let siteName = site;
+function fmtParts(ts, opts) {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: siteTz, hourCycle: 'h23', ...opts }).format(new Date(ts)); }
+  catch { return new Date(ts).toISOString(); }
+}
+const dt = (ts) => ts == null ? '–' : fmtParts(ts, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+const day = (ts) => fmtParts(ts, { year: 'numeric', month: '2-digit', day: '2-digit' });
+const hms = (ts) => fmtParts(ts, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+async function loadSiteMeta() {
+  try {
+    const { sites } = await (await guard(await fetch('/api/sites'))).json();
+    const s = (sites || []).find((x) => x.site_id === site);
+    if (s) { siteName = s.name || site; siteTz = s.timezone || 'UTC'; }
+  } catch { /* fall back to the id + UTC */ }
+  document.getElementById('siteLabel').textContent = `${siteName} · ${siteTz}`;
+  document.title = `${t('Visitor journeys')} — ${siteName}`;
+}
+
+// referrer is internal (not a source) when its host is the page's own host —
+// the journey only annotates external arrivals
+const refHost = (r) => { try { return new URL(r).hostname; } catch { return null; } };
+
+// mirrors shared/flags.ts bit definitions (same labels as the dashboard)
+const FLAG_LABELS = {
+  0x0001: 'webdriver', 0x0002: 'automation residue', 0x0004: 'UA/env contradiction',
+  0x0008: 'datacenter ASN', 0x0010: 'Sec-Fetch missing', 0x0020: 'timezone/IP mismatch',
+  0x0040: 'no interaction & no leave', 0x0080: 'software WebGL', 0x0100: 'mechanical timing',
+  0x0200: 'blocklisted cluster', 0x0400: 'honeypot', 0x0800: 'screen/device contradiction',
+  0x1000: 'no motion data (Android)', 0x2000: 'motion perfectly static',
+  0x4000: 'search referrer from datacenter', 0x8000: 'forged search referrer',
+  0x10000: 'headless UA', 0x20000: 'headless window', 0x40000: 'platform/UA mismatch',
+  0x80000: 'synthetic render env', 0x100000: 'HTTP/1 + modern browser',
+  0x200000: 'mechanical pointer', 0x400000: 'session drift',
+};
+const flagNames = (bits) => Object.keys(FLAG_LABELS).filter((b) => bits & b).map((b) => FLAG_LABELS[b]);
+function flagEmoji(cc) {
+  if (!cc || cc.length !== 2 || cc === 'XX') return '';
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+let regionNames;
+function countryLabel(cc) {
+  if (!cc) return '–';
+  try { regionNames = regionNames || new Intl.DisplayNames([window.PVI18N.lang || 'en'], { type: 'region' }); return regionNames.of(cc) || cc; }
+  catch { return cc; }
+}
+
+// -------------------------------- finder ---------------------------------
+
+const LIST_FOLD = 50;
+function syncUrl(path, verdict) {
+  const u = new URL(location.href);
+  if (path) u.searchParams.set('path', path); else u.searchParams.delete('path');
+  if (verdict) u.searchParams.set('verdict', verdict); else u.searchParams.delete('verdict');
+  history.replaceState(null, '', u);
+}
+async function loadList() {
+  const el = document.getElementById('list');
+  el.innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  const path = document.getElementById('path').value.trim();
+  const verdict = document.getElementById('verdict').value;
+  syncUrl(path, verdict);
+  const d = await get('visitors', `&limit=300${path ? `&path=${encodeURIComponent(path)}` : ''}${verdict ? `&verdict=${verdict}` : ''}`);
+  renderList(d.rows || [], path, LIST_FOLD);
+}
+function renderList(rows, path, fold) {
+  const el = document.getElementById('list');
+  if (!rows.length) { el.innerHTML = `<p class="muted">${te('no visitors matched in this period')}</p>`; return; }
+  const note = path ? ` <span class="muted">(${te('matching')} ${esc(path)})</span>` : '';
+  const shown = rows.slice(0, fold);
+  const link = (r) => `/visitor.html?site=${encodeURIComponent(site)}&vid=${encodeURIComponent(r.visitor_id)}${path ? `&path=${encodeURIComponent(path)}` : ''}`;
+  el.innerHTML = `<table class="mtable"><tr><th>${te('Visitor')}</th><th>${te('Last seen')}</th><th>${te('First seen')}</th><th class="num">${te('Pageviews')}${note}</th><th class="num">${te('Sessions')}</th><th class="num">${te('Goals')}</th><th>${te('Where')}</th><th>${te('Device')}</th><th>${te('Verdict')}</th></tr>` +
+    shown.map((r) => `<tr class="clickable" data-href="${esc(link(r))}">
+      <td><a href="${esc(link(r))}">${esc(shortId(r.visitor_id))}</a></td>
+      <td class="muted">${dt(r.last_ts)}</td><td class="muted">${dt(r.first_ts)}</td>
+      <td class="num">${fmt(r.pv)}</td><td class="num">${fmt(r.sessions)}</td>
+      <td class="num">${r.goals ? `<b>${fmt(r.goals)}</b>` : '<span class="muted">–</span>'}</td>
+      <td>${flagEmoji(r.country)} ${esc(r.country ?? '–')}</td>
+      <td>${esc(r.device_type ?? '–')} <span class="muted">· ${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</span></td>
+      <td>${badge(r.verdict)}</td>
+    </tr>`).join('') + '</table>'
+    + `<div class="mcards">${shown.map((r) => `<a class="mcard" href="${esc(link(r))}">
+      <div class="row"><b>${esc(shortId(r.visitor_id))}</b>${badge(r.verdict)}</div>
+      <div class="row muted"><span>${flagEmoji(r.country)} ${esc(r.country ?? '–')} · ${esc(r.device_type ?? '–')} · ${esc(r.browser ?? '–')} / ${esc(r.os ?? '–')}</span></div>
+      <div class="row muted"><span>${fmt(r.pv)} ${te('Pageviews')} · ${fmt(r.sessions)} ${te('Sessions')}${r.goals ? ` · <b>${fmt(r.goals)}</b> ${te('Goals')}` : ''}</span><span>${dt(r.last_ts)}</span></div></a>`).join('')}</div>`
+    + (rows.length > shown.length ? `<button class="more-btn" id="listMore">${te('Show all')} ${rows.length}${rows.length >= 300 ? '+' : ''}</button>` : '');
+  el.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (e.target.tagName !== 'A') location.href = tr.dataset.href; }));
+  const more = document.getElementById('listMore');
+  if (more) more.addEventListener('click', () => renderList(rows, path, rows.length));
+}
+
+// -------------------------------- journey --------------------------------
+
+// events whose path matches the ?path= filter get highlighted in the timeline
+const hitPath = qs.get('path');
+const pathHit = (p) => {
+  if (!hitPath || !p) return false;
+  return hitPath.endsWith('*') ? p.startsWith(hitPath.slice(0, -1)) : p === hitPath;
+};
+const parseProps = (s) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+
+/** Fold a session's raw rows into timeline lines: each pageview becomes one
+ *  line that absorbs the page_pulse / page_leave deltas reported for it
+ *  (dwell sums, scroll is a max, error/rage/dead counts sum, click targets
+ *  merge); custom, form and outbound events stay as their own lines. */
+function foldSession(events) {
+  const lines = [];
+  let cur = null;
+  const newPage = (ev) => {
+    cur = { kind: 'page', ev, dwell: 0, scroll: null, err: 0, rage: 0, dead: 0, ck: new Map(), errMsgs: [], verdict: ev.verdict };
+    lines.push(cur);
+  };
+  for (const ev of events) {
+    if (ev.event === 'pageview') { newPage(ev); continue; }
+    if (ev.event === 'page_pulse' || ev.event === 'page_leave') {
+      if (!cur || cur.ev.path !== ev.path) newPage({ ...ev, event: 'pageview', synthetic: true });
+      if (ev.duration_ms) cur.dwell += ev.duration_ms;
+      if (ev.scroll_depth != null) cur.scroll = Math.max(cur.scroll ?? 0, ev.scroll_depth);
+      cur.err += ev.err_count || 0; cur.rage += ev.rage_count || 0; cur.dead += ev.dead_count || 0;
+      const p = parseProps(ev.props);
+      if (p && Array.isArray(p.ck)) for (const c of p.ck) if (c && c.s) cur.ck.set(c.s, (cur.ck.get(c.s) || 0) + (c.n || 1));
+      if (p && Array.isArray(p.err)) for (const e of p.err) if (e && e.m) cur.errMsgs.push(`${e.m}${e.n > 1 ? ` ×${e.n}` : ''}`);
+      if (ev.verdict && ev.verdict !== 'clean' && cur.verdict === 'clean') cur.verdict = ev.verdict;
+      continue;
+    }
+    lines.push({ kind: 'event', ev });
+  }
+  return lines;
+}
+
+function pageLine(line, isSessionFirst) {
+  const { ev } = line;
+  const meta = [];
+  if (line.dwell > 0) meta.push(`${t('stayed')} ${dur(line.dwell)}`);
+  if (line.scroll != null) meta.push(`${t('scrolled')} ${line.scroll}%`);
+  if (line.ck.size) {
+    const top = [...line.ck.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([s, n]) => `<code>${esc(s)}</code>${n > 1 ? `×${n}` : ''}`).join(' ');
+    const total = [...line.ck.values()].reduce((a, b) => a + b, 0);
+    meta.push(`${total} ${t('clicks')} ${top}`);
+  }
+  if (line.err) meta.push(`<span class="err" title="${esc(line.errMsgs.join('\n'))}">⚠ ${line.err} ${t('JS errors')}</span>`);
+  if (line.rage) meta.push(`<span class="warn">${line.rage} ${t('rage clicks')}</span>`);
+  if (line.dead) meta.push(`<span class="warn">${line.dead} ${t('dead clicks')}</span>`);
+  // annotate where the session came from, on its first pageview only
+  if (isSessionFirst && ev.referrer) {
+    const h = refHost(ev.referrer);
+    if (h && h !== ev.hostname) meta.push(`${t('from')} ${esc(h)}`);
+  }
+  if (line.verdict && line.verdict !== 'clean') meta.push(badge(line.verdict));
+  return `<li class="${pathHit(ev.path) ? 'hit' : ''}">
+    <span class="t">${hms(ev.ts)}</span>
+    <span class="ev-tag">${te('page')}</span><span class="what">${esc(ev.path ?? '')}</span>
+    ${meta.length ? `<span class="meta">${meta.join(' · ')}</span>` : ''}
+  </li>`;
+}
+
+function eventLine(ev) {
+  const props = parseProps(ev.props);
+  const isForm = ev.event === 'form_start' || ev.event === 'form_submit';
+  const cls = ev.event === 'outbound_click' ? 'ev-out' : isForm ? 'ev-form' : ev.event === 'identify' ? 'ev-sys' : 'ev-custom';
+  const tag = ev.event === 'outbound_click' ? te('out') : ev.event === 'form_start' ? te('form') : ev.event === 'form_submit' ? te('submit') : esc(ev.event);
+  const meta = [];
+  let what = esc(ev.path ?? '');
+  if (ev.event === 'outbound_click' && props?.href) what = `→ ${esc(String(props.href))}`;
+  else if (isForm && props?.form) meta.push(`<code>${esc(String(props.form))}</code>`);
+  else if (props) {
+    const shown = Object.entries(props).filter(([k]) => !['ck', 'err', 'mm', 'form'].includes(k)).slice(0, 4);
+    if (shown.length) meta.push(esc(shown.map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' ')));
+  }
+  if (ev.verdict && ev.verdict !== 'clean') meta.push(badge(ev.verdict));
+  return `<li class="${cls}${pathHit(ev.path) ? ' hit' : ''}">
+    <span class="t">${hms(ev.ts)}</span>
+    <span class="ev-tag">${tag}</span><span class="what">${what}</span>
+    ${meta.length ? `<span class="meta">${meta.join(' · ')}</span>` : ''}
+  </li>`;
+}
+
+function sessionBlock(sid, events, info) {
+  const first = events[0], last = events[events.length - 1];
+  const head = [`<b>${day(first.ts)}</b>`, `<span class="muted">${hms(first.ts)}–${hms(last.ts)}</span>`];
+  if (info) {
+    head.push(`${te('source:')} <b>${info.source ? esc(String(info.source).replace(/^www\./, '')) : te('Direct')}</b>${info.medium ? ` / ${esc(info.medium)}` : ''}`);
+    head.push(`${fmt(info.pageviews)} ${te('pages')}`);
+    if (info.duration_ms != null) head.push(dur(info.duration_ms));
+    if (info.is_bounce) head.push(`<span class="muted">${te('bounced')}</span>`);
+    head.push(badge(info.verdict ?? 'clean'));
+  }
+  const lines = foldSession(events);
+  let firstPageSeen = false;
+  const html = lines.map((l) => {
+    if (l.kind === 'page') { const h = pageLine(l, !firstPageSeen); firstPageSeen = true; return h; }
+    return eventLine(l.ev);
+  }).join('');
+  return `<div class="session">
+    <div class="session-head">${head.join('<span class="muted"> · </span>')}</div>
+    <ul class="tl">${html}</ul>
+  </div>`;
+}
+
+async function loadJourney() {
+  document.getElementById('vidTitle').textContent = `${t('Journey')} — ${vid}`;
+  const d = await get(`visitors/${encodeURIComponent(vid)}/profile`);
+  const p = d.profile || {};
+  const events = (d.events || []).slice();
+  const sessionInfo = new Map((d.sessions || []).map((s) => [s.session_id, s]));
+  const pvInPeriod = events.filter((e) => e.event === 'pageview').length;
+  const sessionsInPeriod = new Set(events.map((e) => e.session_id)).size;
+
+  document.getElementById('summary').innerHTML = [
+    // date as the big number, clock time folded into the label — a full
+    // "YYYY-MM-DD HH:MM" never fits a six-up card
+    [`First seen${p.first_seen ? ` · ${hms(p.first_seen).slice(0, 5)}` : ''}`, p.first_seen ? day(p.first_seen) : '–'],
+    [`Last seen${p.last_seen ? ` · ${hms(p.last_seen).slice(0, 5)}` : ''}`, p.last_seen ? day(p.last_seen) : '–'],
+    ['Pageviews in period', fmt(pvInPeriod)],
+    ['Sessions', `${fmt(sessionsInPeriod)}${p.sessions_count ? ` <span class="muted" style="font-size:12px">/ ${fmt(p.sessions_count)}</span>` : ''}`],
+    ['Worst verdict', p.verdict ? badge(p.verdict) : '–'],
+    ['Bot score', p.bot_score ?? '–'],
+  ].map(([k, v]) => {
+    const [base, extra] = k.split(' · ');
+    return `<div class="card"><div class="v">${v}</div><div class="k">${te(base)}${extra ? ` · ${esc(extra)}` : ''}</div></div>`;
+  }).join('');
+
+  // identity context: where / what / how big — one glance, no table
+  const c = d.context || {};
+  const ctx = [];
+  if (c.country) ctx.push(`<span><span class="flag">${flagEmoji(c.country)}</span> ${esc(countryLabel(c.country))}${c.city ? ` · ${esc(c.city)}` : c.region ? ` · ${esc(c.region)}` : ''}</span>`);
+  if (c.browser || c.os) ctx.push(`<span>${esc(c.browser ?? '–')} / ${esc(c.os ?? '–')}</span>`);
+  if (c.device_type) ctx.push(`<span>${esc(c.device_type)}${c.screen_w ? ` ${c.screen_w}×${c.screen_h}` : ''}</span>`);
+  if (c.lang) ctx.push(`<span>${esc(c.lang)}</span>`);
+  if (c.asn_type === 'datacenter') ctx.push(`<span class="dc">⚠ ${te('datacenter network')}</span>`);
+  document.getElementById('ctx').innerHTML = ctx.join('<span class="muted">·</span>');
+
+  // union of the evidence bits across the period's events
+  const bits = events.reduce((a, e) => a | (e.bot_flags || 0), 0);
+  const ev = document.getElementById('evidence');
+  ev.hidden = !bits;
+  if (bits) ev.innerHTML = `<b>${te('Evidence')}:</b> ${flagNames(bits).map(esc).join(', ')}`;
+
+  // group the trail by session; blocks newest-first, events chronological inside
+  const groups = new Map();
+  for (const e of events) {
+    if (!groups.has(e.session_id)) groups.set(e.session_id, []);
+    groups.get(e.session_id).push(e);
+  }
+  const ordered = [...groups.entries()]
+    .map(([sid, list]) => [sid, list.sort((a, b) => a.ts - b.ts)])
+    .sort((a, b) => b[1][b[1].length - 1].ts - a[1][a[1].length - 1].ts);
+
+  const shownEvents = events.filter((e) => e.event !== 'page_pulse').length;
+  document.getElementById('trailNote').textContent =
+    events.length ? `— ${shownEvents} ${t('events in this period')}${events.length >= 300 ? ' ' + t('(capped at 300 — narrow the period for more)') : ''} · ${t('times in')} ${siteTz}` : '';
+  document.getElementById('sessions').innerHTML = ordered.length
+    ? ordered.map(([sid, list]) => sessionBlock(sid, list, sessionInfo.get(sid))).join('')
+    : `<p class="muted">${te('no events in the selected period — try a longer range')}</p>`;
+}
+
+// -------------------------------- boot ------------------------------------
+
+const mode = vid ? 'journey' : 'finder';
+document.getElementById(mode).hidden = false;
+if (mode === 'finder') {
+  if (qs.get('path')) document.getElementById('path').value = qs.get('path');
+  if (qs.get('verdict')) document.getElementById('verdict').value = qs.get('verdict');
+}
+
+const reload = () => (mode === 'journey' ? loadJourney() : loadList());
+document.getElementById('period').addEventListener('change', reload);
+if (mode === 'finder') {
+  document.getElementById('apply').addEventListener('click', loadList);
+  document.getElementById('verdict').addEventListener('change', loadList);
+  document.getElementById('path').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadList(); });
+}
+
+// language switcher
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => { window.PVI18N.applyStatic(); regionNames = null; loadSiteMeta(); reload(); });
+
+loadSiteMeta().then(reload);
+</script>
+</body>
+</html>

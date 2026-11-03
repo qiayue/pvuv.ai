@@ -1,0 +1,70 @@
+# pvuv.ai console worker — pvuv.ai apex  (PROJECT_PLAN.md §11, §18.6)
+#   Owner login, site registration (issue site_id + embed snippet),
+#   traffic dashboard, traffic-quality overview.
+#   Frontend: plain single-file HTML served from public/ (no framework).
+#
+# All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
+# Secrets:
+#   wrangler secret put HMAC_KEY             -c workers/console/wrangler.toml  (session cookies)
+#   wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml  (Google login)
+#   wrangler secret put GITHUB_CLIENT_SECRET -c workers/console/wrangler.toml  (GitHub login)
+# Login is OAuth-only (Google / GitHub). Configure at least one provider or
+# nobody can sign in.
+#
+# NOTE: keep all top-level keys (routes, kv_namespaces, …) ABOVE the first
+# [table] header, or TOML nests them into that table and the binding is lost.
+
+name = "pvuv-console"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "PLACEHOLDER_ACCOUNT_ID"
+
+# Custom Domain — wrangler provisions DNS + certificate. This hostname is served
+# entirely by the console worker, so use a host you are not already serving from.
+routes = [
+  { pattern = "pvuv.ai", custom_domain = true }
+]
+
+# KV: write-through site-config cache on site create/update (§5 whitelist)
+kv_namespaces = [
+  { binding = "SITE_CONFIG", id = "PLACEHOLDER_KV_SITE_CONFIG_ID" }
+]
+
+[vars]
+# Admin emails allowed to sign in (comma-separated). THIS BUILD IS
+# SINGLE-TENANT: every admin here shares ONE site list (the deployer's own
+# sites). Anyone whose verified OAuth email is not listed is refused with
+# "not an admin". Not secret — it's an allowlist, not a credential.
+ADMIN_EMAILS = "you@example.com"
+
+# Social login (OAuth-only — there is no password login). Set the client id
+# here (public) and the matching secret via `wrangler secret put`. A provider
+# is offered only when BOTH are set. Register these callback URLs:
+#   https://<your-console-domain>/api/auth/google/callback
+#   https://<your-console-domain>/api/auth/github/callback
+# Hostname of the ingest worker, used to build the embed snippet shown after
+# creating a site. Declared rather than derived: the console cannot infer it
+# from its own hostname once the two are not siblings (e.g. console on
+# pvuv.example.com, ingest on in.example.com), and guessing wrong produces a
+# snippet that silently sends events nowhere.
+INGEST_HOST = "in.pvuv.ai"
+
+GOOGLE_CLIENT_ID = ""
+GITHUB_CLIENT_ID = ""
+
+# Static assets (single-file HTML console; sdk/dist/f.js is served separately
+# from js.pvuv.ai — see PROJECT_PLAN.md §2 "Static hosting").
+# run_worker_first: the homepage must hit the worker (instance-settings
+# rendering / home.html override) instead of being served as a raw asset.
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = ["/", "/index.html"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pvuv-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[observability]
+enabled = true

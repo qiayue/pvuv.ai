@@ -1,0 +1,690 @@
+# pvuv.ai 部署到 Cloudflare 指南
+
+> English version: [`DEPLOY.md`](./DEPLOY.md)
+
+本指南带你从克隆仓库到完整可用的部署：五个 Worker、一个 D1 数据库、两个 KV
+命名空间、一个 Queue，以及采集 SDK。所有命令都与仓库当前的 `wrangler.toml`
+逐一对应。
+
+**部署完成后的形态**（地址是示例，换成你自己的域名）：
+
+| 组件 | 地址 | Worker |
+|---|---|---|
+| 上报 + 快速判定 | `https://in.example.com/in`、`/v` | `workers/ingest` |
+| 队列消费者 | （无路由——消费 `pvuv-ingest`） | `workers/consumer` |
+| 查询 API | `https://api.example.com/v1/...` | `workers/api` |
+| 控制台（后台） | `https://example.com/` | `workers/console` |
+| 定时聚合 + 每日反作弊/异常分析 | （无路由——Cron 触发） | `workers/cron` |
+| SDK `f.js` | `https://example.com/f.js`（M1 方案，见第 8 步） | 由 console 托管 |
+
+---
+
+## 0. 前置条件
+
+- **Cloudflare 账号**，且开通 **Workers Paid 套餐**（$5/月）——上报管道用了
+  [Cloudflare Queues](https://developers.cloudflare.com/queues/)，免费套餐没有。
+  D1、KV、Workers 本身的用量对中小站点来说包含额度足够。
+- 一个**已接入 Cloudflare 的域名**（DNS zone 在你的账号下），用于绑定
+  `in.<域名>`、`api.<域名>` 和控制台主机。
+- **Node.js 18+** 和 npm。
+- 登录一次：`npx wrangler login`，然后用 `npx wrangler whoami` 记下 account id。
+
+## 1. 克隆并安装
+
+```bash
+git clone https://github.com/qiayue/pvuv.ai.git
+cd pvuv.ai
+npm install     # postinstall 会从 config.example.toml 生成 shared/config.gen.ts
+```
+
+## 2.（可选但推荐）私有打分配置
+
+权重/阈值全部从配置读取，代码里没有硬编码。仓库只带示例默认值，生产调参放在
+gitignore 的私有文件里：
+
+```bash
+cp config.example.toml config.local.toml   # 已 gitignore，放心调
+npm run config:gen                          # 每次改完重新生成
+```
+
+跳过这步就用示例默认值。`config:gen` 在 `npm install` 和 SDK 构建前都会自动跑。
+
+## 自动化安装（推荐）
+
+下面第 3–8 步全部可以自动完成,`npm run setup` 一条命令搞定:
+
+```bash
+npm install
+npx wrangler login
+npm run setup            # 建议先加 --dry-run 预览将要执行的每条命令
+```
+
+它会创建 D1 数据库、KV 命名空间与队列;填好所有 `PLACEHOLDER_*`;把路由指向你
+的域名;生成共享的 `HMAC_KEY` 并安装到需要它的三个 worker(全程不打印);应用
+数据库迁移;构建并拷贝 SDK;部署全部 5 个 worker。
+
+**可以重复运行。** 已存在的资源会复用,已配置好的文件会被报告并跳过——所以中途
+失败只需再跑一次即可继续,也不会误改一个正在运行的部署。
+
+非交互方式:
+
+```bash
+npm run setup -- --domain example.com --admin you@example.com \
+  [--console-host example.com] [--ingest-host in.example.com] [--api-host api.example.com]
+```
+
+域名只询问一次,随后自动写入所有需要的位置;DNS 记录与证书在部署时自动签发
+(自定义域,见第 5 步)。之后只需完成它无法代劳的一件事:**OAuth 登录**
+(下文有独立章节)。
+
+本文余下部分是等价的手动步骤——如果你想理解每一步,或自动安装中途失败想手工
+接续,可以照着做。
+
+## 3. 创建 Cloudflare 资源
+
+```bash
+npx wrangler d1 create pvuv-db                 # 记下输出的 database_id
+npx wrangler kv namespace create BLOCKLIST     # 记下 id
+npx wrangler kv namespace create SITE_CONFIG   # 记下 id
+npx wrangler queues create pvuv-ingest
+npx wrangler queues create pvuv-ingest-dlq     # 死信队列
+```
+
+## 4. 替换占位符
+
+所有 `wrangler.toml` 里都是 `PLACEHOLDER_*` 占位值，用第 3 步的真实 id 替换
+（在仓库根目录执行）：
+
+```bash
+ACCOUNT_ID=...        # 来自 `npx wrangler whoami`
+D1_ID=...             # 来自 `wrangler d1 create`
+KV_BLOCKLIST_ID=...   # 来自 `wrangler kv namespace create BLOCKLIST`
+KV_SITE_CONFIG_ID=... # 来自 `wrangler kv namespace create SITE_CONFIG`
+
+sed -i "s/PLACEHOLDER_ACCOUNT_ID/$ACCOUNT_ID/" wrangler.toml workers/*/wrangler.toml
+sed -i "s/PLACEHOLDER_D1_DATABASE_ID/$D1_ID/" wrangler.toml workers/*/wrangler.toml
+sed -i "s/PLACEHOLDER_KV_BLOCKLIST_ID/$KV_BLOCKLIST_ID/" workers/*/wrangler.toml
+sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.toml
+```
+
+> **不要把真实 id 提交回公开仓库/公开 fork。** 这些不算密钥，但项目约定
+> （PROJECT_PLAN §21–§22）要求它们不进仓库。建议用私有克隆部署，或本地改动
+> 不提交。
+
+## 5. 设置你的域名
+
+**这是配置域名的唯一位置**——`npm run setup` 会在这里询问,然后写入所有相关文件。
+手动做的话需要改三个文件。
+
+三个主机名,每个 worker 一个。大多数人的主域名上已经有网站,所以控制台默认用子
+域名,不动主域名:
+
+| | 默认 | 就是要用主域名 | `in.`/`api.` 已被占用 |
+|---|---|---|---|
+| 控制台 | `analytics.example.com` | `example.com` | `analytics.example.com` |
+| ingest | `in.example.com` | `in.example.com` | `in-analytics.example.com` |
+| api | `api.example.com` | `api.example.com` | `api-analytics.example.com` |
+
+`analytics` 只是一个易读的默认值——这是你的 DNS,想叫什么都行:用
+`--subdomain stats` 换个名字,或用 `--console-host` 直接指定完整主机名。
+
+**所有主机名都要恰好比根域名低一级。** Universal SSL 覆盖 `example.com` 和
+`*.example.com`,而通配符只能匹配**一层**——所以 `in.pvuv.example.com` 不在覆盖
+范围内,需要 Advanced Certificate Manager;而 `in-pvuv.example.com` 能达到同样的
+归组效果且免费。`npm run setup` 检测到嵌套写法时,会直接打印出你那几个主机名对应
+的横杠版本。
+
+以上全部可覆盖——用 `--subdomain` 换子域名,或用 `--console-host` /
+`--ingest-host` / `--api-host` 完全指定(也可以直接改那三个文件)。
+
+每个 worker 独占一个主机名,以 Cloudflare **自定义域(Custom Domain)** 声明:
+
+- `workers/ingest/wrangler.toml` → `{ pattern = "in.example.com", custom_domain = true }`
+- `workers/api/wrangler.toml` → `{ pattern = "api.example.com", custom_domain = true }`
+- `workers/console/wrangler.toml` → `{ pattern = "example.com", custom_domain = true }`
+  （也可以用子域名如 `analytics.example.com`，但要相应调整嵌入代码里的
+  `data-api`，见第 9 步）
+- `workers/console/wrangler.toml` 的 `[vars] ADMIN_EMAILS` → 你的管理员邮箱（逗号
+  分隔）。本版本是**单租户**：列表里的人共享同一份站点列表（你自己的站点），
+  其他人一律拒绝。登录仅支持 OAuth，第 7 步配置。
+
+**不需要单独配 DNS。** 使用 `custom_domain` 后，`wrangler deploy` 会自动为每个主
+机名创建已开启代理的 DNS 记录并签发证书。前提有两条：
+
+- 该域名必须**已添加到这个 Cloudflare 账号**（任意套餐），否则部署会报 zone 错误；
+- 主机名必须**空闲**。worker 会完整接管该主机名，所以请选一个你当前没有在提供
+  服务的主机名。如果已存在冲突的 DNS 记录，部署会停下而不会覆盖它。
+
+## 6. 建库表
+
+```bash
+npm run db:migrate:remote     # 即 wrangler d1 migrations apply pvuv-db --remote
+```
+
+这会应用 `migrations/` 里的版本化迁移（0001 起）——平台用到的所有表：分析
+rollup、会话/访客画像、聚簇标记表、异常报告表，以及 `ai_reports` 和
+`instance_settings`。以后再跑也安全，已应用的迁移会跳过（显示 "No migrations
+to apply"）。之后每个月的 `events_YYYYMM` 分表由 consumer 自动创建，无需手动。
+
+## 7. 部署 Worker，然后设置密钥
+
+```bash
+npm run deploy:all
+```
+
+然后设置密钥。**三个 Worker 必须用同一个 `HMAC_KEY`**——console 签发的会话
+cookie 要由 api 验证，ingest 签发 `_pv_v` 判定 cookie：
+
+```bash
+openssl rand -base64 32        # 生成一个密钥，下面三处复用同一个值
+
+npx wrangler secret put HMAC_KEY  -c workers/ingest/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/api/wrangler.toml
+npx wrangler secret put HMAC_KEY  -c workers/console/wrangler.toml
+npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml   # 外部系统服务端调 API 用
+```
+
+密钥即时生效，不用重新部署。`HMAC_KEY` 没设置之前，`/in` 和 `/v` 会刻意返回
+500，而不是带着空密钥运行。
+
+**控制台登录只走 OAuth**——必须先配置 Google 和/或 GitHub 才能登录(下一节详述)。
+以 Google 为例最少要:
+
+```bash
+# 在 workers/console/wrangler.toml 的 [vars] 里设 GOOGLE_CLIENT_ID,然后:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+```
+
+## 8. 构建并托管 SDK
+
+```bash
+npm run build:sdk                                   # → sdk/dist/f.js（gzip 后约 6.5 KB）
+cp sdk/dist/f.js workers/console/public/f.js
+npm run deploy:console
+```
+
+现在 `f.js` 在 `https://example.com/f.js` 可访问。
+
+> **说明（M1）。** 参考架构把 SDK 放在独立的 `js.` 子域，这样即使暴露域名进了
+> 拦截列表也不影响后台（PROJECT_PLAN §1）。从 console 主域直接服务是 M1 的
+> 简化方案；以后迁到 `js.<域名>`（Workers Static Assets 或 R2）或第一方反代
+> （§12）不需要改代码。
+
+## 9. 注册第一个站点
+
+1. 打开 `https://example.com/login.html`，用 Google 或 GitHub 登录(邮箱须在
+   `ADMIN_EMAILS` 里)。
+2. 点 **New site** 填：站点名、被统计站点的域名（如
+   `blog.example.org, www.blog.example.org`）、adguard 模式、可选 AdSense id，
+   以及**时区**。所有统计（今天/本月/每日 rollup）都按这个时区的日历天归集。
+   它默认取你的账号默认时区（在 ⚙ 齿轮 →「默认时区」里设），且**站点创建后
+   不可更改**——选你想用来出报表的那个。站长在任何时区都能统计任何时区的站点，
+   这个选项只决定「天」怎么切。
+3. 复制生成的嵌入代码，形如：
+
+```html
+<script defer src="https://example.com/f.js"
+        data-site="Ab3xK9pQ"
+        data-api="https://in.example.com"
+        data-adguard="balanced"
+        data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
+```
+
+`data-api` 必须指向你的上报域名——SDK 内置默认值是参考域名 `in.pvuv.ai`，所以
+自部署**务必带上 `data-api`**（console 按 `workers/console/wrangler.toml [vars]`
+里的 `INGEST_HOST` 生成，若你的上报域名不同请手动调整）。
+
+4. 打开这个新站点的仪表盘。在第一个事件到达之前，它显示的是**首次接入面板**而不是
+   一堆空图表：同一段嵌入代码 + 复制按钮、自检入口，以及一个实时探测。第一个浏览
+   事件一落库，页面会自动切换成仪表盘。
+
+## 10. 验证
+
+**最简单:用内置的自检工具。** 登录控制台点顶部 **Self-check**,或直接访问
+`https://<你的控制台域名>/health.html`。它会逐项走一遍:数据库、迁移、密钥、
+配置、KV、上报端点、一次真实的端到端测试事件(上报 → Queue → consumer → D1,
+含服务端补全 + 打分)、以及 `/v` 快速判定,任何一项失败都会告诉你具体怎么修。
+它用一个隐藏的 `__pvuv_selftest` 站点,不会污染你的真实统计数据。
+
+或者手动检查:
+
+```bash
+# ingest 是否存活（空 body 返回 400 "bad json" = Worker 正常、可达）：
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://in.example.com/in
+# 带 body 但 Origin 是外域会返回 204（事件被静默丢弃）；
+# 完全没有 Origin/Referer 头则返回 403
+
+# 访问站点的同时看实时日志：
+npx wrangler tail -c workers/ingest/wrangler.toml
+npx wrangler tail -c workers/consumer/wrangler.toml
+```
+
+然后访问一个已嵌入代码的页面，在浏览器开发者工具里确认 `POST /in` 返回 **204**。
+数据出现的时间线：
+
+- **立即**：首次接入面板切换为仪表盘；「可疑访客」表和**访客轨迹**（页头的
+  `访客 →`）能看到事件——两者都直接读原始事件表。
+- **一小时内**：指标卡/趋势图/各维度表填充——它们读预聚合表，cron 每小时
+  `:05` 重算。
+- **次日**：每日任务（03:30 UTC）产出群体聚簇封禁、基线 + 分布形态异常
+  （仪表盘「Recent anomalies」条），并清理超出保留期的原始数据。
+
+## 定时任务（自动）
+
+`cron` worker 有两个触发（`workers/cron/wrangler.toml`），部署即生效，无需额外配置：
+
+| 计划 | 任务 |
+|---|---|
+| `5 * * * *`（每小时） | 从原始事件 + 会话重算最近几天的日 rollup，让卡片/图表保持新鲜、刚结束的一天定稿。 |
+| `30 3 * * *`（每天） | 群体/批量分析（指纹簇、IP 段簇、cookie 重置农场、会话内身份漂移、二部图分数传播 → KV 黑名单 + 批量重判）、基线**与分布形态**异常检测 → `anomaly_reports`，然后执行**保留清理**（见下一节），最后——仅当你配置了令牌时——拉取 Cloudflare 边缘请求数（见下文）。 |
+
+所有阈值都从你的 config 读取（`config.example.toml` / `config.local.toml` 里的
+`[population]`、`[anomaly]`、`[distribution]`、`[retention]`），不硬编码——调完
+记得重新生成 config（`npm run config:gen`）并重新部署 `cron`。
+
+> **绝对不要在 Cloudflare 面板里编辑这两个触发器。** 面板的 cron 编辑器是一个
+> 「每 N 分钟 / 每 N 小时」的构造器，表达不了「每天固定时刻」，所以你哪怕只是
+> **点开** `30 3 * * *` 再保存，它就会把表达式改写成它能表示的最近预设。wrangler
+> 不会把这个改动同步回来，而 worker 是按 cron 字符串精确匹配分发的——于是每日任务
+> 从此不再执行，**不报错、不写日志**。参考部署上这件事真实发生过，并且七周无人
+> 察觉：每日任务的水位线一直冻结、`cluster_flags` 始终为空、所有群体/聚类检测器
+> 全程休眠。
+>
+> 现在有两道防护，但都不能替代上面这条规矩。匹配不到任何 handler 的计划会被大声
+> 记录（`cron: NOTHING RAN — fired with schedule …`）；如果每日任务的水位线超过
+> 一天没有推进，**每小时**任务会代为执行它——所以触发器跑偏的代价从「几周」降到
+> 「最多一小时」。
+>
+> 要改计划，请编辑 `workers/cron/wrangler.toml` 后重新部署。若已经跑偏：在面板里
+> 把**两个**触发器都删掉，然后 `npm run deploy:cron` 让 wrangler 重建，确认面板
+> 显示为 *At 03:30* 和 *At 5 minutes past the hour*。
+
+## 存储与保留（把 D1 控制在合理大小）
+
+D1 单库上限 10 GB。如果什么都不清理，几个站点几个月就能涨到几 GB。先知道是什么在涨：
+
+| 表 | 是什么 | 占用 |
+|---|---|---|
+| `events_YYYYMM` | 全部原始事件，按 UTC 月分区，每个分区 8 个索引 | **含索引约 0.8 KB/行**。一次浏览会产生 2–5 行：pageview、一条 `page_leave`，加上周期性的 `page_pulse` 行为心跳。测试站点上机器人流量往往占大多数行。 |
+| `sessions` | 每次访问一行 | ≈ 0.4 KB |
+| `visitor_profiles` | 每个出现过的访客 ID 一行（跨访问打分用） | ≈ 0.3 KB——不清理会无限增长 |
+| `rollup_*` | 仪表盘读取的预聚合数字 | 很小；**永久保留** |
+
+仪表盘上的一切（指标卡、趋势、各维度、流量质量、排名）都来自汇总表，原始行只服务于
+下钻：访客轨迹、可疑访客表、漏斗、以及异常检测里的设备/落地页检查。`config.local.toml`
+里的保留窗口决定这些能回看多久：
+
+```toml
+[retention]
+raw_events_days    = 90    # 整月分区在超过该天数后整体 DROP
+pulse_events_days  = 14    # page_pulse 行为心跳：更早修剪——汇总任务一小时内就已消费
+bot_events_days    = 30    # 判定为机器人/爬虫的原始行；已计入统计，仅供下钻
+profiles_idle_days = 180   # 超过这么久没出现的访客档案
+```
+
+`0` 表示该项永久保留。旧的 `config.local.toml` 里如果缺少某个键，就按上面的值执行，
+所以只升级代码就已经开始修剪。改动后重新生成并部署：
+
+```bash
+npm run config:gen && npm run deploy:cron && npm run deploy:console
+```
+
+每日任务（03:30 UTC）把超过 `raw_events_days` 的整月分区一条语句删掉，其余按每批
+5,000 行修剪（每表每晚最多 20 万行），大量积压会在几个晚上内消化完，不会撞到 D1
+的单查询预算。
+
+**在哪看、怎么手动跑：** ⚙ 设置 →「**存储与保留**」列出每个分区的行数、心跳行、
+机器人行和预估大小，以及当前生效的窗口，并有「**立即清理**」按钮（和 cron 跑的
+是同一个任务，可反复点）。精确的数据库大小用：
+
+```bash
+npx wrangler d1 info pvuv-db
+```
+
+**已经涨到几 GB 了？** 先把 `bot_events_days` 调到 7–14、`pulse_events_days` 调到
+3–7——测试站或机器人多的站，行数主要在这两块——然后点几次「立即清理」，或等每晚
+任务。显示的大小可能滞后：SQLite 会先把释放的页标记为可复用，文件不会立刻缩小。
+如果你需要下钻回看超过 90 天，先看面板里各分区的大小再上调 `raw_events_days`——
+趋势图等任何时间范围本来就由汇总表覆盖。
+
+## 控制台里有什么
+
+- **站点列表**——每个站点一张卡，显示所选范围内的浏览量/访客/会话、时区和广告
+  防护模式；跨站点的清洗流量排名；⚙ 设置（品牌、默认时区、AI 报告、API 令牌、
+  爬虫目录、Cloudflare 边缘请求、存储）。
+- **仪表盘**——粘性区块导航（概览 · 趋势 · 来源 · 受众 · 核心网页指标 · 广告
+  系列 · 目标 · 漏斗 · 流量质量 · 广告防护 · 可疑访客 · AI 报告）。点任意一行
+  （来源、页面、国家、设备、UTM）即可筛选整个仪表盘；来源按平台折叠（所有
+  Google 域名合并为一行「Google」）。渠道（GA4 式分组）、来自干净流量的核心网页
+  指标、带转化时延分布的目标，以及广告防护的影子模式横幅。
+- **漏斗**——每个站点可保存多个漏斗（页面路径 + 自定义事件，2–8 步），只统计干净
+  流量。每一处流失都会显示距上一步的中位耗时，以及**离开的人在那一步上到底做了
+  什么**：停留、滚动深度、暴躁点击、点到没反应的元素、JS 报错——这些正是 SDK
+  采集的行为信号，也是把「这里掉了 61%」变成「这里有个能修的问题」的关键。整个
+  漏斗还能按来源、国家、设备、浏览器、操作系统分段，找出只对某一类人失效的步骤；
+  点任意流失处的「看看是谁 →」可直接打开这些访客的轨迹。保存的漏斗可被 API/MCP
+  读取（`/v1/sites/:id/funnels`、`…/funnel?funnel_id=…&breakdown=source`），
+  也会进入 AI 报告。
+- **访客轨迹**（`访客 →`）——按页面路径或判定查找访客，然后把某个访客的会话按
+  时间线回放：每个页面的停留、滚动深度、点击了哪些元素、JS 报错、暴躁/无效点击，
+  加上自定义事件、表单和外链点击。时间按站点时区显示。
+- **广告防护**——给出每个档位真正执行后的预估:拦截率、被拦浏览量、预估误伤率。
+  档位在数据里存的是 `loose` / `balanced` / `strict`，但界面上**按拦截力度显示并
+  升序排列**——"loose" 拦掉所有非 clean 流量，比 "balanced" 拦得**更多**，按字面
+  顺序理解会得到完全相反的结论。误伤率统计的是被拦流量中出现**指针或键盘**输入的
+  占比;滚动被刻意排除在外，因为无头爬虫为了触发懒加载必然会滚动。影子模式只记录
+  不拦截，可以先把这些数字看明白再决定是否启用。
+- **"非机器人"列**——`非机器人PV` / `非机器人访客` 统计的是判定不为 `bot`/`crawler`
+  的流量，**包含 `suspect`**。它不是严格意义上的"干净"流量;在被攻击的站点上两者
+  可以差 3 倍。四种判定的分别数量在「流量质量」板块里看。
+- **分享链接**——只读公开仪表盘（仅汇总数据，无访客级信息），令牌可轮换。
+- **自检**——`/health.html`，端到端走一遍整个部署。
+
+## Google / GitHub 登录(必需)
+
+控制台**只支持 OAuth 登录**——用 Google 和/或 GitHub,没有密码登录。某个渠道
+只有在其 client id 和 secret 都设置后才会出现在登录页,所以你至少要配一个。
+
+**单租户 / 管理员白名单。** OAuth 是身份认证,不是开放注册。只有
+`workers/console/wrangler.toml` 里 `ADMIN_EMAILS`(逗号分隔)列出的邮箱能登录,
+其他人一律以「非管理员」拒绝。所有管理员共享**同一个**站点列表(你自己的站点)
+——身份以验证过的邮箱为准,同一邮箱用 Google 或 GitHub 登录是同一个账号。
+(让陌生人各自注册独立账号的真·多租户,不在这个开源版范围内。)
+
+**Google:** 在 [Google Cloud Console](https://console.cloud.google.com/) →
+API 和服务 → 凭据,创建 OAuth 客户端(类型:Web 应用),授权重定向 URI 填
+`https://<你的控制台域名>/api/auth/google/callback`。然后:
+
+```bash
+# 在 workers/console/wrangler.toml 的 [vars] 里设置 GOOGLE_CLIENT_ID,然后:
+npx wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+**GitHub:** 在 GitHub → Settings → Developer settings → OAuth Apps → New OAuth
+App,Authorization callback URL 填
+`https://<你的控制台域名>/api/auth/github/callback`。然后:
+
+```bash
+# 在 workers/console/wrangler.toml 的 [vars] 里设置 GITHUB_CLIENT_ID,然后:
+npx wrangler secret put GITHUB_CLIENT_SECRET -c workers/console/wrangler.toml
+npm run deploy:console
+```
+
+改了 `[vars]` 后要重新部署 console;密钥即时生效。
+
+## 自定义首页
+
+部署后的 `/` 是一个公开落地页。三个层级，都不需要 fork 代码：
+
+1. **改名称 + 介绍（零代码）。** 登录 console → *Homepage settings*：填你的
+   网站名称和介绍，默认首页会服务端渲染它们（包括 `<title>` 和
+   `<meta name="description">`）。
+2. **完全自定义页面。** 新建 `workers/console/public/home.html`，写任意 HTML，
+   重新部署 console——它会整页替换默认首页，且**原样输出**（不注入任何内容）。
+   该文件已 **gitignore**，你的落地页文案永远不会进公开仓库，`git pull` 也不会
+   冲突。官方 pvuv.ai 首页就按这个方式做。
+3. **默认。** 什么都不做，就是自带的极简页面。
+
+自带的默认页页脚有一个小小的「Powered by pvuv.ai」链接。这只是**善意的默认、
+并非强制**——MIT 不作任何署名要求——想支持项目就留着，不想要就随手删掉（自定义
+`home.html` 完全没有页脚）。默认页刻意极简，是为了避免成千上万个部署发布一模一样的
+落地页文案（搜索引擎重复内容）。
+
+## 第一方反代（可选，免疫拦截器）
+
+默认 SDK 从 console 加载、上报到 `in.<域名>`——这是第三方主机，广告/追踪拦截器
+迟早会把它列入黑名单。想要最高准确率，可以用 `workers/proxy`（§12）把 `f.js` 和
+上报端点变成**被统计域名自己的第一方请求**。它**不在** `npm run deploy:all` 里，需
+单独部署。
+
+1. 改 `workers/proxy/wrangler.toml`：`route` 设成你被统计域名下的路径前缀（如
+   `example.com/_pv/*`），`[vars]` 的 `UPSTREAM_INGEST` / `UPSTREAM_ASSETS` 填你的
+   ingest 主机和 console。
+2. 在代理和 ingest 之间共享一个密钥，让 ingest 信任代理转发的真实客户端上下文
+   （真实 IP/ASN/地理/时区）——否则经代理后请求看起来都来自 Cloudflare，打分会失真：
+   ```bash
+   openssl rand -base64 32   # 同一个值，两个 worker 都设
+   npx wrangler secret put PROXY_TOKEN -c workers/proxy/wrangler.toml
+   npx wrangler secret put PROXY_TOKEN -c workers/ingest/wrangler.toml
+   ```
+3. 部署：`npm run deploy:proxy`（并重新部署 ingest 让它读到密钥）。
+4. 嵌入代码指向代理——第一方 src + data-api：
+   ```html
+   <script defer src="https://example.com/_pv/f.js"
+           data-site="Ab3xK9pQ" data-api="https://example.com/_pv"></script>
+   ```
+
+代理把真实 IP/ASN/时区/地理作为 `x-pv-*` 头转发；ingest **仅当** `x-pv-proxy` 与
+`PROXY_TOKEN` 匹配时才信任它们,所以普通客户端无法伪造自己的 IP。若 ingest 没设
+`PROXY_TOKEN`,转发头一律忽略（直连嵌入照常工作,不受影响）。
+
+## AI 分析报告（可选）
+
+每个站点的仪表盘有一个 **AI report** 面板，把真实流量快照生成一份文字分析。它支持
+**任意 OpenAI 兼容端点**（OpenAI、DeepSeek、OpenRouter、本地 vLLM/Ollama……）或
+**Anthropic (Claude)** API——由你选，不绑定任何厂商。
+
+在控制台配置一次即可，无需重新部署：登录 → **⚙ 设置** → *AI analysis reports*，
+填 **provider**（OpenAI 兼容 或 Anthropic）、**模型名**、可选 **API base URL**
+（留空用默认）、**报告语言**、以及你的 **API key**。key 存在你自己的 D1 里（从
+界面录入，不写进仓库任何文件），且永不回传浏览器。然后打开任意站点 → *AI report*
+→ **Generate**。
+
+> 更想用 Workers Secret 存 key？在 console worker 上设 `AI_API_KEY`
+> （`npx wrangler secret put AI_API_KEY -c workers/console/wrangler.toml`），把
+> 界面里的 key 留空即可；两者都设时以界面值优先。
+
+## API 令牌、MCP 服务器与 CLI（可选）
+
+在控制台之外读取你的数据:REST API、让你自己的 Chatbot 回答流量问题的 **MCP
+服务器**,以及适合终端与定时任务的 **CLI**。三者均为只读。
+
+在控制台创建令牌:**⚙ 设置 → API 令牌**。用持有它的客户端来命名,并选择适用
+范围(单个站点或全部站点)。令牌**仅显示一次**——服务端只存 HMAC,无法找回。
+吊销立即生效。
+
+```bash
+export PVUV_API_URL=https://api.example.com
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+接入 Chatbot(以 Claude Desktop 为例,无需安装,服务器就是一个普通 Node 文件):
+
+```json
+{"mcpServers":{"pvuv":{"command":"node","args":["/path/to/pvuv.ai/mcp/index.mjs"],
+  "env":{"PVUV_API_URL":"https://api.example.com","PVUV_TOKEN":"pvuv_…"}}}}
+```
+
+完整接口与工具说明见 [`docs/API.md`](./docs/API.md)。
+
+## 爬虫分类（可选）
+
+默认情况下所有爬虫都只记为一个笼统的 `crawler` 判定。在 **⚙ 设置 → 爬虫目录**
+里导入公开的爬虫目录(Cloudflare Radar 的 bots-and-agents 目录,或它的 JSON
+镜像)——上传文件或直接粘贴 JSON——爬虫流量就会额外按用途标注:搜索引擎、
+AI 训练、SEO 工具、广告验证、监控等。
+
+导入器兼容这些目录常见的多种格式,并会显示解析结果(条目数、跳过数、各类别
+数量),所以文件没解析对是一眼可见的,而不会默默什么都不分类。之后「流量质量」
+下会出现「爬虫分类」面板。
+
+这是**纯分类**——类别不会影响打分、判定或广告防护。默认不导入任何内容,你的
+部署也不会因此发出任何第三方请求。
+
+## Cloudflare 边缘请求（可选，进阶）
+
+这个产品其他所有数据都由埋点脚本测量，也就意味着只能统计到**浏览器执行了
+JavaScript** 的访客。AI 爬虫、采集器、RSS 阅读器抓走 HTML 就走，从不执行脚本，
+因此永远不会到达 `/in`。一次从未上报过的请求，再强的识别也救不回来。
+
+但挡在你源站前面的 Cloudflare 全都数到了。给控制台一个**只读**的 Cloudflare API
+令牌，每晚的定时任务就会把这些请求数拉回来，*统计脚本看不见的部分*面板会给出
+差额：
+
+```
+边缘 HTML 请求   12,480    ← Cloudflare 实际服务的
+浏览器 PV         2,773    ← 脚本上报的
+差额              9,707    ← 抓了 HTML，但从没执行 JS
+```
+
+以及差额背后排名靠前的 User-Agent（GPTBot、ClaudeBot、CCBot……）。
+
+**创建令牌。** 在 Cloudflare 控制台：*My Profile → API Tokens → Create Token →
+Create Custom Token*。只给这两个权限，都是只读：
+
+| 类型 | 资源 | 级别 |
+|---|---|---|
+| Zone | Zone | Read |
+| Zone | Analytics | Read |
+
+*Zone Resources* 选你站点所在的 zone（或账号下全部 zone）。然后把令牌粘贴到
+**⚙ 设置 → Cloudflare 边缘请求**，点*保存并检查*——会立即验证，并告诉你它把你的
+哪些站点匹配到了哪个 zone，这样权限范围填错当场就能发现，而不是一周后面对一个
+空面板。
+
+几点说明：
+
+- **完全可选。** 不填就是完全不生效：面板隐藏，也绝不会向 Cloudflare 发出任何
+  请求。
+- 令牌存在你自己的 D1 里，永远不会返回给浏览器。
+- 只读：这里不会对你的 Cloudflare 账号做任何写操作。
+- **仅供观察。** 边缘请求数不参与评分、不参与判定、不参与广告防护——请求和访客是
+  两个不同的总体，混在一起会污染产品计算的每一个比率。
+- 数据来自 `httpRequestsAdaptiveGroups`，**所有套餐**都能用（Logpush/Logpull 才是
+  企业版专属）。按你站点的本地日聚合，因此边缘请求数和 PV 天然对齐，不需要做
+  时区换算。
+- 只拉完整的日期——今天还在累加中。首次运行回溯 14 天，之后每晚刷新最近 3 天，
+  让延迟到达的数据自动修正。
+- 拉取失败时，设置面板里会原样显示 Cloudflare 自己的报错文本。"Authentication
+  error" 和权限没给全是两种完全不同的修法。
+
+## 外部排名 / 评分 API（可选）
+
+外部排名系统可以用第 7 步设的服务端 `API_TOKEN`，一次拉取跨站点、基于清洗流量的榜单：
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.example.com/v1/ranking?period=30d"
+```
+
+返回每个活跃站点的 clean（已排除 bot/crawler/suspect）浏览量，拆分为**内部**
+（你其它站点带来的互访）和**外部**流量；默认 `score` 用外部 clean 浏览量，所以
+互访不会抬高排名。站长也能在控制台首页看到 *Site ranking* 表格。详见
+[`PROJECT_PLAN.zh-CN.md` §14](./PROJECT_PLAN.zh-CN.md)。
+
+## 常见问题排查
+
+| 现象 | 大概率原因 |
+|---|---|
+| `/in` 返回 500 | ingest 的 `HMAC_KEY` 密钥没设置 |
+| `/in` 返回 204 但没数据 | 页面 `Origin` 与站点 `allowed_domains` 不匹配（按设计静默丢弃）——检查注册的域名；站点信息修改后 KV 缓存最多 5 分钟刷新 |
+| `/in` 返回 403 | 请求没有 `Origin`/`Referer` 头（服务器直发会被拒） |
+| 指标卡空但钻取有数据 | rollup 每小时 `:05` 跑——等下一轮 |
+| 无法登录 / 提示「非管理员」 | 你的邮箱不在 `ADMIN_EMAILS` 里,或没配置任何 OAuth 渠道 |
+| API 返回 401 | 缺少/错误的 `Authorization: Bearer <API_TOKEN>` 或 console 会话 cookie |
+| 部署时 Queue 报错 | Queues 需要 Workers Paid 套餐；`pvuv-ingest` 和 `pvuv-ingest-dlq` 都要先建好 |
+| 提示「AI is not configured」 | 在 ⚙ 设置 → AI analysis reports 里配好 provider + 模型 + API key（或设 `AI_API_KEY` 密钥） |
+| AI 报告「LLM request failed (401/404)」 | 所选厂商的 API key / base URL / 模型名不对——重新核对 AI 设置 |
+| 新的机器人信号一直不触发 | 部署前没重新生成 config——先 `npm run config:gen`（或 `npm install`）再重部署 `ingest`/`cron` |
+| 漏斗数字比预期低 | 漏斗只统计干净流量（和目标、收入一样排除机器人与爬虫）——「流量质量」一节能看到这部分被剔除了多少 |
+| 漏斗流失处没有行为标签 | 行为信号需要行为列（迁移 0017）和重建后的 `f.js`；更早的分区仍会给出漏斗，只是没有这些标签 |
+| 异常 / 分布告警条空 | 每日任务 03:30（UTC cron）才跑，且需要几天基线数据才会告警 |
+| 仪表盘一直停在「等待第一次访问」 | 该站点没有任何事件到达 D1：`data-api` 写错、页面 `Origin` 不在站点域名里，或 consumer 没部署——自检能定位到具体一步 |
+| 排名里 External / Internal 显示 `—` | 这两列来自 `rollup_source_daily`，由每小时任务填充——过了整点 05 分再看 |
+| 每日任务从不执行:`cluster_flags` 为空、`batch_wm_*` 冻结 | worker 的 Cron 触发器和 `wrangler.toml` 跑偏了——见「定时任务」里的警告。用 `SELECT key, value FROM instance_settings WHERE key LIKE 'batch_wm%'` 确认;时间戳过期的话每小时任务会在一小时内自愈，但触发器本身要修 |
+| cron 日志出现 `NOTHING RAN — fired with schedule …` | 同一原因，现在会明确报出来:该计划匹配不到任何 handler。在面板删掉两个触发器，然后 `npm run deploy:cron` |
+| 广告防护的误伤率高得离谱 | 你看的时间段早于指针拆分（迁移 0021）。更早写入的行会退回旧的"任意交互"口径，而那个口径把滚动算作交互——爬虫也会滚动。换一个部署之后开始的时间段再看 |
+| 突然所有访客都像无交互机器人 | 不该发生:早于拆分的 loader 写入的 `had_pointer` 是 NULL，而 NULL 被当作"未知"而非"没有指针"。真遇到了，检查迁移 0021 是否在部署 worker **之前**执行 |
+| D1 数据库持续增长 / 接近 10 GB | 原始 `events_YYYYMM` 行（机器人流量 + 行为心跳）。调低 `[retention]` 窗口，重部署 `cron` + `console`，再到 ⚙ 设置 → 存储 →「立即清理」——见「存储与保留」 |
+
+## 本地开发
+
+不需要任何 Cloudflare 资源，全部跑在 miniflare 里：
+
+```bash
+npm install
+npx wrangler d1 migrations apply pvuv-db --local --persist-to .wrangler/dev
+
+# 造一个测试站点（走 console 建站也行）：
+npx wrangler d1 execute pvuv-db --local --persist-to .wrangler/dev --command \
+  "INSERT INTO sites (site_id,name,owner_id,allowed_domains,adguard_mode,created_at)
+   VALUES ('Ab3xK9pQ','dev','admin','[\"localhost\"]','balanced',0)"
+
+# ingest + consumer 放在同一个 dev 会话里才共享本地队列：
+npx wrangler dev -c workers/ingest/wrangler.toml -c workers/consumer/wrangler.toml \
+  --persist-to .wrangler/dev --port 8788 --var HMAC_KEY:dev-key
+
+# console（可以开另一个终端——但同一 persist 目录不要同时跑多个 dev 会话）：
+npx wrangler dev -c workers/console/wrangler.toml --persist-to .wrangler/dev \
+  --port 8790 --var HMAC_KEY:dev-key --var ADMIN_EMAILS:you@example.com \
+  --var GOOGLE_CLIENT_ID:... --var GOOGLE_CLIENT_SECRET:...
+
+# 本地触发每小时 rollup：
+npx wrangler dev -c workers/cron/wrangler.toml --persist-to .wrangler/dev \
+  --port 8791 --test-scheduled
+curl "http://localhost:8791/__scheduled?cron=5+*+*+*+*"
+```
+
+测试页面的嵌入代码里写 `data-api="http://localhost:8788"`。
+
+## 更新已有部署
+
+```bash
+git pull
+npm install                   # 从你的 config 重新生成 config.gen.ts
+npm run db:migrate:remote     # 应用新迁移（没有就是空操作）
+npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
+npm run deploy:all            # ingest + consumer + api + console + cron
+npm run deploy:proxy          # 仅当你用了第一方反代
+```
+
+本次升级需要注意：
+
+- **必须先跑迁移，再部署 worker。** 这是本次唯一对顺序有要求的一步。事件分区会自我
+  修复（consumer 和每小时 cron 会自动补列），但 `sessions.had_pointer` 只能靠迁移
+  0021——先部署 consumer 的话，在迁移落地之前每一次会话写入都会失败。
+- **迁移 0016–0021** 用上面的命令应用即可：渠道 + 网页指标 + 公开令牌、行为信号列、
+  传输层指纹、保存的漏斗、删除两个从未被读取的 `visitor_profiles` 索引，以及指针/
+  滚动拆分。旧的月分区不需要手动 `ALTER TABLE`。
+- **交互信号从一个变成了两个。** `had_interaction` 在 mousemove / touchstart /
+  scroll / keydown 任意一个上触发——而滚动对无头爬虫是免费的，它们为了触发懒加载
+  必然会滚。在 11 个生产站点上实测：被判为 *bot* 的会话里有 12–56% 带着"交互"标记，
+  而被判为 crawler 的会话（根本不执行 JS）接近 0%；在受攻击最严重的站点上，suspect
+  桶看起来比 clean 桶还活跃。现在 `had_pointer` 只记录指针/键盘，零交互标记和广告
+  防护的误伤率都改读它。预期效果：误伤率大幅下降，*balanced* 档的拦截率上升——在参考
+  站点上，balanced 从「拦截 57%、表面误伤 28%」变成「拦截 85%、误伤 0.5%」。
+- **重新构建并复制 `f.js`。** 指针信号来自 loader；在它铺开之前（见下文）
+  `had_pointer` 是 NULL，读取方会当作"未知"退回旧口径。过渡期不会误判。
+- **两个新检测信号。** `UNIDENTIFIED_DESKTOP`（桌面设备但 UA 里既没有已知浏览器
+  标识、也认不出操作系统——在 10 个站点的健康流量里占 0.1%，在被抓取的站点上占
+  29.9%），以及一个「一次性农场」检测器：按 /24、ASN 和传输层指纹聚类，既不需要
+  浏览器指纹，也不需要预先存在的 bot 标签。两者都由 `config.example.toml` 控制，把
+  新增的 `[weights] unidentified_desktop` 和 `[population] oneshot_*` 复制进你的
+  `config.local.toml` 即可调整。
+- **会话时长封顶一天。** 后台标签页会持续发送 `page_pulse`，不断刷新
+  `last_active_at`，导致会话永远不过期；生产上出现过单个会话长达 4.3 天和 7.4 天，
+  把某个站点的平均时长拉到 35 分钟（而访问时长只有 4 分钟）。新写入已封顶。清理历史
+  数据：`UPDATE sessions SET duration_ms = 86400000 WHERE duration_ms > 86400000;`
+- **保留策略有三个窗口**（`pulse_events_days`、`bot_events_days`、
+  `profiles_idle_days`）。从 `config.example.toml` 复制进你的 `config.local.toml`；
+  没复制之前按内置默认值执行。清理是分批的，所以一个几个月没清理过的库会在之后几次
+  每日任务里逐步降下来，而不是一次到位。
+- **所有 worker 都要重新部署。** 四轮数据库开销优化分布在 `cron`、`api` 和 `console`
+  上：每小时 rollup 最重的两条语句（占全部数据库时间约 72%）、两个只写不读的索引和
+  每小时重算一个已定稿的日期、每日任务的窗口扫描拿到可用索引（`SCAN` → `SEARCH`，
+  其中一条语句耗时 12.2 秒）、以及仪表盘实时查询从两次扫描合并成一次。计算结果不变，
+  无需回填。
+
+两个最容易踩的坑：
+
+- **部署前一定要重新生成 config。** 新的信号权重和阈值段只有在 `shared/config.gen.ts`
+  重新生成后才生效（`npm install` 会做，或 `npm run config:gen`）。漏了这步，新增的
+  检测信号会静默地按 0 分计。
+- **`f.js` 的改动约 1 小时内到达浏览器。** loader 用的是有界、可回源刷新的缓存
+  （`max-age=3600, stale-while-revalidate`），所以重建的 `f.js` 会自动传播到已嵌入的
+  站点。服务端改动（ingest 打分、API、仪表盘、cron）部署后**立即**生效。想让 SDK
+  立刻全量切，在 Cloudflare 面板 purge `/f.js` 即可。

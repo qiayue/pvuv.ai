@@ -70,7 +70,7 @@ section structure aligned across languages so they can be cross-referenced.
 ## Licensing of contributions
 
 By contributing, you agree that your contributions are licensed under the
-project's [AGPL-3.0](./LICENSE). Only submit code you have the right to
+project's [MIT License](./LICENSE). Only submit code you have the right to
 contribute.
 
 ## Code of conduct

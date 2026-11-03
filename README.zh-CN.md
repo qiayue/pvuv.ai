@@ -1,16 +1,32 @@
 # pvuv.ai
 
-**自托管、隐私友好的网站统计，内置虚假流量识别与广告防护 —— 跑在 Cloudflare Workers + D1 上。**
+**注重隐私的网站统计,内置无效流量识别与广告防护。可以直接用官方托管服务,也可以完全自己部署在 Cloudflare 上。**
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](./LICENSE)
-[![Status: early development](https://img.shields.io/badge/status-early%20development-orange.svg)](#路线图)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-blue.svg)](./CHANGELOG.md)
 [![Runs on Cloudflare](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020.svg)](https://workers.cloudflare.com/)
 
 > English: [`README.md`](./README.md) · 完整构建规格：[`PROJECT_PLAN.zh-CN.md`](./PROJECT_PLAN.zh-CN.md)
 
-pvuv.ai 是一个自己部署在 Cloudflare 边缘上的轻量统计平台。它不止统计 PV/UV，还为每一次访问打真实性分数，识别只在群体维度才暴露的虚假流量，并可以让广告代码只在判定为可信的流量上加载——帮助保护广告账号免受虚假流量牵连。
+pvuv.ai 是一个跑在 Cloudflare 边缘的轻量统计平台。它不只统计 PV/UV,还会给每一次访问打真实性分数,识别只有在聚合层面才会暴露的无效流量,并且可以在判定流量可信时才加载广告代码——帮助保护广告账号免受无效流量牵连。
 
-> **状态**：本仓库正在积极开发中。[路线图](#路线图)跟踪首个可部署里程碑（M1）的进度。正式打 tag 前，接口与表结构可能变动。
+## 两种使用方式
+
+**拿不准?先用托管版。** 之后随时可以转成自部署——是同一个产品,唯一要改的只是站点上的那段代码。
+
+| | **托管版 —— [pvuv.ai](https://pvuv.ai)** | **自部署 —— 本仓库** |
+|---|---|---|
+| 怎么开始 | 谷歌登录,贴上代码 | 4 条命令,约 10 分钟 |
+| 需要准备 | 无 | Cloudflare 账号(Workers 付费版 $5/月)+ 一个已托管在上面的域名 |
+| 升级与运维 | 我们负责 | 你自己 `git pull` 后重新部署 |
+| 数据在哪 | 在我们的服务器上 | **只在你自己的 Cloudflare 账号里**,不经过任何第三方 |
+| 调整检测策略 | 使用产品默认值 | 每一个信号权重和阈值都可以自己改 |
+| 许可协议 | —— | MIT:随便用、随便改、可商用,没有附加条件 |
+
+→ **托管版:** 打开 [pvuv.ai](https://pvuv.ai) 用谷歌登录即可,本文其余部分可以跳过。
+→ **自部署:** 继续往下读,然后从[开始之前](#开始之前)入手。
+
+> **状态**：v0.1.0 是首个正式开源版本，详见 [`CHANGELOG.md`](./CHANGELOG.md)。目前仍处于 1.0 之前：小版本之间接口与表结构仍可能变动，每次表结构变更都会以 D1 迁移发布，并在 [`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md) 中附升级说明。
 
 ---
 
@@ -42,6 +58,12 @@ pvuv.ai 是一个自己部署在 Cloudflare 边缘上的轻量统计平台。它
 **AI 分析（可选）**
 - 定时与按需报告：*数据异动 → 归因判断 → 可执行建议*
 
+**默认开放**
+- 只读 REST API、让你自己的 Chatbot 查询流量的 **MCP 服务器**、以及 **CLI**——三者共用同一个可限权、可吊销的令牌（[`docs/API.md`](./docs/API.md)）
+- 控制台支持 7 种语言（English、中文、日本語、한국어、Deutsch、Français、Español），前端即时切换
+- 一键导出仪表盘展示的全部数据（JSON）
+- 可选的爬虫分类（搜索引擎 / AI 训练 / SEO / 广告验证），来自导入的公开爬虫目录
+
 ## 架构
 
 ```
@@ -62,44 +84,45 @@ pvuv.ai 是一个自己部署在 Cloudflare 边缘上的轻量统计平台。它
 
 Cloudflare **Workers**（ingest、consumer、api、console、cron）· **D1**（SQLite，事件按月分表）· **Queues**（削峰）· **KV**（黑名单、配置缓存）· **Cron Triggers**（聚合、批量分析）· 可选 **R2**（归档/静态）。无外部数据库，无需自己运维服务器。
 
-## 快速开始
+## 开始之前
 
-> 下面命令描述的是目标部署方式，部分能力会分期落地——见[路线图](#路线图)。
+自部署需要三样东西。**请现在就把三条都确认一遍**——第三条是最容易踩坑的,
+在这里发现比装到一半才发现要好得多:
 
-**前置**：Node.js 18+、一个 Cloudflare 账号、`wrangler`（`npm i -g wrangler`）。
+- [ ] 本机装有 **Node.js 18+**
+- [ ] **域名已经添加到 Cloudflare**(任意套餐即可)。不需要把网站搬过去,
+      只要域名的 DNS 托管在 Cloudflare 就行
+- [ ] **Workers 付费套餐 —— 每月 $5**。这条无法绕过:数据接收链路用到了
+      Cloudflare Queues,免费套餐不包含它
+
+其余的一切——数据库、KV、队列、DNS 记录、TLS 证书——都会自动创建。
+
+> 只是想先试试?[托管版](https://pvuv.ai)这三样都不需要。
+
+## 安装
+
+**完整分步教程：[`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)**（English: [`DEPLOY.md`](./DEPLOY.md)）。简版：
 
 ```bash
-# 1. 克隆
-git clone https://github.com/qiayue/pvuv.ai.git
-cd pvuv.ai
+git clone https://github.com/qiayue/pvuv.ai.git && cd pvuv.ai
 npm install
-
-# 2. 创建 Cloudflare 资源
-wrangler d1 create pvuv
-wrangler kv namespace create BLOCKLIST
-wrangler kv namespace create SITE_CONFIG
-wrangler queues create INGEST_QUEUE
-
-# 3. 配置 —— 复制占位配置并填入你的 ID（切勿提交真实 ID）
-cp config.example.toml config.local.toml     # 评分权重/阈值（已 gitignore）
-#   然后把第 2 步得到的 D1/KV/Queue ID 填进各 workers/*/wrangler.toml
-
-# 4. 设置密钥（绝不写进任何文件）
-wrangler secret put HMAC_KEY                  # Cookie 签名 / 判定完整性
-wrangler secret put AI_API_KEY                # 可选，AI 分析用
-
-# 5. 建表
-wrangler d1 execute pvuv --file=./shared/schema.sql
-
-# 6. 部署 Workers
-wrangler deploy --config workers/ingest/wrangler.toml
-wrangler deploy --config workers/consumer/wrangler.toml
-wrangler deploy --config workers/api/wrangler.toml
-wrangler deploy --config workers/console/wrangler.toml
-wrangler deploy --config workers/cron/wrangler.toml
+npx wrangler login
+npm run setup
 ```
 
-在 Cloudflare 后台（或用 routes）**绑定域名**：`js` + `in` → ingest/静态，`api` → api Worker，主域 → 控制台。
+`npm run setup`会完成其余全部工作:创建 D1 数据库、KV 命名空间和队列,填好所有配置占位符,把路由指向你的域名,应用数据库迁移,构建 SDK 并部署全部 5 个 worker。**可以重复运行**——已完成的步骤会跳过,已配置好的文件不会被覆盖。先加 `--dry-run` 可以完整预览它将要做什么。
+
+域名只在开头询问一次,随后自动写入所有需要的位置。DNS 记录与证书由 Cloudflare 自定义域自动签发,所以**唯一无法自动化**的只剩创建 Google/GitHub OAuth 应用(控制台仅支持 OAuth 登录)。脚本最后会打印这一步,并已填好你的回调 URL;[`DEPLOY.md`](./DEPLOY.md) 有分步说明。
+
+前提:域名需已添加到你的 Cloudflare 账号,且各主机名未被占用——worker 会完整接管它所属的主机名。
+
+非交互方式(CI、脚本化安装):
+
+```bash
+npm run setup -- --domain example.com --admin you@example.com
+```
+
+然后在控制台域名登录、注册站点、把生成的嵌入代码贴到你的网站。DNS 配置、验证步骤和排障：[`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)。
 
 ## 接入一个站点
 
@@ -112,11 +135,102 @@ wrangler deploy --config workers/cron/wrangler.toml
         data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
 ```
 
-可选属性：`data-spa="true"`（SPA 路由追踪）、`data-api`（自建反代地址，见 [`PROJECT_PLAN.zh-CN.md` §12](./PROJECT_PLAN.zh-CN.md)）、`data-exclude="/admin/*"`、`data-sensors="off"`（关闭移动端传感器信号，供合规）。
+可选属性：`data-spa="true"`（SPA 路由追踪）、`data-api`（上报地址覆盖 / 自建反代，见 [`PROJECT_PLAN.zh-CN.md` §12](./PROJECT_PLAN.zh-CN.md)）、`data-exclude="/admin/*"`、`data-sensors="off"`（关闭移动端传感器信号，供合规）。
+
+> **自部署必须设置 `data-api`** 指向你自己的上报域名（如 `data-api="https://in.example.com"`）——SDK 内置默认值是参考域名。控制台生成的嵌入代码会自动带上适配你部署的值。
+
+## 上手第一周
+
+广告防护**默认是关闭的**,这是刻意设计。误拦真人的广告是真金白银的损失,
+所以产品的思路是:先看清楚,再决定拦不拦。
+
+**第 1 天 —— 确认数据进来了。** 打开控制台点「Self-check」,然后一边访问自己的
+页面,一边看站点面板里的实时那一行。
+
+**第 1–7 天 —— 只看,不动。** 在改任何设置之前,先摸清**你自己站点**的正常水位:
+
+- **流量质量**面板显示 clean / suspect / bot / crawler 的构成,以及到底是哪些
+  检测信号被触发了。
+- **流量健康条**显示每个受监控的比例,以及它离告警线还有多远——数字在爬升时
+  你能提前看到,而不是等它出事。
+- 图表下方的**异常流量色带**告诉你坏流量是**一次性爆发**还是**全天弥漫**,
+  这两者的应对方式完全不同。
+
+**第 2 周 —— 预演广告防护会拦掉什么。**「广告防护」面板会按档位估算:会拦掉多少
+浏览量、以及由此产生的误伤率——全部基于**你自己**已记录的流量。**不需要改任何
+设置**就能看到,只要有数据就可以看。
+
+**然后再启用。** 挑一个你能接受的误伤率档位——通常是 `balanced`——打开即可。
+任何时候都可以改回 `off`。
+
+> **影子模式**是针对另一种操作顺序的保护:如果你在**建站时就开启了防护**,
+> 它会在最初 `adguard.shadow_days` 天(默认 7 天)照常出广告、只记录判定,
+> 之后才开始真正拦截。建站时选了 `off` 的站点没有东西可影子——用上面的面板
+> 估算即可。
+
+跑起来之后可以做的事:创建 **API 令牌**,用 Chatbot 或 CLI 查询自己的数据
+([`docs/API.md`](./docs/API.md));如果你的流量有默认值判不准的特点,在
+`config.local.toml` 里调整信号权重。
+
+**熟悉之后的可选项——看见统计脚本看不见的那部分。** 上面所有数字都来自埋点
+脚本,也就是说只统计了**浏览器真正执行了 JavaScript** 的访客。AI 爬虫和采集器
+抓走 HTML 就走,从不执行脚本,所以它们天然就不在里面——这不是识别得准不准的
+问题,而是那次请求压根没上报过。但 Cloudflare 全都数到了。在 ⚙ 设置里填一个
+**只读的 Cloudflare API 令牌**,每天的定时任务就会把这些请求数拉回来,面板上
+直接给出差额:
+
+```
+边缘 HTML 请求   12,480    ← Cloudflare 实际服务的
+浏览器 PV         2,773    ← 脚本上报的
+差额              9,707    ← 抓了 HTML,但从没执行 JS
+```
+
+不填也完全没问题,一切照旧,面板隐藏而已。配置只需要勾两个只读权限、粘贴一次:
+[DEPLOY.zh-CN.md → Cloudflare 边缘请求](./DEPLOY.zh-CN.md#cloudflare-边缘请求可选进阶)。
 
 ## 配置
 
 评分权重、判定阈值、黑名单都是**可调且部署私有**的。`config.example.toml` 提供示例默认值；复制为 `config.local.toml`（已 gitignore）自行私有调优。引擎从 config 读取权重、代码不硬编码，因此可以在不暴露给刷手的前提下调整检测。详见 [`PROJECT_PLAN.zh-CN.md` §21](./PROJECT_PLAN.zh-CN.md)。
+
+## API、MCP 服务器与 CLI
+
+随处读取你的数据:面向集成的 REST API、让你自己的 Chatbot 回答流量问题的 **MCP 服务器**,以及适合终端和定时任务的 **CLI**。三者均为只读,共用同一套凭证。
+
+在控制台(⚙ → API 令牌)创建个人 API 令牌——可限定到单个站点或全部站点,可单独吊销,仅以 HMAC 形式存储。
+
+```bash
+export PVUV_API_URL=https://api.pvuv.ai
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+MCP 服务器和 CLI 都是零依赖单文件,不会在持有令牌的地方引入额外依赖。完整说明见 [`docs/API.md`](./docs/API.md)。
+
+## 外部排名 API（可选）
+
+外部排名/评分系统可以用服务端 API token 一次拉取跨站点、基于清洗流量的榜单：
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.pvuv.ai/v1/ranking?period=30d"
+```
+
+返回每个活跃站点的 clean（已排除 bot/crawler/suspect）浏览量，并拆分为**内部**（本部署内另一站点带来的互访）与**外部**流量。默认 `score` 用的是外部 clean 浏览量——所以你自己站点之间的互访不会抬高排名；所有字段都暴露出来，外部系统可自行套用公式。站长也能在 console 里看到「Site ranking」表格。详见 [`PROJECT_PLAN.zh-CN.md` §14](./PROJECT_PLAN.zh-CN.md)。
+
+## 版本（开放内核）
+
+pvuv.ai 采用**开放内核（open core）**模式——两者怎么选见[两种使用方式](#两种使用方式)：
+
+- **本仓库——自托管版——采用 MIT 许可**。随便用、随便改、可商用、可闭源集成进你自己的产品。没有 copyleft、没有署名要求、没有任何附加条件。**无所顾忌地用。**
+- **托管的多租户 SaaS 版**（托管账号、计费、组织隔离、技术支持）由作者单独提供，**不在本仓库内**。两者不重叠、不冲突——开源版本身就是完整可用的。
+
+## 署名（可选）
+
+自带的默认首页页脚有一个小小的「Powered by pvuv.ai」链接指回项目——**仅出现在部署实例自己的首页**（后台和内页没有链接，也绝不会向被统计的网站注入任何内容）。这只是个**善意的默认，不是义务**：MIT 不作任何强制。你想支持项目就留着，不想要就随手删掉——放一个你自己的 `workers/console/public/home.html`（原样输出、不再追加任何页脚），或直接改默认页即可。当然，来 GitHub 点个 star 我们会很开心。🙏
+
+> 默认首页刻意做得非常简单——它*就是*为了让你自定义的。成千上万个部署共用同一套落地页文案，只会在搜索引擎里制造重复内容。
 
 ## 隐私与合规
 
@@ -148,4 +262,4 @@ pvuv.ai 以数据最小化为设计原则：
 
 ## 许可证
 
-[GNU AGPL-3.0](./LICENSE)。你可以自由自托管和修改，但若以网络服务形式运行修改版，须向用户提供其源码。这既保持项目开放，又防止闭源商业分叉。
+[MIT](./LICENSE)。想怎么用就怎么用——自托管、修改、再分发、商用都行，不必开源你的改动，也没有署名要求。作者单独提供的托管多租户 SaaS 版按其自身条款授权，不在本仓库覆盖范围内。

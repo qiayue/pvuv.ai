@@ -1,0 +1,999 @@
+/**
+ * pvuv.ai console worker — pvuv.ai apex (PROJECT_PLAN.md §11, §18.6).
+ *
+ * Same-origin JSON API for the plain-HTML frontend in public/ (§19: no
+ * framework, no <meta name="keywords">), static pages via ASSETS:
+ *
+ *   POST /api/login            {email, password}
+ *   POST /api/logout
+ *   GET  /api/me
+ *   GET  /api/sites
+ *   POST /api/sites            {name, domains[], adguard_mode?, adclient?}
+ *   GET  /api/sites/:id/(overview|timeseries|breakdown|quality|traffic)
+ *   GET  /api/sites/:id/visitors/:vid/profile
+ *
+ * Auth: OAuth-only (Google / GitHub). Single-tenant — every email in
+ * ADMIN_EMAILS (a plain var, comma-separated) shares one 'admin' owner and
+ * one site list; non-admin emails are refused. Sessions are HMAC-signed
+ * cookies, re-issued (sliding expiry) on any authenticated API hit. Queries
+ * reuse the api worker's query layer against the same D1.
+ */
+
+import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parseBotDirectory } from '../../../shared/botdir';
+import { createToken } from '../../../shared/tokens';
+import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
+import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
+import { runDiagnostics, probeEvent } from './diagnostics';
+import {
+  isProvider, configuredProviders, oauthStart, oauthCallback,
+  clearStateCookie, OAuthError,
+} from './oauth';
+import { isValidTimezone } from '../../../shared/tz';
+import { zoneForDomains } from '../../../shared/cfedge';
+import { readCfToken, verifyCfToken, CF_TOKEN_KEY, CF_STATUS_KEY } from '../../cron/src/edge';
+import { runRetentionPurge, storageReport } from '../../cron/src/retention';
+import { CONFIG } from '../../../shared/config.gen';
+import { LlmError } from './llm';
+import { generateReport, type ReportLang } from './report';
+
+/** KV key the ingest worker reads the compiled directory from (§6.6). */
+const BOTDIR_KV_KEY = 'botdir:v1';
+
+export interface Env {
+  DB: D1Database;
+  SITE_CONFIG: KVNamespace;
+  ASSETS: Fetcher;
+  /** Secrets via `wrangler secret put` — never in any file. */
+  HMAC_KEY: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  /** Optional fallback LLM key for AI reports (§13). The deployer normally sets
+   *  the key in console settings instead (stored in D1, edited via the UI). */
+  AI_API_KEY?: string;
+  /** Plain vars (workers/console/wrangler.toml [vars]) */
+  ADMIN_EMAILS: string;
+  /** hostname of the ingest worker, for the embed snippet (see wrangler.toml) */
+  INGEST_HOST?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GITHUB_CLIENT_ID?: string;
+  /** locale served at `/`; requests to /<DEFAULT_LANG> 301 there (default 'en') */
+  DEFAULT_LANG?: string;
+}
+
+const SESSION_TTL_MS = 7 * 86400e3;
+const ADMIN_USER_ID = 'admin';
+// The loader is embedded at a fixed, unversioned URL (/f.js), so an in-place
+// upgrade (e.g. a scoring/ad-guard fix) must still reach already-embedded sites.
+// Serve it revalidating, never immutable: fresh for up to SDK_MAX_AGE, then
+// stale-while-revalidate lets an edge serve the cached copy instantly while
+// fetching the new build in the background — so a fix propagates within a
+// bounded window without a per-request round trip.
+const SDK_MAX_AGE = 3600; // 1h browser/edge freshness
+const SDK_SWR = 86400;    // then background-refresh for up to a day
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) {
+      let resp: Response;
+      try {
+        resp = await api(request, env, url);
+      } catch (err) {
+        if (err instanceof ApiError) return json({ error: err.message }, err.status);
+        console.error('console api error', err);
+        return json({ error: 'internal error' }, 500);
+      }
+      // sliding session: any authenticated API hit (which every open console
+      // page makes) re-issues the cookie with a fresh 7-day expiry, so the
+      // session stays alive as long as the dashboard is in use. Skip when the
+      // response already sets a cookie (login / logout / oauth callback).
+      if (!resp.headers.has('set-cookie')) {
+        const user = await verifySession(env.HMAC_KEY, request.headers.get('cookie'));
+        if (user) resp.headers.append('set-cookie', await sessionCookie(env, user));
+      }
+      return resp;
+    }
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      // no lang → always returns a page (custom home or the default template)
+      return (await homepage(request, env)) ?? env.ASSETS.fetch(request);
+    }
+    // localized landing pages: /<lang> → public/home.<lang>.html (with the same
+    // attribution footer). Only a locale-shaped single segment (e.g. /zh,
+    // /ja, /zh-cn) is treated as a candidate; if no such file exists we fall
+    // through to normal asset serving. Language files are gitignored like home.html.
+    const langMatch = url.pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\/?$/);
+    if (langMatch && request.method === 'GET') {
+      const lang = langMatch[1];
+      // the default language lives at `/`, so /<default>[/ ] is canonicalized to
+      // `/` with a 301 (avoids `/` and `/en` serving identical duplicate content).
+      // DEFAULT_LANG (default 'en') lets a non-English-default deployer pick theirs.
+      if (lang === (env.DEFAULT_LANG ?? 'en')) {
+        return Response.redirect(new URL('/' + url.search, url).toString(), 301);
+      }
+      const localized = await homepage(request, env, lang);
+      if (localized) return localized;
+    }
+    // loader script: serve from assets but pin a bounded, revalidating cache
+    // policy we control (Workers Static Assets defaults aren't guaranteed), so
+    // an in-place f.js upgrade propagates predictably to embedded sites.
+    if (url.pathname === '/f.js' && request.method === 'GET') {
+      const asset = await env.ASSETS.fetch(request);
+      if (!asset.ok) return asset;
+      const h = new Headers(asset.headers);
+      h.set('cache-control', `public, max-age=${SDK_MAX_AGE}, stale-while-revalidate=${SDK_SWR}`);
+      h.set('content-type', 'application/javascript; charset=utf-8');
+      return new Response(asset.body, { status: asset.status, headers: h });
+    }
+    return env.ASSETS.fetch(request);
+  },
+} satisfies ExportedHandler<Env>;
+
+// ---------------------------------------------------------------------------
+// homepage: custom full page (public/home.html, gitignored) wins; otherwise
+// the shipped default page rendered with the instance settings. Deployers
+// customize via console settings (name/description) or home.html — never by
+// editing tracked files. The shipped default page carries an optional courtesy
+// "Powered by pvuv.ai" link (MIT — not required); a custom home.html is served
+// verbatim, with nothing injected, so deployers keep full control of their page.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_HOME = {
+  site_name: 'Web analytics',
+  site_description: 'This site runs a self-hosted analytics instance.',
+  primary_domain: '',
+  logo_light: '', // light-colored logo → shown on DARK backgrounds (console/dark theme)
+  logo_dark: '',  // dark-colored logo → shown on LIGHT backgrounds
+  favicon: '',    // favicon url or path
+};
+
+async function homepage(request: Request, env: Env, lang?: string): Promise<Response | null> {
+  const origin = new URL(request.url).origin;
+
+  // full override: workers/console/public/home.html (default) or, for a
+  // localized request, public/home.<lang>.html — both uploaded on deploy if
+  // present locally, and both gitignored so they never enter the public repo.
+  // Served verbatim (MIT: no attribution is forced onto a deployer's own page).
+  const asset = lang ? `/home.${lang}` : '/home';
+  const custom = await env.ASSETS.fetch(new Request(`${origin}${asset}`));
+  if (custom.ok) {
+    return new Response(custom.body, {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    });
+  }
+  // a localized page was requested but no home.<lang>.html exists → let the
+  // caller fall through to normal asset serving (404), rather than the default page.
+  if (lang) return null;
+
+  const s = await instanceSettings(env.DB);
+  const def = await env.ASSETS.fetch(new Request(`${origin}/`));
+  const html = (await def.text())
+    .replaceAll('{{name}}', escapeHtml(s.site_name))
+    .replaceAll('{{description}}', escapeHtml(s.site_description));
+  return new Response(html, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  });
+}
+
+async function instanceSettings(db: D1Database): Promise<typeof DEFAULT_HOME> {
+  const out = { ...DEFAULT_HOME };
+  const keys = Object.keys(DEFAULT_HOME) as (keyof typeof DEFAULT_HOME)[];
+  try {
+    const rows = await db
+      .prepare(`SELECT key, value FROM instance_settings WHERE key IN (${keys.map(() => '?').join(',')})`)
+      .bind(...keys).all<{ key: string; value: string }>();
+    for (const r of rows.results) {
+      if (r.value && (keys as string[]).includes(r.key)) out[r.key as keyof typeof DEFAULT_HOME] = r.value;
+    }
+  } catch {
+    /* table missing (migration not applied yet) → defaults */
+  }
+  return out;
+}
+
+/** AI-report settings from instance_settings (§13). The api_key is included for
+ *  server-side use only — callers must never echo it back to the browser. */
+const AI_KEYS = ['ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key', 'ai_lang'] as const;
+async function aiSettings(db: D1Database): Promise<{ provider: string; base_url: string; model: string; api_key: string; lang: string }> {
+  const out = { provider: '', base_url: '', model: '', api_key: '', lang: 'en' };
+  try {
+    const rows = await db
+      .prepare(`SELECT key, value FROM instance_settings WHERE key IN (${AI_KEYS.map(() => '?').join(',')})`)
+      .bind(...AI_KEYS).all<{ key: string; value: string }>();
+    for (const r of rows.results) {
+      const v = r.value || '';
+      if (r.key === 'ai_provider') out.provider = v;
+      else if (r.key === 'ai_base_url') out.base_url = v;
+      else if (r.key === 'ai_model') out.model = v;
+      else if (r.key === 'ai_api_key') out.api_key = v;
+      else if (r.key === 'ai_lang') out.lang = v || 'en';
+    }
+  } catch {
+    /* table missing (migration not applied yet) → defaults */
+  }
+  return out;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ));
+}
+
+async function api(request: Request, env: Env, url: URL): Promise<Response> {
+  const path = url.pathname;
+
+  // public: homepage text (also used by sites.html to prefill the form)
+  if (request.method === 'GET' && path === '/api/home') {
+    const s = await instanceSettings(env.DB);
+    return json({
+      name: s.site_name, description: s.site_description, primary_domain: s.primary_domain,
+      logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon,
+    });
+  }
+
+  if (request.method === 'POST' && path === '/api/logout') {
+    return json({ ok: true }, 200, serializeCookie(SESSION_COOKIE, '', { maxAgeSeconds: 0, httpOnly: true }));
+  }
+
+  // which login providers this deployment offers (login.html renders buttons)
+  if (request.method === 'GET' && path === '/api/auth/providers') {
+    return json({ providers: configuredProviders(env) });
+  }
+
+  // OAuth: /api/auth/:provider/start → redirect; /callback → set session
+  const authMatch = path.match(/^\/api\/auth\/([a-z]+)\/(start|callback)$/);
+  if (authMatch && request.method === 'GET') {
+    const [, provider, action] = authMatch;
+    if (!isProvider(provider)) return json({ error: 'unknown provider' }, 404);
+    if (action === 'start') return oauthStart(env, provider, url.origin, Date.now());
+    return oauthCallbackHandler(request, env, url, provider);
+  }
+
+  // Read-only PUBLIC dashboard endpoints (no session): the owner enables
+  // sharing per site, which mints sites.public_token; the share link carries
+  // it. Aggregates only — no visitor-level resources are reachable here, and
+  // the whole thing 404s (never 403) so links don't confirm a site exists.
+  const pub = path.match(/^\/api\/public\/([A-Za-z0-9]{4,16})\/([A-Za-z0-9_-]{12,64})\/([a-z_]+)$/);
+  if (pub && request.method === 'GET') {
+    const [, siteId, tok, resource] = pub;
+    const site = await env.DB.prepare('SELECT name, timezone, status, public_token FROM sites WHERE site_id = ?')
+      .bind(siteId).first<{ name: string; timezone: string; status: string; public_token: string | null }>();
+    // timing-safe-ish token compare, same trick as the api worker
+    const match = site?.public_token
+      ? (await hmacSign(env.HMAC_KEY, tok)) === (await hmacSign(env.HMAC_KEY, site.public_token)) : false;
+    if (!site || site.status !== 'active' || !match) throw new ApiError(404, 'not found');
+    const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
+    const q = url.searchParams;
+    let resp: Response | null = null;
+    if (resource === 'meta') resp = json({ name: site.name, timezone: site.timezone });
+    else if (resource === 'overview') resp = json(await overview(env.DB, siteId, period));
+    else if (resource === 'timeseries') resp = json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day'));
+    else if (resource === 'quality') resp = json(await quality(env.DB, siteId, period));
+    else if (resource === 'vitals') resp = json(await vitals(env.DB, siteId, period));
+    else if (resource === 'breakdown') {
+      const dim = q.get('dim') ?? 'page';
+      // aggregate dimensions only — nothing session/visitor-granular
+      if (!['page', 'source', 'channel', 'country', 'device'].includes(dim)) throw new ApiError(400, 'dim not public');
+      resp = json(await breakdown(env.DB, siteId, dim, period, parseInt(q.get('limit') ?? '20', 10)));
+    }
+    if (!resp) throw new ApiError(404, 'not found');
+    // modest shared cache: public pages may be embedded/linked widely
+    resp.headers.set('cache-control', 'public, max-age=60');
+    return resp;
+  }
+
+  // everything below requires a session
+  const user = await verifySession(env.HMAC_KEY, request.headers.get('cookie'));
+  if (!user) throw new ApiError(401, 'auth required');
+
+  if (request.method === 'GET' && path === '/api/me') {
+    return json({
+      user,
+      timezone: await userTimezone(env, user),
+      // the console can't reliably derive this from its own hostname, so it is
+      // deployment config (wrangler.toml [vars] INGEST_HOST)
+      ingest_host: env.INGEST_HOST || '',
+    });
+  }
+
+  // Personal API tokens (§10) — the credential for MCP clients, the CLI and
+  // third-party integrations. The plaintext is returned exactly once, at
+  // creation; afterwards only the prefix is ever shown, because only an HMAC of
+  // it is stored and the original cannot be recovered.
+  if (path === '/api/tokens') {
+    if (request.method === 'GET') {
+      const rows = await env.DB.prepare(`
+        SELECT token_id, name, prefix, site_id, created_at, last_used_at, revoked_at
+        FROM api_tokens WHERE owner_id = ? ORDER BY created_at DESC LIMIT 100
+      `).bind(user).all();
+      return json({ tokens: rows.results });
+    }
+    if (request.method === 'POST') {
+      let body: Record<string, unknown> = {};
+      try { body = await request.json(); } catch { /* name/scope are optional */ }
+      const name = String(body.name ?? '').trim().slice(0, 60) || 'API token';
+      // a site-scoped token must name a site this owner actually holds, so a
+      // scope can never be widened by guessing an id
+      let siteId: string | null = null;
+      if (body.site_id) {
+        siteId = String(body.site_id);
+        const own = await env.DB.prepare('SELECT 1 AS ok FROM sites WHERE site_id = ? AND owner_id = ?')
+          .bind(siteId, user).first<{ ok: number }>();
+        if (!own) return json({ error: 'not your site' }, 403);
+      }
+      const { plaintext, row } = await createToken(env.HMAC_KEY, user, name, siteId);
+      await env.DB.prepare(`
+        INSERT INTO api_tokens (token_id, owner_id, name, token_hash, prefix, site_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(row.token_id, row.owner_id, row.name, row.token_hash, row.prefix, row.site_id, row.created_at).run();
+      return json({ token: plaintext, token_id: row.token_id, name: row.name, prefix: row.prefix, site_id: row.site_id, created_at: row.created_at });
+    }
+    if (request.method === 'DELETE') {
+      const id = url.searchParams.get('id');
+      if (!id) return json({ error: 'id required' }, 400);
+      // revoke rather than delete: the row stays as an audit trail, and the
+      // UNIQUE hash index keeps the credential permanently unusable
+      const r = await env.DB.prepare('UPDATE api_tokens SET revoked_at = ? WHERE token_id = ? AND owner_id = ? AND revoked_at IS NULL')
+        .bind(Date.now(), id, user).run();
+      return json({ ok: true, revoked: r.meta.changes ?? 0 });
+    }
+  }
+
+  // cross-site clean-traffic ranking (§14), scoped to this owner's sites.
+  if (request.method === 'GET' && path === '/api/ranking') {
+    const period = parsePeriod(url.searchParams.get('period'), 'UTC');
+    return json(await ranking(env.DB, period, 200, user));
+  }
+
+  // user default timezone for new sites (users.timezone)
+  if (request.method === 'POST' && path === '/api/settings/timezone') {
+    let tzBody: { timezone?: string };
+    try { tzBody = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    const tz = (tzBody.timezone ?? '').trim();
+    if (!isValidTimezone(tz)) return json({ error: 'invalid timezone' }, 400);
+    // upsert so it works even if the users row isn't present yet
+    await env.DB.prepare(`
+      INSERT INTO users (user_id, timezone, created_at) VALUES (?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET timezone = excluded.timezone
+    `).bind(user, tz, Date.now()).run();
+    return json({ ok: true, timezone: tz });
+  }
+
+  // instance settings: branding (name/description/domain/logos/favicon). Only
+  // keys present in the body are updated, so partial saves don't wipe the rest.
+  if (request.method === 'POST' && path === '/api/settings') {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: 'bad json' }, 400);
+    }
+    const fields: Array<[string, string, number]> = [
+      ['name', 'site_name', 100], ['description', 'site_description', 500],
+      ['primary_domain', 'primary_domain', 120],
+      ['logo_light', 'logo_light', 500], ['logo_dark', 'logo_dark', 500],
+      ['favicon', 'favicon', 500],
+    ];
+    const entries: [string, string][] = [];
+    for (const [bodyKey, storeKey, cap] of fields) {
+      if (body[bodyKey] !== undefined) entries.push([storeKey, String(body[bodyKey]).trim().slice(0, cap)]);
+    }
+    if (entries.length === 0) return json({ ok: true });
+    const now = Date.now();
+    await env.DB.batch(entries.map(([k, v]) => env.DB.prepare(`
+      INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).bind(k, v, now)));
+    return json({ ok: true });
+  }
+
+  // AI analysis reports (§13): provider/base-url/model/language + API key. The
+  // key is stored in D1 (the deployer's own database) and NEVER returned to the
+  // browser — GET reports only whether one is set (key_set). No secret is
+  // written into a repo file (§21).
+  if (path === '/api/settings/ai') {
+    if (request.method === 'GET') {
+      const ai = await aiSettings(env.DB);
+      return json({
+        provider: ai.provider, base_url: ai.base_url, model: ai.model,
+        lang: ai.lang, key_set: !!(ai.api_key || env.AI_API_KEY),
+      });
+    }
+    if (request.method === 'POST') {
+      let body: Record<string, unknown>;
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const entries: [string, string][] = [];
+      if (body.provider !== undefined) {
+        const p = String(body.provider);
+        if (p !== 'openai' && p !== 'anthropic') return json({ error: 'provider must be openai or anthropic' }, 400);
+        entries.push(['ai_provider', p]);
+      }
+      if (body.base_url !== undefined) entries.push(['ai_base_url', String(body.base_url).trim().slice(0, 300)]);
+      if (body.model !== undefined) entries.push(['ai_model', String(body.model).trim().slice(0, 120)]);
+      if (body.lang !== undefined) entries.push(['ai_lang', String(body.lang) === 'zh' ? 'zh' : 'en']);
+      // api_key: only overwrite when a non-empty value is sent — a blank field
+      // means "keep the existing key", so re-saving the form doesn't wipe it.
+      if (body.api_key !== undefined && String(body.api_key).trim() !== '') {
+        entries.push(['ai_api_key', String(body.api_key).trim().slice(0, 300)]);
+      }
+      if (entries.length === 0) return json({ ok: true });
+      const now = Date.now();
+      await env.DB.batch(entries.map(([k, v]) => env.DB.prepare(`
+        INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).bind(k, v, now)));
+      return json({ ok: true });
+    }
+  }
+
+  // Crawler directory (§6.6): the deployer downloads a public bots-and-agents
+  // catalogue and pastes it here. Parsed into a compact pattern list, stored in
+  // D1 (source of truth, survives KV eviction) and mirrored to KV for the
+  // ingest hot path. GET returns only summary stats, never the whole blob.
+  //
+  // CLASSIFICATION ONLY — an imported directory labels crawler traffic by kind;
+  // it never affects scoring, verdicts, or the ad-guard decision.
+  if (path === '/api/settings/botdir') {
+    if (request.method === 'GET') {
+      const row = await env.DB.prepare('SELECT value, updated_at FROM instance_settings WHERE key = ?')
+        .bind('bot_directory_meta').first<{ value: string; updated_at: number }>();
+      if (!row) return json({ imported: false });
+      try {
+        return json({ imported: true, updated_at: row.updated_at, ...JSON.parse(row.value) });
+      } catch { return json({ imported: false }); }
+    }
+    if (request.method === 'DELETE') {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind('bot_directory'),
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind('bot_directory_meta'),
+      ]);
+      await env.SITE_CONFIG.put(BOTDIR_KV_KEY, '[]');
+      return json({ ok: true, imported: false });
+    }
+    if (request.method === 'POST') {
+      let raw: unknown;
+      try { raw = await request.json(); } catch { return json({ error: 'not valid JSON' }, 400); }
+      const parsed = parseBotDirectory(raw);
+      if (parsed.entries.length === 0) {
+        // the file loaded but nothing was recognisable — say so plainly rather
+        // than storing an empty directory and silently classifying nothing
+        return json({ error: 'no bot entries recognised in that file', skipped: parsed.skipped }, 400);
+      }
+      const meta = {
+        count: parsed.entries.length,
+        skipped: parsed.skipped,
+        categories: parsed.categories,
+        sample: parsed.entries.slice(0, 8).map((e) => ({ name: e.name, category: e.category })),
+      };
+      const now = Date.now();
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+          .bind('bot_directory', JSON.stringify(parsed.entries), now),
+        env.DB.prepare(`INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+          .bind('bot_directory_meta', JSON.stringify(meta), now),
+      ]);
+      await env.SITE_CONFIG.put(BOTDIR_KV_KEY, JSON.stringify(parsed.entries));
+      return json({ ok: true, imported: true, updated_at: now, ...meta });
+    }
+  }
+
+  // Storage & retention (§16): row counts per raw partition + the configured
+  // windows, and a manual "purge now" that runs the same job the daily cron
+  // does. Counts scan the partitions (one COUNT per month), so this is only
+  // fetched when the settings panel opens.
+  if (request.method === 'GET' && path === '/api/storage') {
+    return json(await storageReport(env.DB));
+  }
+  if (request.method === 'POST' && path === '/api/storage/purge') {
+    const summary = await runRetentionPurge({ DB: env.DB });
+    return json({ ok: summary.errors.length === 0, ...summary });
+  }
+
+  // Cloudflare edge requests (§6.7) — OPTIONAL, advanced. A read-only
+  // Cloudflare API token lets the daily cron pull how many requests Cloudflare
+  // actually served, which the JS beacon cannot see: anything that fetches HTML
+  // without running JavaScript (AI crawlers, scrapers, feed readers) never
+  // reaches /in at all. Leave it empty and everything else works unchanged.
+  //
+  // The token is stored in the deployer's own D1 and is NEVER returned to the
+  // browser — GET reports only whether one is set, plus the last pull's outcome.
+  if (path === '/api/settings/cfedge') {
+    if (request.method === 'GET') {
+      const [token, statusRow] = await Promise.all([
+        readCfToken(env.DB),
+        env.DB.prepare('SELECT value FROM instance_settings WHERE key = ?')
+          .bind(CF_STATUS_KEY).first<{ value: string }>().catch(() => null),
+      ]);
+      let status: unknown = null;
+      if (statusRow?.value) { try { status = JSON.parse(statusRow.value); } catch { /* keep null */ } }
+      return json({ token_set: !!token, status });
+    }
+    if (request.method === 'DELETE') {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind(CF_TOKEN_KEY),
+        env.DB.prepare('DELETE FROM instance_settings WHERE key = ?').bind(CF_STATUS_KEY),
+      ]);
+      return json({ ok: true, token_set: false });
+    }
+    if (request.method === 'POST') {
+      let body: Record<string, unknown>;
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const token = String(body.token ?? '').trim();
+      // a blank field means "re-check the saved token", so there must be one
+      const effective = token || (await readCfToken(env.DB));
+      if (!effective) return json({ error: 'paste a Cloudflare API token first' }, 400);
+      // Verify BEFORE storing. A token that can't list zones will never produce
+      // data, and finding that out days later via an empty panel is a bad trade
+      // for one round trip now.
+      let zones;
+      try {
+        ({ zones } = await verifyCfToken(effective));
+      } catch (err) {
+        return json({ error: err instanceof Error ? err.message : 'token check failed' }, 400);
+      }
+      if (token) {
+        await env.DB.prepare(`
+          INSERT INTO instance_settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        `).bind(CF_TOKEN_KEY, token.slice(0, 200), Date.now()).run();
+      }
+      // which of this owner's sites the token can actually cover — the answer
+      // the deployer needs, since a token scoped to the wrong zones looks
+      // identical to a working one until the first pull comes back empty
+      const rows = await env.DB.prepare(
+        "SELECT site_id, name, allowed_domains FROM sites WHERE owner_id = ? AND status = 'active'",
+      ).bind(user).all<{ site_id: string; name: string; allowed_domains: string }>();
+      const matches = rows.results.map((r) => {
+        let domains: string[] = [];
+        try { domains = JSON.parse(r.allowed_domains); } catch { /* malformed → no match */ }
+        const z = zoneForDomains(zones, Array.isArray(domains) ? domains : []);
+        return { site_id: r.site_id, name: r.name, zone: z?.name ?? null };
+      });
+      return json({ ok: true, token_set: true, zones: zones.length, sites: matches });
+    }
+  }
+
+  // --- self-check (health.html) ------------------------------------------
+  if (request.method === 'GET' && path === '/api/diagnostics') {
+    return json({ checks: await runDiagnostics(env) });
+  }
+  // ensure a dedicated self-test site whose allowed_domains = this console's
+  // host, so a browser test event from health.html passes the ingest whitelist
+  if (request.method === 'POST' && path === '/api/diagnostics/selftest-site') {
+    // the browser reports its own hostname — the test event's Origin will be
+    // this exact host, so the self-test site must be whitelisted for it
+    // (deriving it from request.url is unreliable: wrangler dev reports the
+    // route pattern host, not the address the browser actually used)
+    let reqHost = '';
+    try { reqHost = ((await request.json()) as { host?: string }).host ?? ''; } catch { /* body optional */ }
+    const host = /^[a-z0-9.-]+$/i.test(reqHost) ? reqHost.toLowerCase() : new URL(request.url).hostname;
+    const existing = await env.DB.prepare(
+      "SELECT site_id FROM sites WHERE owner_id = ? AND name = '__pvuv_selftest'",
+    ).bind(user).first<{ site_id: string }>();
+    let siteId = existing?.site_id;
+    if (siteId) {
+      // refresh the whitelist in case the console host changed since last run
+      await env.DB.prepare('UPDATE sites SET allowed_domains = ? WHERE site_id = ?')
+        .bind(JSON.stringify([host]), siteId).run();
+    } else {
+      siteId = generateSiteId();
+      await env.DB.prepare(`
+        INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, created_at)
+        VALUES (?, '__pvuv_selftest', ?, ?, 'balanced', ?)
+      `).bind(siteId, user, JSON.stringify([host]), Date.now()).run();
+    }
+    // (re)write the KV cache so ingest sees it immediately
+    await env.SITE_CONFIG.put(`site:${siteId}`, JSON.stringify({
+      site_id: siteId, allowed_domains: [host], adguard_mode: 'balanced', adclient: null, status: 'active',
+    }), { expirationTtl: 300 });
+    return json({ site_id: siteId, host });
+  }
+  if (request.method === 'GET' && path === '/api/diagnostics/probe') {
+    const siteId = url.searchParams.get('site') ?? '';
+    const vid = url.searchParams.get('vid') ?? '';
+    if (!/^[A-Za-z0-9]{4,16}$/.test(siteId) || !vid) return json({ error: 'bad params' }, 400);
+    const owns = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!owns || owns.owner_id !== user) throw new ApiError(403, 'not your site');
+    return json(await probeEvent(env, siteId, vid, Date.now()));
+  }
+
+  // one batched row per site for the site grid (see sitesSummary): the list used
+  // to fire one /overview per site, each a whole-period raw scan
+  if (path === '/api/sites/summary' && request.method === 'GET') {
+    const rows = await env.DB.prepare(
+      "SELECT site_id, timezone FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest'",
+    ).bind(user).all<{ site_id: string; timezone: string | null }>();
+    return json(await sitesSummary(env.DB, rows.results, new URL(request.url).searchParams.get('period')));
+  }
+
+  if (path === '/api/sites') {
+    if (request.method === 'GET') {
+      const rows = await env.DB.prepare(
+        "SELECT site_id, name, allowed_domains, adguard_mode, adclient, timezone, created_at, status, shadow_until, public_token, EXISTS(SELECT 1 FROM visitor_profiles vp WHERE vp.site_id = sites.site_id) AS has_data FROM sites WHERE owner_id = ? AND name != '__pvuv_selftest' ORDER BY created_at DESC",
+      ).bind(user).all();
+      return json({ sites: rows.results });
+    }
+    if (request.method === 'POST') return createSite(request, env, user);
+  }
+
+  // public-dashboard sharing: enable mints a fresh random token (also rotates
+  // an existing one), disable clears it — old links die immediately either way.
+  const shareMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/share$/);
+  if (shareMatch && request.method === 'POST') {
+    const siteId = shareMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+    let body: { enable?: boolean };
+    try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    if (body.enable) {
+      const bytes = crypto.getRandomValues(new Uint8Array(18));
+      let raw = '';
+      for (const b of bytes) raw += String.fromCharCode(b);
+      const token = btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      await env.DB.prepare('UPDATE sites SET public_token = ? WHERE site_id = ?').bind(token, siteId).run();
+      return json({ enabled: true, token, url: `${url.origin}/public.html?site=${siteId}&k=${token}` });
+    }
+    await env.DB.prepare('UPDATE sites SET public_token = NULL WHERE site_id = ?').bind(siteId).run();
+    return json({ enabled: false });
+  }
+
+  // end shadow mode early → start enforcing ads immediately (§7)
+  const enforceMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/enforce$/);
+  if (enforceMatch && request.method === 'POST') {
+    const siteId = enforceMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+    await env.DB.prepare('UPDATE sites SET shadow_until = ? WHERE site_id = ?').bind(Date.now(), siteId).run();
+    await env.SITE_CONFIG.delete(`site:${siteId}`); // force ingest to re-read the new shadow_until
+    return json({ ok: true });
+  }
+
+  // ad-protection mode switch (§7.5): change the tier (and optionally the ad
+  // client) after creation. Persists to D1 and invalidates the KV site-config
+  // cache so the gate (/v) re-reads it; the SDK picks up the new mode via /v.
+  const agMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/adguard$/);
+  if (agMatch && request.method === 'POST') {
+    const siteId = agMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+    let body: { mode?: string; adclient?: string };
+    try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    if (!ADGUARD_MODES.has(body.mode ?? '')) return json({ error: 'invalid mode' }, 400);
+    const mode = body.mode!;
+    const sets: string[] = ['adguard_mode = ?'];
+    const binds: unknown[] = [mode];
+    if (body.adclient !== undefined) {
+      const ac = body.adclient && /^ca-pub-\d{6,20}$/.test(body.adclient) ? body.adclient : null;
+      sets.push('adclient = ?'); binds.push(ac);
+    }
+    await env.DB.prepare(`UPDATE sites SET ${sets.join(', ')} WHERE site_id = ?`).bind(...binds, siteId).run();
+    await env.SITE_CONFIG.delete(`site:${siteId}`); // force the gate to re-read the new mode
+    return json({ ok: true, adguard_mode: mode });
+  }
+
+  // AI report generation (§13): explicit POST action, calls the configured LLM
+  // over a factual snapshot and stores the markdown in ai_reports.
+  const reportMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/ai_report$/);
+  if (reportMatch && request.method === 'POST') {
+    const siteId = reportMatch[1];
+    const site = await env.DB.prepare('SELECT owner_id, name, timezone FROM sites WHERE site_id = ?')
+      .bind(siteId).first<{ owner_id: string; name: string; timezone: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+
+    const ai = await aiSettings(env.DB);
+    const key = ai.api_key || env.AI_API_KEY || '';
+    if (ai.provider !== 'openai' && ai.provider !== 'anthropic') {
+      return json({ error: 'AI is not configured — set the provider in settings first.' }, 400);
+    }
+    if (!ai.model || !key) {
+      return json({ error: 'AI is not fully configured — a model name and API key are required.' }, 400);
+    }
+    const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
+    const lang: ReportLang = ai.lang === 'zh' ? 'zh' : 'en';
+    let result: { content: string; snapshot: string };
+    try {
+      result = await generateReport(env.DB, siteId, site.name, period, {
+        provider: ai.provider, baseUrl: ai.base_url, model: ai.model, apiKey: key,
+      }, lang);
+    } catch (e) {
+      if (e instanceof LlmError) return json({ error: `LLM request failed (${e.status}): ${e.message}` }, 502);
+      throw e;
+    }
+    const periodLabel = `${period.start}..${period.end}`;
+    const now = Date.now();
+    await env.DB.prepare(
+      'INSERT INTO ai_reports (site_id, period, kind, content, data_snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(siteId, periodLabel, 'summary', result.content, result.snapshot, now).run();
+    return json({ content: result.content, period: periodLabel, created_at: now });
+  }
+
+  // ── saved funnels (migration 0019). A funnel is a property of the site, not
+  // of one browser: several per site, shared by every admin, and readable by
+  // the API/MCP and the AI report.
+  const funnelsMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/funnels(?:\/([A-Za-z0-9_-]{1,32}))?$/);
+  if (funnelsMatch) {
+    const [, siteId, funnelId] = funnelsMatch;
+    const site = await env.DB.prepare('SELECT owner_id FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+
+    if (request.method === 'GET' && !funnelId) {
+      const rows = await env.DB.prepare(
+        'SELECT funnel_id, name, steps, created_at, updated_at FROM funnels WHERE site_id = ? ORDER BY created_at',
+      ).bind(siteId).all<{ funnel_id: string; name: string; steps: string; created_at: number; updated_at: number }>();
+      return json({ funnels: rows.results.map((r) => ({ ...r, steps: safeSteps(r.steps) })) });
+    }
+    if (request.method === 'POST') {
+      let body: { funnel_id?: string; name?: string; steps?: unknown };
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const steps = parseFunnelSteps(JSON.stringify(body.steps ?? []));
+      if (steps.length < 2) return json({ error: 'a funnel needs 2–8 steps with a value' }, 400);
+      const name = (body.name || '').trim().slice(0, 60) || 'Funnel';
+      const id = (body.funnel_id || funnelId || generateSiteId()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+      if (!id) return json({ error: 'bad funnel id' }, 400);
+      const now = Date.now();
+      await env.DB.prepare(`INSERT INTO funnels (site_id, funnel_id, name, steps, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_id, funnel_id) DO UPDATE SET name = excluded.name, steps = excluded.steps, updated_at = excluded.updated_at`)
+        .bind(siteId, id, name, JSON.stringify(steps), now, now).run();
+      return json({ funnel_id: id, name, steps, updated_at: now });
+    }
+    if (request.method === 'DELETE' && funnelId) {
+      await env.DB.prepare('DELETE FROM funnels WHERE site_id = ? AND funnel_id = ?').bind(siteId, funnelId).run();
+      return json({ ok: true });
+    }
+  }
+
+  // site-scoped queries — reuse the api worker's query layer
+  const m = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/([a-z_]+)(?:\/([^/]+)\/([a-z_]+))?$/);
+  if (m && request.method === 'GET') {
+    const [, siteId, resource, subId, subResource] = m;
+    const site = await env.DB.prepare('SELECT owner_id, timezone FROM sites WHERE site_id = ?').bind(siteId).first<{ owner_id: string; timezone: string }>();
+    if (!site || site.owner_id !== user) throw new ApiError(403, 'not your site');
+
+    // period resolved in the site's own timezone (rollups are keyed on it)
+    const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
+    const q = url.searchParams;
+    const filters = parseFilters(q.get('filters'));
+    if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
+    if (resource === 'overview') return json(await overview(env.DB, siteId, period, filters));
+    if (resource === 'timeseries') return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day', filters));
+    if (resource === 'breakdown') {
+      return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
+    }
+    if (resource === 'quality') return json(await quality(env.DB, siteId, period, filters));
+    if (resource === 'vitals') return json(await vitals(env.DB, siteId, period, filters));
+    if (resource === 'ctit') return json(await conversionTiming(env.DB, siteId, period));
+    if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
+    if (resource === 'edge') return json(await edge(env.DB, siteId, period));
+    if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
+    if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
+    if (resource === 'funnel' || resource === 'funnel_dropoff') {
+      const fsteps = await resolveFunnelSteps(env.DB, siteId, q);
+      if (resource === 'funnel_dropoff') {
+        return json(await funnelDropoff(env.DB, siteId, period, fsteps, parseInt(q.get('step') ?? '0', 10), filters,
+          parseInt(q.get('limit') ?? '50', 10)));
+      }
+      return json(await funnel(env.DB, siteId, period, fsteps, filters, { breakdown: q.get('breakdown') }));
+    }
+    if (resource === 'traffic') {
+      return json(await traffic(env.DB, siteId, period, {
+        verdict: q.get('verdict'),
+        minScore: q.has('min_score') ? parseInt(q.get('min_score')!, 10) : undefined,
+        limit: parseInt(q.get('limit') ?? '50', 10),
+      }, filters));
+    }
+    if (resource === 'visitors' && !subId) {
+      return json(await visitorsList(env.DB, siteId, period, {
+        path: q.get('path'),
+        verdict: q.get('verdict'),
+        limit: parseInt(q.get('limit') ?? '50', 10),
+      }));
+    }
+    if (resource === 'visitors' && subId && subResource === 'profile') {
+      return json(await visitorProfile(env.DB, siteId, subId, period));
+    }
+    // latest stored AI report + whether generation is available
+    if (resource === 'ai_report') {
+      const ai = await aiSettings(env.DB);
+      const row = await env.DB.prepare(
+        'SELECT period, content, created_at FROM ai_reports WHERE site_id = ? ORDER BY created_at DESC LIMIT 1',
+      ).bind(siteId).first<{ period: string; content: string; created_at: number }>();
+      return json({
+        report: row ?? null,
+        configured: !!(ai.provider && ai.model && (ai.api_key || env.AI_API_KEY)),
+      });
+    }
+  }
+
+  throw new ApiError(404, 'not found');
+}
+
+// ---------------------------------------------------------------------------
+// login / session — OAuth only (Google / GitHub); no password login
+// ---------------------------------------------------------------------------
+
+// OAuth callback: verify + exchange, gate by the admin allowlist, issue a
+// session, then redirect back into the console (errors bounce to /login.html).
+async function oauthCallbackHandler(request: Request, env: Env, url: URL, provider: 'google' | 'github'): Promise<Response> {
+  let identity;
+  try {
+    identity = await oauthCallback(env, provider, url, request, Date.now());
+  } catch (e) {
+    const code = e instanceof OAuthError ? e.code : 'oauth_failed';
+    // Log the real cause server-side (never shown to the browser): the provider's
+    // HTTP status / error string is what distinguishes invalid_client vs
+    // redirect_uri_mismatch vs invalid_grant. Visible via `wrangler tail`.
+    console.error('oauth callback failed', provider, code, e instanceof Error ? e.message : e);
+    return redirect('/login.html?error=' + encodeURIComponent(code), clearStateCookie());
+  }
+  // single-tenant: only configured admin emails may sign in (§ open-source
+  // note: this build is single-tenant — all admins share one site list)
+  if (!isAdminEmail(env, identity.email)) {
+    return redirect('/login.html?error=not_admin', clearStateCookie());
+  }
+  const userId = await resolveUser(env, identity.email, identity.name ?? identity.email);
+  const setSession = await sessionCookie(env, userId);
+  // two Set-Cookie headers: clear the oauth state, set the session
+  return new Response(null, {
+    status: 302,
+    headers: [['location', '/sites.html'], ['set-cookie', clearStateCookie()], ['set-cookie', setSession]],
+  });
+}
+
+/** Single-tenant: every admin email maps to the SAME 'admin' owner, so all
+ *  configured admins share one site list. Records who signed in (by email)
+ *  in the users table for reference. */
+async function resolveUser(env: Env, email: string, name: string): Promise<string> {
+  await env.DB.prepare(`
+    INSERT INTO users (user_id, email, name, created_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, name = excluded.name
+  `).bind(ADMIN_USER_ID, email.toLowerCase(), name.slice(0, 100), Date.now()).run();
+  return ADMIN_USER_ID;
+}
+
+/** True when the email is one of the configured admin emails (ADMIN_EMAILS,
+ *  comma-separated). Case-insensitive. */
+function isAdminEmail(env: Env, email: string): boolean {
+  const e = email.toLowerCase();
+  return (env.ADMIN_EMAILS ?? '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    .includes(e);
+}
+
+/** Build the signed session Set-Cookie header (format verified by api/auth.ts). */
+async function sessionCookie(env: Env, userId: string): Promise<string> {
+  const payload = btoa(JSON.stringify({ u: userId, exp: Date.now() + SESSION_TTL_MS }))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  // domain-separated signature (see api/auth.ts verifier) so a signature from
+  // another purpose (e.g. the _pv_v verdict cookie) can never verify as a session
+  const cookie = `${payload}.${await hmacSign(env.HMAC_KEY, `session|${payload}`)}`;
+  return serializeCookie(SESSION_COOKIE, cookie, { maxAgeSeconds: SESSION_TTL_MS / 1000, httpOnly: true, sameSite: 'Lax' });
+}
+
+function redirect(location: string, setCookie?: string): Response {
+  const headers: Record<string, string> = { location };
+  if (setCookie) headers['set-cookie'] = setCookie;
+  return new Response(null, { status: 302, headers });
+}
+
+// ---------------------------------------------------------------------------
+// site registration (§18.6): issue site_id, persist, write-through KV cache
+// ---------------------------------------------------------------------------
+
+const ADGUARD_MODES = new Set(['off', 'loose', 'balanced', 'strict']);
+
+async function createSite(request: Request, env: Env, owner: string): Promise<Response> {
+  let body: { name?: string; domains?: string[]; adguard_mode?: string; adclient?: string; timezone?: string; engaged_seconds?: number };
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'bad json' }, 400);
+  }
+
+  const name = (body.name ?? '').trim().slice(0, 100);
+  const domains = (body.domains ?? [])
+    .map((d) => String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+    .filter((d) => /^[a-z0-9.-]+$/.test(d));
+  if (!name || domains.length === 0) return json({ error: 'name and at least one valid domain required' }, 400);
+
+  const adguardMode = ADGUARD_MODES.has(body.adguard_mode ?? '') ? body.adguard_mode! : 'off';
+  const adclient = body.adclient && /^ca-pub-\d{6,20}$/.test(body.adclient) ? body.adclient : null;
+
+  // timezone is fixed at creation (immutable). Fall back to the user's default,
+  // then UTC. Reject an invalid IANA id rather than silently store a bad tz.
+  let timezone = (body.timezone ?? '').trim();
+  if (!timezone) timezone = await userTimezone(env, owner);
+  if (!isValidTimezone(timezone)) return json({ error: `invalid timezone: ${timezone}` }, 400);
+
+  // GA4 engagement dwell threshold (seconds), set at creation. Clamp to a sane
+  // 1–300s; default 15 when unset/invalid.
+  const engagedSeconds = Number.isFinite(body.engaged_seconds)
+    ? Math.min(Math.max(Math.round(body.engaged_seconds!), 1), 300) : 15;
+
+  // shadow mode (§7): new sites record-only for the first shadow_days before
+  // ads are actually blocked. shadow_until = when enforcement begins.
+  const createdAt = Date.now();
+  const shadowUntil = createdAt + Math.max(0, CONFIG.adguard.shadow_days) * 86_400_000;
+
+  const siteId = generateSiteId();
+  await env.DB.prepare(`
+    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, timezone, engaged_seconds, shadow_until, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, timezone, engagedSeconds, shadowUntil, createdAt).run();
+
+  // write-through KV so ingest sees the new site immediately (§5 whitelist);
+  // shape must match the ingest worker's SiteConfig
+  await env.SITE_CONFIG.put(`site:${siteId}`, JSON.stringify({
+    site_id: siteId,
+    allowed_domains: domains,
+    adguard_mode: adguardMode,
+    adclient,
+    status: 'active',
+    shadow_until: shadowUntil,
+  }), { expirationTtl: 300 });
+
+  return json({ site_id: siteId, name, domains, adguard_mode: adguardMode, adclient, timezone, shadow_until: shadowUntil });
+}
+
+/** The user's default timezone for new sites (users.timezone), fallback UTC. */
+async function userTimezone(env: Env, userId: string): Promise<string> {
+  const row = await env.DB.prepare('SELECT timezone FROM users WHERE user_id = ?').bind(userId).first<{ timezone: string }>();
+  return row?.timezone || 'UTC';
+}
+
+function json(data: unknown, status = 200, setCookie?: string): Response {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (setCookie) headers['set-cookie'] = setCookie;
+  return new Response(JSON.stringify(data), { status, headers });
+}
+
+/** Parse the funnel `steps` param: JSON [{type,value}], capped and validated. */
+function parseFunnelSteps(raw: string | null): FunnelStep[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((s) => s && (s.type === 'page' || s.type === 'event') && typeof s.value === 'string')
+      .slice(0, 8)
+      .map((s) => ({ type: s.type, value: s.value }));
+  } catch { return []; }
+}
+
+/** Stored funnel steps → validated steps (a hand-edited row can't break a query). */
+function safeSteps(raw: string): FunnelStep[] { return parseFunnelSteps(raw); }
+
+/** Funnel steps for a query: an explicit `steps` param, or a saved funnel by id. */
+async function resolveFunnelSteps(db: D1Database, siteId: string, q: URLSearchParams): Promise<FunnelStep[]> {
+  const id = q.get('funnel_id');
+  if (id) {
+    const row = await db.prepare('SELECT steps FROM funnels WHERE site_id = ? AND funnel_id = ?')
+      .bind(siteId, id).first<{ steps: string }>();
+    if (!row) throw new ApiError(404, 'no such funnel');
+    return safeSteps(row.steps);
+  }
+  return parseFunnelSteps(q.get('steps'));
+}
+
+/** Parse the `filters` query param (JSON [{dim,value}]), validated against the
+ *  filterable-dim allowlist and capped. Malformed → no filters. */
+function parseFilters(raw: string | null): Filter[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((f) => f && typeof f.dim === 'string' && typeof f.value === 'string' && FILTERABLE.has(f.dim))
+      .slice(0, 8)
+      .map((f) => {
+        const values = Array.isArray(f.values)
+          ? f.values.filter((v: unknown) => typeof v === 'string').slice(0, 20) as string[] : [];
+        return values.length ? { dim: f.dim, value: f.value, values } : { dim: f.dim, value: f.value };
+      });
+  } catch { return []; }
+}

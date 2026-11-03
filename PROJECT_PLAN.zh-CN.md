@@ -1,7 +1,7 @@
 # pvuv.ai — 自托管网站统计 · 反虚假流量 · 广告防护平台
 
 > **项目规划文档**（交付 Claude Code 用）· v1.1
-> Repo: https://github.com/qiayue/pvuv.ai · License: AGPL-3.0（见 §22）
+> Repo: https://github.com/qiayue/pvuv.ai · License: MIT（见 §22）
 > English version / 英文版（主文档）：[`PROJECT_PLAN.md`](./PROJECT_PLAN.md)
 
 **pvuv.ai** 是一个自托管、隐私友好的网站流量统计平台，跑在 Cloudflare Workers + D1 上。它把全维度流量统计（多站点、多子域、per-page PV/UV、来源、UTM 与全部跟踪参数、跳出率、停留时长、含金额的自定义事件、会话级与用户级归因）、三层虚假流量识别、以及一个可选的广告防护层（判定可信才加载广告代码）叠加在一起。本文件是构建规格说明。
@@ -86,7 +86,7 @@
 - **session_id**：UUID。开新会话条件（任一）：30 分钟无活动 / UTM 变化 / 跨自然日。存 Cookie `_pv_sid` + 最后活动时间戳。
 - **user_id**：`identify()` 后绑定。`identities` 表维护 user↔visitor 映射，实现同一用户多设备多会话合并。
 - **首触归因快照**：首访存 referrer + UTM 于 Cookie `_pv_ft`（永不覆盖）。转化事件同时带首触与末触。
-- **判定状态 Cookie** `_pv_v`：HMAC 签名，存当前 verdict、已看页数、是否交互、上页停留时长，客户端改不了，供 `/v` 复审。
+- **判定状态 Cookie** `_pv_v`：HMAC 签名，存当前 verdict、已看页数、是否交互，客户端改不了，供 `/v` 复审。
 
 ---
 
@@ -215,6 +215,34 @@ Body: JSON（单条或数组；SDK 攒批，≤10 条或每 3 秒发一次）
 
 **示例分档**：0–29 clean｜30–69 suspect｜70+ bot。verified crawler 单独归类。`score_stage` 记录本条分是哪一审给的，支持展示「初审→批量改判」的变化。
 
+### 6.7 Cloudflare 边缘请求（可选，仅观察）
+
+本产品其他所有测量都来自 JS 信标，这带来一个硬性上限：只能上报**浏览器执行了
+JavaScript** 的访客。AI 爬虫、采集器、RSS 阅读器抓走 HTML 就走，从不执行脚本，
+因此永远不会到达 `/in`。这不是「识别得不够准」，而是那次请求根本没被上报过。
+
+但挡在源站前面的 Cloudflare 全都数到了。如果部署者提供一个**只读**的 Cloudflare
+API 令牌（控制台 `/api/settings/cfedge`，存在 `instance_settings`，永不返回给
+浏览器），每天的 cron 会查询 `httpRequestsAdaptiveGroups`——**所有套餐**都可用，
+不像 Logpush/Logpull 是企业版专属——把按天的请求数存入 `rollup_edge_daily`，并把
+Top-N 的 User-Agent 存入 `rollup_edge_agent_daily`。面板据此展示差额：边缘 HTML
+请求数 − 上报的 PV。
+
+刻意保留的约束：
+
+* **仅观察。** 边缘请求数不参与评分、不参与判定、不参与广告防护。请求和访客是两个
+  不同的总体，混在一起会污染产品计算的每一个比率。
+* **可选且完全惰性。** 没配置令牌时，拉取任务只做一次 D1 读取就立刻返回，API 返回
+  `available:false`，面板自动隐藏，绝不会向 Cloudflare 发出任何请求。
+* **只读，且排在每日链条的最后。** 它是唯一依赖第三方 API 的任务，因此放在 rollup、
+  retention、异常检测之后，并单独包了错误捕获，绝不会拖住或弄坏它们。
+* **按站点本地日。** 时间窗用站点自己的本地日（`datetime_geq` / `datetime_lt`），
+  与 `rollup_site_daily` 的主键一致，两边可以直接相减、不需要时区换算。只拉完整的
+  日期；首次运行回溯 14 天，之后每次刷新最近 3 天，让延迟到达的数据自我修正。
+* **报错原样透出。** Cloudflare 的 GraphQL schema 没有版本化，字段可用性还随套餐
+  变化，因此上游报错原文会存进 `instance_settings.cf_edge_status` 并显示在控制台
+  ——权限没给全和令牌不对是两种完全不同的修法。
+
 ### 6.3 会话层（每小时 Cron）
 
 把事件缝合成会话，算会话级特征（页间间隔、路径模式、零交互/无 leave），修正 verdict（`score_stage='session'`）。
@@ -308,6 +336,7 @@ Body: { s, vid, sid, x{...}, state(来自签名Cookie) }
 
 - **原始层**：`events_YYYYMM` 按月分表；`sessions`；`identities`；`visitor_profiles`。
 - **聚合层**：`rollup_page_daily`、`rollup_source_daily`、`rollup_site_daily`。面板 95% 查聚合表。
+- **外部层（可选）**：`rollup_edge_daily`、`rollup_edge_agent_daily`——Cloudflare 边缘请求数（§6.7）。只有配置了 Cloudflare API 令牌才会写入，否则为空，且永远不与上面任何一层做 join。
 
 ### 9.2 D1 Schema（M1 建表 DDL）
 
@@ -594,7 +623,7 @@ M1 可略过（建表/留接口即可）：群体批量分析、分布检验、A
 
 ```
 pvuv.ai/
-├── LICENSE                        # AGPL-3.0（见 §22）
+├── LICENSE                        # MIT（见 §22）
 ├── README.md                      # 中英双语，项目介绍/架构/部署
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -648,7 +677,7 @@ pvuv.ai/
 
 ## 22. 开源协议与安全
 
-**License：AGPL-3.0（已确定）。** 理由：允许自托管与自由使用，但任何人（含以 SaaS 形式提供服务者）修改后必须开源其改动——防止他人直接拿本项目做闭源商业竞品，同时不影响自托管用户。Plausible / Umami / PostHog 等「自身也商业化的开源统计工具」均采此协议。
+**License：MIT（开放内核）。** 本仓库的自托管版采用 MIT——随便用、改、再分发、商用，没有 copyleft、也没有署名要求，让采用者无所顾忌地使用。商业化由单独提供的、闭源的托管**多租户 SaaS** 版承担（托管账号、计费、组织隔离、技术支持），不在本仓库内；两者不重叠、不冲突。
 
 **开源前安全清单（务必逐项确认）**：
 - [ ] 仓库无任何密钥（HMAC key、Cloudflare token、AI API key、`.dev.vars`）

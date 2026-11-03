@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sites — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
+<style>
+  .brand img.logo { height: 28px; display: block; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .head h2 { margin: 0; }
+  .toolbar { display: flex; align-items: center; gap: 8px; }
+  .scards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
+  .scard { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; color: inherit; transition: border-color .12s, background .12s, transform .12s; }
+  .scard:hover { border-color: var(--border-3); background: #191d26; text-decoration: none; transform: translateY(-1px); }
+  .scard .name { font-weight: 700; font-size: 15px; }
+  .scard .dom { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
+  .scard .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+  .scard .stat .v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .scard .stat .k { color: var(--muted); font-size: 11px; }
+  .scard .foot { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .scard .foot .spacer { flex: 1; }
+  .panel.form { margin-top: 16px; border-radius: var(--radius-lg); padding: 18px; }
+  .panel .phead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .panel .phead h3 { margin: 0; font-size: 14px; }
+  .panel .close { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .panel .close:hover { color: var(--text); background: var(--surface-2); }
+  form.create { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  form.create label { font-size: 13px; color: var(--muted); display: block; }
+  form.create input, form.create select, form.create textarea { width: 100%; margin-top: 3px; background-color: var(--bg); }
+  form.create button[type="submit"], form.create button.act { grid-column: span 2; justify-self: start; }
+  form.create button { min-height: 32px; padding: 5px 16px; border: 1px solid var(--accent-2); border-radius: var(--radius-sm); background: var(--accent-2); color: #fff; font-weight: 600; }
+  form.create button:hover { background: var(--accent-3); border-color: var(--accent-3); }
+  form.create button[type="button"] { background: var(--surface); border-color: var(--border-2); color: var(--text-2); font-weight: 500; }
+  form.create button[type="button"]:hover { background: var(--surface-2); border-color: var(--border-3); color: var(--text); }
+  form.create button.danger { background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad-text); }
+  form.create .actions { grid-column: span 2; display: flex; gap: 8px; flex-wrap: wrap; }
+  form.create .section-title { grid-column: span 2; margin: 4px 0 -4px; }
+  form.create .section-title strong { font-size: 13px; color: #c7cdd8; }
+  form.create .section-title span { font-size: 12px; color: var(--muted); }
+  form.create .subform { grid-column: span 2; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }
+  .full { grid-column: span 2; }
+  .snippet { display: none; margin-top: 14px; background: #0c1117; border: 1px solid #2b3a2e; border-radius: var(--radius); padding: 14px; }
+  .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; font-family: var(--mono); }
+  .err { color: var(--bad); font-size: 13px; grid-column: span 2; min-height: 1em; margin: 0; }
+  .helpbox { font-size: 12px; color: var(--muted); background: #0c1117; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
+  @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create button[type="submit"], form.create .actions, form.create .section-title, form.create .subform, .err, .full { grid-column: span 1; } }
+  #ranking th { white-space: nowrap; }
+</style>
+</head>
+<body>
+<script src="/i18n.js"></script>
+<header>
+  <span class="brand" id="brand">pvuv.ai</span>
+  <div class="hdr-right">
+    <select id="lang" aria-label="Language"></select>
+    <a href="/health.html" id="selfcheckLink" class="btn" data-i18n="Self-check">Self-check</a>
+    <button id="logout" class="btn" data-i18n="Sign out">Sign out</button>
+  </div>
+</header>
+<main>
+  <div class="head">
+    <h2 data-i18n="Your sites">Your sites</h2>
+    <div class="toolbar">
+      <select id="period" aria-label="Date range">
+        <optgroup label="Rolling" data-i18n-label="Rolling">
+          <option value="24h" selected data-i18n="Last 24 hours">Last 24 hours</option>
+          <option value="today" data-i18n="Today">Today</option>
+          <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
+          <option value="30d" data-i18n="Last 30 days">Last 30 days</option>
+          <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
+        </optgroup>
+        <optgroup label="Calendar" data-i18n-label="Calendar">
+          <option value="yesterday" data-i18n="Yesterday">Yesterday</option>
+          <option value="this_week" data-i18n="This week">This week</option>
+          <option value="last_week" data-i18n="Last week">Last week</option>
+          <option value="this_month" data-i18n="This month">This month</option>
+          <option value="last_month" data-i18n="Last month">Last month</option>
+          <option value="this_year" data-i18n="This year">This year</option>
+        </optgroup>
+      </select>
+      <button class="btn primary" id="btnAdd">＋ <span data-i18n="New site">New site</span></button>
+      <button class="btn icon" id="btnSettings" title="Settings" data-i18n-title="Settings" aria-label="Settings">⚙</button>
+    </div>
+  </div>
+  <div id="sites"><p class="loading" data-i18n="loading…">loading…</p></div>
+
+  <section id="rankingSection" hidden style="margin-top:24px">
+    <div class="head">
+      <h2 data-i18n="Site ranking · clean traffic">Site ranking · clean traffic</h2>
+      <span style="font-size:12px;color:#8b93a1" data-i18n="ranking-help">Ranked by external clean pageviews — bots &amp; crawlers excluded, mutual visits between your own sites don't count.</span>
+    </div>
+    <div class="panel" id="ranking"><p class="loading" data-i18n="loading…">loading…</p></div>
+  </section>
+
+  <datalist id="tzlist"></datalist>
+
+  <section class="panel form" id="addPanel" hidden>
+    <div class="phead"><h3 data-i18n="Add a site">Add a site</h3><button class="close" data-close="addPanel" aria-label="Close">×</button></div>
+    <form class="create" id="create">
+      <div><label><span data-i18n="Site name">Site name</span><input id="name" required placeholder="My Blog" data-i18n-ph="My Blog"></label></div>
+      <div><label><span data-i18n="Domains (comma-separated)">Domains (comma-separated)</span><input id="domains" required placeholder="example.com, www.example.com"></label></div>
+      <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
+        <!-- values are the stored modes; labels say what each BLOCKS, in ascending
+             strength, because "loose" blocks more than "balanced" (see site.html) -->
+        <select id="agmode">
+          <option value="off" data-i18n="Off">Off</option>
+          <option value="balanced" data-i18n="Balanced — bots &amp; crawlers">Balanced — bots &amp; crawlers</option>
+          <option value="loose" data-i18n="Aggressive — everything not clean">Aggressive — everything not clean</option>
+          <option value="strict" data-i18n="Strictest — clean + interacted">Strictest — clean + interacted</option>
+        </select></label></div>
+      <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
+      <div><label><span data-i18n="Timezone">Timezone</span> <span style="color:#e0a34a" data-i18n="(can't be changed later)">(can't be changed later)</span>
+        <input id="tz" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
+      <div><label><span data-i18n="Engagement threshold (seconds)">Engagement threshold (seconds)</span>
+        <input id="engaged" type="number" min="1" max="300" value="15" placeholder="15">
+        <span style="color:#8b93a1;font-size:12px">a visit is "engaged" (not a bounce) after this dwell time. GA4 default 10s; we default 15s.</span>
+      </label></div>
+      <p class="err" id="err"></p>
+      <button type="submit" data-i18n="Create site">Create site</button>
+    </form>
+    <div class="snippet" id="snippet">
+      <b data-i18n="Site created — embed this snippet:">Site created — embed this snippet:</b>
+      <pre id="snippetCode"></pre>
+      <p style="color:#8b93a1;font-size:12px;margin:8px 0 0">
+        data-api must point at your ingest host — adjust it if yours is not
+        in.&lt;your-domain&gt;. See DEPLOY.md.
+      </p>
+    </div>
+  </section>
+
+  <section class="panel form" id="homePanel" hidden>
+    <div class="phead"><h3 data-i18n="Site & branding">Site &amp; branding</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
+    <form class="create" id="homeSettings">
+      <div><label><span data-i18n="Brand name (header + homepage)">Brand name (header + homepage)</span><input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
+      <div><label><span data-i18n="Primary domain">Primary domain</span><input id="hsDomain" maxlength="120" placeholder="www.example.com"></label></div>
+      <div class="full"><label><span data-i18n="Description">Description</span><input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
+      <div><label><span data-i18n="Logo — light (for dark backgrounds)">Logo — light (for dark backgrounds)</span><input id="hsLogoLight" maxlength="500" placeholder="/logo-light.svg or https://…"></label></div>
+      <div><label><span data-i18n="Logo — dark (for light backgrounds)">Logo — dark (for light backgrounds)</span><input id="hsLogoDark" maxlength="500" placeholder="/logo-dark.svg or https://…"></label></div>
+      <div class="full"><label><span data-i18n="Favicon">Favicon</span><input id="hsFavicon" maxlength="500" placeholder="/favicon.ico or https://…"></label></div>
+      <p class="err" id="hsMsg"></p>
+      <button type="submit" data-i18n="Save">Save</button>
+    </form>
+    <p style="margin:14px 0 0;font-size:12.5px;color:#8b93a1;border-top:1px solid #262b36;padding-top:12px">
+      <span data-i18n="logo-help">Logos/favicon can be URLs or files you place in <code>workers/console/public/</code>.
+      The console header (dark) uses the light logo.</span> · <a href="/health.html" style="color:#7ab3ff;text-decoration:none" data-i18n="Run self-check ↗">Run self-check ↗</a>
+    </p>
+    <form class="create" id="tzSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full"><label><span data-i18n="Default timezone for new sites">Default timezone for new sites</span>
+        <input id="tzDefault" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
+      <p class="err" id="tzMsg"></p>
+      <button type="submit" data-i18n="Save default timezone">Save default timezone</button>
+    </form>
+    <form class="create" id="aiSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="AI analysis reports">AI analysis reports</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="ai-help"> — used on each site's dashboard to generate a written summary.</span></div>
+      <div><label><span data-i18n="Provider (API format)">Provider (API format)</span>
+        <select id="aiProvider">
+          <option value="openai" data-i18n="OpenAI-compatible">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+        </select></label></div>
+      <div><label><span data-i18n="Model name">Model name</span><input id="aiModel" maxlength="120" placeholder="gpt-4o-mini / claude-opus-4-8"></label></div>
+      <div class="full"><label><span data-i18n="API base URL">API base URL</span> <span style="color:#8b93a1" data-i18n="(optional — blank uses the provider default)">(optional — blank uses the provider default)</span>
+        <input id="aiBaseUrl" maxlength="300" placeholder="https://api.openai.com/v1 or https://api.anthropic.com"></label></div>
+      <div><label><span data-i18n="API key">API key</span> <span id="aiKeyState" style="color:#8b93a1"></span>
+        <input id="aiKey" type="password" maxlength="300" autocomplete="off" placeholder="sk-…"></label></div>
+      <div><label><span data-i18n="Report language">Report language</span>
+        <select id="aiLang"><option value="en">English</option><option value="zh">中文</option></select></label></div>
+      <p class="err" id="aiMsg"></p>
+      <button type="submit" data-i18n="Save AI settings">Save AI settings</button>
+    </form>
+    <form class="create" id="tokenSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="API tokens">API tokens</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="token-help"> — read-only credentials for the CLI, the MCP server (so your own chatbot can query this data) and other integrations. Shown once at creation.</span></div>
+      <div><label><span data-i18n="Token name">Token name</span><input id="tokName" maxlength="60" placeholder="Claude Desktop"></label></div>
+      <div><label><span data-i18n="Scope">Scope</span>
+        <select id="tokSite"><option value="" data-i18n="All my sites">All my sites</option></select></label></div>
+      <p class="err" id="tokMsg"></p>
+      <div class="full" id="tokNew" hidden style="background:#0c1117;border:1px solid #2b3a2e;border-radius:8px;padding:12px;margin-bottom:4px">
+        <div style="font-size:12px;color:#9ece9e;margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
+        <code id="tokValue" style="font-size:12.5px;word-break:break-all;color:#e6e8eb"></code>
+      </div>
+      <div class="full" id="tokList" style="font-size:12px;color:#8b93a1"></div>
+      <button type="submit" data-i18n="Create token">Create token</button>
+    </form>
+    <form class="create" id="botdirSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Crawler directory">Crawler directory</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="botdir-help"> — optional. Import a public bots-and-agents catalogue to label crawler traffic by kind (search / AI training / SEO / ads). Classification only: it never changes scoring, verdicts or ad protection.</span></div>
+      <div class="full"><label><span data-i18n="Directory JSON file">Directory JSON file</span>
+        <input id="botdirFile" type="file" accept=".json,application/json"></label></div>
+      <div class="full"><label><span data-i18n="…or paste the JSON">…or paste the JSON</span>
+        <textarea id="botdirText" rows="4" style="font:12px/1.4 var(--mono)" placeholder='[{"name":"Googlebot","category":"Search"}, …]'></textarea></label></div>
+      <p class="err" id="botdirMsg"></p>
+      <div class="full" id="botdirState" style="font-size:12px;color:#8b93a1"></div>
+      <div class="actions"><button type="submit" data-i18n="Import directory">Import directory</button>
+      <button type="button" id="botdirClear" class="danger" data-i18n="Remove">Remove</button></div>
+    </form>
+    <form class="create" id="cfSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Cloudflare edge requests">Cloudflare edge requests</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="cf-help"> — optional, advanced. The tracking script only sees visitors whose browser ran JavaScript. AI crawlers and scrapers fetch your HTML and leave, so they never appear. Cloudflare saw all of them: add a read-only API token and the daily job pulls those request counts, so your dashboard can show what the script missed. Leave it empty and nothing changes.</span></div>
+      <div class="full helpbox" style="margin-bottom:4px">
+        <span data-i18n="cf-steps">In the Cloudflare dashboard: <b>My Profile → API Tokens → Create Token → Create Custom Token</b>. Give it exactly these two permissions, both read-only:</span>
+        <div style="margin:6px 0 6px 0;font-family:ui-monospace,monospace;color:#c7cdd8">Zone · Zone · Read<br>Zone · Analytics · Read</div>
+        <span data-i18n="cf-steps2">Under <i>Zone Resources</i> choose the zones your sites are on (or all zones in the account), then create the token and paste it below.</span>
+        <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" style="color:#7ab3ff;text-decoration:none;display:inline-block;margin-top:6px" data-i18n="Open Cloudflare API Tokens ↗">Open Cloudflare API Tokens ↗</a>
+      </div>
+      <div class="full"><label><span data-i18n="Cloudflare API token">Cloudflare API token</span> <span id="cfKeyState" style="color:#8b93a1"></span>
+        <input id="cfToken" type="password" maxlength="200" autocomplete="off" placeholder="••••••••••••••••"></label></div>
+      <p class="err" id="cfMsg"></p>
+      <div class="full" id="cfState" style="font-size:12px;color:#8b93a1"></div>
+      <div class="actions"><button type="submit" data-i18n="Save & check">Save &amp; check</button>
+      <button type="button" id="cfTest" data-i18n="Re-check">Re-check</button>
+      <button type="button" id="cfClear" class="danger" data-i18n="Remove">Remove</button></div>
+    </form>
+    <form class="create" id="storageSettings" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px" onsubmit="return false">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Storage & retention">Storage &amp; retention</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="storage-help"> — raw event rows are what fills the D1 database (roughly 0.8 KB each with indexes; a pageview produces several once behavior heartbeats are counted). Dashboards read from rollups that are kept forever; the windows below only decide how far back visitor journeys and the suspicious-visitor drill-down reach. Set them in <code>config.local.toml [retention]</code>, then redeploy the cron and console workers.</span></div>
+      <div class="full" id="storageState"><p class="loading" data-i18n="loading…">loading…</p></div>
+      <div class="actions"><button type="button" id="storagePurge" data-i18n="Run purge now">Run purge now</button>
+        <button type="button" id="storageRefresh" data-i18n="Refresh">Refresh</button></div>
+      <p class="err" id="storageMsg"></p>
+    </form>
+  </section>
+</main>
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const t = (s) => window.PVI18N.t(s);
+let ingestHostCfg = ''; // from /api/me — see the snippet builder below
+const te = (s) => esc(t(s));
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+
+// collapsible panels: only one open at a time; toolbar buttons toggle them
+function togglePanel(id) {
+  for (const p of ['addPanel', 'homePanel']) {
+    const el = document.getElementById(p);
+    if (p === id) el.hidden = !el.hidden;
+    else el.hidden = true;
+  }
+  const opened = document.getElementById(id);
+  if (!opened.hidden) opened.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+document.getElementById('btnAdd').addEventListener('click', () => togglePanel('addPanel'));
+document.getElementById('btnSettings').addEventListener('click', () => { togglePanel('homePanel'); loadTokens(); loadStorage(); });
+document.querySelectorAll('.panel .close').forEach((b) =>
+  b.addEventListener('click', () => { document.getElementById(b.dataset.close).hidden = true; }));
+
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+const dur = (ms) => ms == null ? '–' : ms >= 60000 ? Math.floor(ms/60000)+'m '+Math.round(ms%60000/1000)+'s' : Math.round((ms||0)/1000)+'s';
+
+async function loadSites() {
+  const period = document.getElementById('period').value;
+  const r = await guard(await fetch('/api/sites'));
+  const { sites } = await r.json();
+  const el = document.getElementById('sites');
+  if (!sites.length) {
+    el.innerHTML = `<p class="empty">${te('No sites yet — use the “＋ New site” button to add one.')}<br>`
+      + `${te('Just deployed?')} <a href="/health.html" style="color:#7ab3ff;text-decoration:none">${te('Run the self-check ↗')}</a></p>`;
+    return;
+  }
+  // one card per site, each showing its own overview so all sites' numbers
+  // are visible at a glance on this page; click a card for the full dashboard
+  el.innerHTML = '<div class="scards">' + sites.map((s) => `
+    <a class="scard" href="/site.html?id=${esc(s.site_id)}" data-id="${esc(s.site_id)}">
+      <div class="name">${esc(s.name)}</div>
+      <div class="dom">${esc(JSON.parse(s.allowed_domains).join(', '))}</div>
+      <div class="stats" id="st-${esc(s.site_id)}">
+        <div class="stat"><div class="v">…</div><div class="k">${te('Pageviews')}</div></div>
+        <div class="stat"><div class="v">…</div><div class="k">${te('Visitors')}</div></div>
+        <div class="stat"><div class="v">…</div><div class="k">${te('Sessions')}</div></div>
+      </div>
+      <div class="foot"><span class="tag" title="${te('Timezone')}">🕒 ${esc(s.timezone || 'UTC')}</span><span class="tag" title="${te('Ad protection mode')}">🛡 ${te(s.adguard_mode || 'off')}</span><span class="spacer"></span><span class="tag good" id="hs-${esc(s.site_id)}"></span></div>
+    </a>`).join('') + '</div>';
+
+  // ONE request for every card. This used to be one /overview per site, and
+  // /overview is a live raw scan of the whole period — a dozen sites meant a
+  // dozen concurrent whole-period scans, so the grid sat on "…" for a long time
+  // whenever one site was busy. /api/sites/summary reads completed days from
+  // the rollups and aggregates all sites in a single pass.
+  try {
+    const d = await (await fetch(`/api/sites/summary?period=${period}`)).json();
+    for (const o of d.sites || []) {
+      const st = document.getElementById('st-' + o.site_id);
+      const hs = document.getElementById('hs-' + o.site_id);
+      if (!st || !hs) continue;
+      const human = o.pv ? (((o.clean_count + o.suspect_count) / o.pv) * 100).toFixed(0) : 0;
+      st.innerHTML = `
+        <div class="stat"><div class="v">${fmt(o.pv)}</div><div class="k">${te('Pageviews')}</div></div>
+        <div class="stat"${d.uv_approx ? ` title="${te('uv-approx')}"` : ''}><div class="v">${d.uv_approx ? '≈' : ''}${fmt(o.uv)}</div><div class="k">${te('Visitors')}</div></div>
+        <div class="stat"><div class="v">${fmt(o.sessions)}</div><div class="k">${te('Sessions')}</div></div>`;
+      hs.textContent = o.pv ? human + '% ' + t('human') : t('no data yet');
+      hs.className = 'tag ' + (o.pv ? (human >= 90 ? 'good' : human >= 70 ? 'warn' : 'bad') : '');
+    }
+  } catch {
+    document.querySelectorAll('[id^="hs-"]').forEach((el) => { el.textContent = ''; });
+  }
+}
+// remember the sites-overview period across refreshes (default: last 24h)
+(() => {
+  const sel = document.getElementById('period');
+  const saved = localStorage.getItem('pvuv.sitesPeriod');
+  if (saved && [...sel.options].some((o) => o.value === saved)) sel.value = saved;
+})();
+// cross-site clean-traffic ranking (§14): self-hides with <2 sites (nothing to
+// rank). "External clean" excludes bots/crawlers and mutual visits between your
+// own sites, so it reflects genuinely external human traffic.
+async function loadRanking() {
+  const sec = document.getElementById('rankingSection');
+  const period = document.getElementById('period').value;
+  let sites = [];
+  try { sites = ((await (await guard(await fetch(`/api/ranking?period=${period}`))).json()).sites) || []; }
+  catch { sec.hidden = true; return; }
+  if (sites.length < 2) { sec.hidden = true; return; }
+  sec.hidden = false;
+  // external/internal come from rollup_source_daily, which the hourly job
+  // fills; right after deploying (or on a brand-new hour) it is empty while
+  // clean_pv already has live numbers — show a dash instead of a misleading 0
+  const pending = sites.every((s) => !s.external_pv && !s.internal_pv) && sites.some((s) => s.clean_pv > 0);
+  const dash = `<span class="muted" title="${te('populated by the hourly rollup — check back after :05')}">—</span>`;
+  const body = sites.map((s, i) => `<tr>
+    <td style="color:#8b93a1">${i + 1}</td>
+    <td><a href="/site.html?id=${esc(s.site_id)}">${esc(s.name)}</a></td>
+    <td class="num"><b>${pending ? dash : fmt(s.external_pv)}</b></td>
+    <td class="num" style="color:#8b93a1">${pending ? dash : fmt(s.internal_pv)}</td>
+    <td class="num">${fmt(s.clean_pv)}</td>
+    <td class="num" style="color:#8b93a1">${fmt(s.pv)}</td>
+    <td class="num">${s.quality_score}%</td>
+  </tr>`).join('');
+  document.getElementById('ranking').innerHTML = `<table>
+    <thead><tr>
+      <th>#</th><th>${te('Site')}</th><th class="num">${te('External clean')}</th><th class="num">${te('Internal (mutual)')}</th>
+      <th class="num">${te('Clean PV')}</th><th class="num">${te('Total PV')}</th><th class="num">${te('Human')}</th>
+    </tr></thead><tbody>${body}</tbody></table>`;
+}
+document.getElementById('period').addEventListener('change', () => {
+  localStorage.setItem('pvuv.sitesPeriod', document.getElementById('period').value);
+  loadSites();
+  loadRanking();
+});
+
+// --- timezones -------------------------------------------------------------
+const TZ_LIST = (() => {
+  try { return Intl.supportedValuesOf('timeZone'); } catch {
+    return ['UTC','Asia/Shanghai','Asia/Hong_Kong','Asia/Tokyo','Asia/Singapore','Asia/Kolkata',
+            'Europe/London','Europe/Paris','Europe/Berlin','America/New_York','America/Chicago',
+            'America/Los_Angeles','America/Sao_Paulo','Australia/Sydney'];
+  }
+})();
+const browserTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } })();
+const validTz = (z) => TZ_LIST.includes(z);
+let userTz = 'UTC';
+async function loadUserTz() {
+  // searchable datalist (type to filter hundreds of zones)
+  document.getElementById('tzlist').innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"></option>`).join('');
+  try {
+    const me = await (await fetch('/api/me')).json();
+    userTz = me.timezone || 'UTC';
+    ingestHostCfg = me.ingest_host || '';
+  } catch { userTz = 'UTC'; }
+  if (!validTz(userTz)) userTz = 'UTC';
+  // new-site form: prefill the browser's timezone (unless a non-UTC default is set),
+  // so the common case needs no searching; submitting saves it for real.
+  const createTz = (userTz !== 'UTC') ? userTz : (validTz(browserTz) ? browserTz : 'UTC');
+  document.getElementById('tz').value = createTz;
+  document.getElementById('tzDefault').value = userTz;
+}
+document.getElementById('tzSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const tz = document.getElementById('tzDefault').value.trim();
+  const el = document.getElementById('tzMsg');
+  if (!validTz(tz)) { el.style.color = ''; el.textContent = t('pick a valid timezone from the list'); return; }
+  const r = await guard(await fetch('/api/settings/timezone', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ timezone: tz }),
+  }));
+  if (r.ok) { userTz = tz; document.getElementById('tz').value = tz; el.style.color = '#6ee7a0'; el.textContent = t('saved'); }
+  else { el.style.color = ''; el.textContent = t('save failed'); }
+});
+
+document.getElementById('create').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('name').value,
+    domains: document.getElementById('domains').value.split(',').map((d) => d.trim()).filter(Boolean),
+    adguard_mode: document.getElementById('agmode').value,
+    adclient: document.getElementById('adclient').value.trim() || undefined,
+    timezone: document.getElementById('tz').value,
+    engaged_seconds: parseInt(document.getElementById('engaged').value, 10) || 15,
+  };
+  const r = await guard(await fetch('/api/sites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+  const data = await r.json();
+  if (!r.ok) { document.getElementById('err').textContent = data.error || t('failed'); return; }
+  document.getElementById('err').textContent = '';
+  // src: f.js as hosted by this console deployment (DEPLOY.md step 8);
+  // data-api: ingest host, assumed in.<apex> per the reference layout —
+  // deployers adjust if theirs differs (the SDK default is in.pvuv.ai).
+  // ingest host comes from deployment config; the sibling-subdomain guess is
+  // only a fallback for older deployments that predate INGEST_HOST
+  const ingestHost = ingestHostCfg || 'in.' + location.hostname.replace(/^(www|console)\./, '');
+  const attrs = [`data-site="${data.site_id}"`, `data-api="https://${ingestHost}"`];
+  if (data.adguard_mode !== 'off') attrs.push(`data-adguard="${data.adguard_mode}"`);
+  if (data.adclient) attrs.push(`data-adclient="${data.adclient}"`);
+  document.getElementById('snippetCode').textContent =
+    `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+  document.getElementById('snippet').style.display = 'block';
+  loadSites();
+});
+
+document.getElementById('logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.href = '/login.html';
+});
+
+// apply configured branding to the header, favicon and title (console is dark,
+// so the header uses the LIGHT logo; the dark logo is for light backgrounds).
+function applyBranding(b) {
+  const name = (b.name || '').trim() || 'pvuv.ai';
+  const logo = b.logo_light || b.logo_dark;
+  const brand = document.getElementById('brand');
+  brand.innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : esc(name);
+  document.title = name + ' — Sites';
+  if (b.favicon) {
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = b.favicon;
+  }
+}
+async function loadHomeSettings() {
+  const r = await fetch('/api/home');
+  if (!r.ok) return;
+  const b = await r.json();
+  applyBranding(b);
+  document.getElementById('hsName').value = b.name || '';
+  document.getElementById('hsDomain').value = b.primary_domain || '';
+  document.getElementById('hsDesc').value = b.description || '';
+  document.getElementById('hsLogoLight').value = b.logo_light || '';
+  document.getElementById('hsLogoDark').value = b.logo_dark || '';
+  document.getElementById('hsFavicon').value = b.favicon || '';
+}
+document.getElementById('homeSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await guard(await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: document.getElementById('hsName').value,
+      primary_domain: document.getElementById('hsDomain').value,
+      description: document.getElementById('hsDesc').value,
+      logo_light: document.getElementById('hsLogoLight').value,
+      logo_dark: document.getElementById('hsLogoDark').value,
+      favicon: document.getElementById('hsFavicon').value,
+    }),
+  }));
+  const el = document.getElementById('hsMsg');
+  el.style.color = r.ok ? '#6ee7a0' : '';
+  el.textContent = r.ok ? t('saved') : t('save failed');
+  if (r.ok) loadHomeSettings(); // re-apply header/favicon immediately
+});
+
+// Crawler directory (§6.6): import a public bots-and-agents catalogue so
+// crawler traffic can be labelled by kind. Purely descriptive — the UI says so
+// explicitly, because an import that silently changed verdicts would be a trap.
+// API tokens (§10) — credentials for the CLI / MCP server / integrations.
+// The plaintext exists only in this one response; the server stores an HMAC.
+async function loadTokens() {
+  const box = document.getElementById('tokList');
+  const sel = document.getElementById('tokSite');
+  // fetch the site list here rather than reusing the one loadSites() renders:
+  // that one is a local, and depending on load order would leave the scope
+  // picker empty whenever the panel opens first
+  while (sel.options.length > 1) sel.remove(1);
+  try {
+    const { sites } = await (await guard(await fetch('/api/sites'))).json();
+    for (const s of sites || []) {
+      const o = document.createElement('option');
+      o.value = s.site_id; o.textContent = s.name;
+      sel.appendChild(o);
+    }
+  } catch { /* scope picker just stays at "All my sites" */ }
+  let d;
+  try { d = await (await guard(await fetch('/api/tokens'))).json(); } catch { box.textContent = ''; return; }
+  const live = (d.tokens || []).filter((x) => !x.revoked_at);
+  if (!live.length) { box.textContent = t('No tokens yet.'); return; }
+  box.innerHTML = '<table style="width:100%;border-collapse:collapse;margin-top:4px">'
+    + live.map((x) => `<tr style="border-top:1px solid #1e2530">
+        <td style="padding:5px 0">${esc(x.name)}</td>
+        <td style="color:#c7cdd8"><code>${esc(x.prefix)}…</code></td>
+        <td>${x.site_id ? esc(x.site_id) : te('all sites')}</td>
+        <td style="color:#8b93a1">${x.last_used_at ? te('used') + ' ' + esc(new Date(x.last_used_at).toISOString().slice(0, 10)) : te('never used')}</td>
+        <td style="text-align:right"><button type="button" data-revoke="${esc(x.token_id)}"
+          style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Revoke')}</button></td>
+      </tr>`).join('') + '</table>';
+  box.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('Revoke this token? Anything using it stops working immediately.'))) return;
+    await guard(await fetch('/api/tokens?id=' + encodeURIComponent(b.dataset.revoke), { method: 'DELETE' }));
+    loadTokens();
+  }));
+}
+document.getElementById('tokenSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('tokMsg');
+  msg.style.color = ''; msg.textContent = '';
+  const r = await guard(await fetch('/api/tokens', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: document.getElementById('tokName').value.trim(),
+      site_id: document.getElementById('tokSite').value || undefined,
+    }),
+  }));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { msg.textContent = d.error ? t(d.error) : t('Could not create the token.'); return; }
+  document.getElementById('tokValue').textContent = d.token;
+  document.getElementById('tokNew').hidden = false;
+  document.getElementById('tokName').value = '';
+  loadTokens();
+});
+
+// --- storage & retention -----------------------------------------------------
+const mb = (x) => x >= 1024 ? (x / 1024).toFixed(2) + ' GB' : x.toFixed(1) + ' MB';
+async function loadStorage() {
+  const box = document.getElementById('storageState');
+  box.innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  let d;
+  try { d = await (await guard(await fetch('/api/storage'))).json(); } catch { box.innerHTML = `<p class="muted">${te('failed')}</p>`; return; }
+  const r = d.retention || {};
+  const win = (v) => v ? `${v} ${t('days')}` : t('keep forever');
+  const rows = (d.partitions || []).slice().reverse().map((p) => `<tr><td>${esc(p.table.replace('events_', '').replace(/^(\d{4})(\d{2})$/, '$1-$2'))}</td>
+      <td class="num">${fmt(p.rows)}</td><td class="num muted">${fmt(p.pulse_rows)}</td><td class="num muted">${fmt(p.bot_rows)}</td><td class="num">≈ ${mb(p.est_mb)}</td></tr>`).join('');
+  box.innerHTML = `
+    <div class="cards cards-4" style="margin-bottom:12px">
+      <div class="card"><div class="v">≈ ${mb(d.est_total_mb)}</div><div class="k">${te('Estimated size')}</div><div class="h">${te('exact: wrangler d1 info')}</div></div>
+      <div class="card"><div class="v">${fmt(d.total_events)}</div><div class="k">${te('Raw event rows')}</div><div class="h">${(d.partitions || []).length} ${te('monthly partitions')}</div></div>
+      <div class="card"><div class="v">${fmt(d.sessions)}</div><div class="k">${te('Sessions')}</div><div class="h">${te('kept')} ${win(r.raw_events_days)}</div></div>
+      <div class="card"><div class="v">${fmt(d.profiles)}</div><div class="k">${te('Visitor profiles')}</div><div class="h">${te('idle limit')} ${win(r.profiles_idle_days)}</div></div>
+    </div>
+    <table><tr><th>${te('Month')}</th><th class="num">${te('Rows')}</th><th class="num">${te('heartbeats')}</th><th class="num">${te('bot / crawler')}</th><th class="num">${te('Est. size')}</th></tr>${rows || `<tr><td colspan="5" class="muted">${te('no data yet')}</td></tr>`}</table>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">${te('Windows:')} ${te('raw events')} <b>${win(r.raw_events_days)}</b> · ${te('heartbeats')} <b>${win(r.pulse_events_days)}</b> · ${te('bot / crawler')} <b>${win(r.bot_events_days)}</b> · ${te('idle profiles')} <b>${win(r.profiles_idle_days)}</b>. ${te('The daily job applies them at 03:30 UTC; whole months past the raw window are dropped at once, the rest is trimmed in batches.')}</p>`;
+}
+document.getElementById('storageRefresh').addEventListener('click', loadStorage);
+document.getElementById('storagePurge').addEventListener('click', async () => {
+  const msg = document.getElementById('storageMsg'); const btn = document.getElementById('storagePurge');
+  if (!confirm(t('Run the retention purge now? Raw rows outside the configured windows are deleted permanently; dashboards are unaffected.'))) return;
+  btn.disabled = true; msg.style.color = ''; msg.textContent = t('purging…');
+  try {
+    const d = await (await guard(await fetch('/api/storage/purge', { method: 'POST' }))).json();
+    msg.textContent = `${t('Done:')} ${d.dropped_partitions.length} ${t('partitions dropped')}, ${fmt(d.pulse_rows_deleted)} ${t('heartbeats')}, ${fmt(d.bot_rows_deleted)} ${t('bot / crawler')}, ${fmt(d.sessions_deleted)} ${t('sessions')}, ${fmt(d.profiles_deleted)} ${t('profiles')}${d.more_pending ? ` — ${t('more remains; run again or let the nightly job continue')}` : ''}${d.errors && d.errors.length ? ` · ${d.errors.join(' | ')}` : ''}`;
+    msg.style.color = d.ok ? '#6ee7a0' : '';
+    loadStorage();
+  } catch { msg.textContent = t('failed'); }
+  btn.disabled = false;
+});
+
+async function loadBotdir() {
+  const box = document.getElementById('botdirState');
+  try {
+    const d = await (await guard(await fetch('/api/settings/botdir'))).json();
+    if (!d.imported) { box.textContent = t('No directory imported — crawler traffic is not categorised.'); return; }
+    const cats = Object.entries(d.categories || {}).sort((a, b) => b[1] - a[1]);
+    box.innerHTML = `<b>${esc(String(d.count))}</b> ${te('bots imported')}`
+      + (d.skipped ? ` · ${esc(String(d.skipped))} ${te('skipped')}` : '')
+      + ` · ${te('updated')} ${esc(new Date(d.updated_at).toISOString().slice(0, 16).replace('T', ' '))}<br>`
+      + cats.map(([c, n]) => `${esc(c)} <span style="color:#c7cdd8">${esc(String(n))}</span>`).join(' · ');
+  } catch { box.textContent = ''; }
+}
+document.getElementById('botdirSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('botdirMsg');
+  const file = document.getElementById('botdirFile').files[0];
+  const pasted = document.getElementById('botdirText').value.trim();
+  msg.style.color = ''; msg.textContent = '';
+  let text = pasted;
+  if (file) { try { text = await file.text(); } catch { msg.textContent = t('Could not read that file.'); return; } }
+  if (!text) { msg.textContent = t('Choose a file or paste the JSON first.'); return; }
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { msg.textContent = t('That is not valid JSON.'); return; }
+  const r = await guard(await fetch('/api/settings/botdir', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(parsed),
+  }));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { msg.textContent = d.error ? t(d.error) : t('Import failed.'); return; }
+  msg.style.color = '#6ee7a0';
+  msg.textContent = t('Imported {n} bots.').replace('{n}', d.count);
+  document.getElementById('botdirText').value = '';
+  document.getElementById('botdirFile').value = '';
+  loadBotdir();
+});
+document.getElementById('botdirClear').addEventListener('click', async () => {
+  const msg = document.getElementById('botdirMsg');
+  await guard(await fetch('/api/settings/botdir', { method: 'DELETE' }));
+  msg.style.color = ''; msg.textContent = t('Directory removed.');
+  loadBotdir();
+});
+
+async function loadAiSettings() {
+  const r = await fetch('/api/settings/ai');
+  if (!r.ok) return;
+  const a = await r.json();
+  document.getElementById('aiProvider').value = a.provider || 'openai';
+  document.getElementById('aiModel').value = a.model || '';
+  document.getElementById('aiBaseUrl').value = a.base_url || '';
+  document.getElementById('aiLang').value = a.lang || 'en';
+  document.getElementById('aiKeyState').textContent = a.key_set ? t('(a key is saved — leave blank to keep it)') : t('(not set)');
+}
+document.getElementById('aiSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await guard(await fetch('/api/settings/ai', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: document.getElementById('aiProvider').value,
+      model: document.getElementById('aiModel').value,
+      base_url: document.getElementById('aiBaseUrl').value,
+      lang: document.getElementById('aiLang').value,
+      api_key: document.getElementById('aiKey').value,
+    }),
+  }));
+  const el = document.getElementById('aiMsg');
+  const body = await r.json().catch(() => ({}));
+  el.style.color = r.ok ? '#6ee7a0' : '';
+  el.textContent = r.ok ? t('saved') : (body.error || t('save failed'));
+  if (r.ok) { document.getElementById('aiKey').value = ''; loadAiSettings(); }
+});
+
+// --- Cloudflare edge requests (optional) ------------------------------------
+// The token itself is never returned by the API; GET only reports whether one
+// is saved plus the last pull's outcome, so the field stays blank on reload and
+// a blank submit means "keep the saved token, just re-check it".
+function renderCfState(d) {
+  const box = document.getElementById('cfState');
+  document.getElementById('cfKeyState').textContent = d.token_set
+    ? t('(a token is saved — leave blank to keep it)') : t('(not set)');
+  if (!d.token_set) {
+    box.textContent = t('Not configured — the dashboard shows only what the tracking script recorded.');
+    return;
+  }
+  const s = d.status;
+  if (!s) { box.textContent = t('Saved. The first pull runs with tonight’s daily job.'); return; }
+  const when = esc(new Date(s.checked_at).toISOString().slice(0, 16).replace('T', ' '));
+  if (s.error) {
+    box.innerHTML = `<span style="color:#f0a0a0">${te('Last check failed')} · ${when}</span><br>`
+      + `<span style="font-family:ui-monospace,monospace">${esc(s.error)}</span>`;
+    return;
+  }
+  box.innerHTML = `${te('Last pull')} ${when} · <b>${esc(String(s.days_written ?? 0))}</b> ${esc(window.PVI18N.tk('site-days', 'site-days'))}`
+    + ` · ${esc(String(s.sites_matched ?? 0))} ${te('sites matched')} · ${esc(String(s.zones ?? 0))} ${te('zones visible')}`;
+}
+async function loadCfSettings() {
+  try {
+    const d = await (await guard(await fetch('/api/settings/cfedge'))).json();
+    renderCfState(d);
+  } catch { /* leave the panel as-is */ }
+}
+async function saveCf(token) {
+  const msg = document.getElementById('cfMsg');
+  msg.style.color = ''; msg.textContent = t('checking…');
+  const r = await guard(await fetch('/api/settings/cfedge', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }),
+  }));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    // Cloudflare's own message, verbatim — "Authentication error" vs a missing
+    // permission are different fixes and the deployer needs to know which
+    msg.style.color = '#f0a0a0';
+    msg.textContent = d.error || t('Could not verify that token.');
+    return;
+  }
+  msg.style.color = '#6ee7a0';
+  const matched = (d.sites || []).filter((s) => s.zone);
+  msg.textContent = matched.length
+    ? t('Token works. Matched {n} site(s): ').replace('{n}', matched.length)
+      + matched.map((s) => `${s.name} → ${s.zone}`).join(', ')
+    : t('Token works, but none of your sites are on a zone it can see. Check the token’s Zone Resources.');
+  document.getElementById('cfToken').value = '';
+  loadCfSettings();
+}
+document.getElementById('cfSettings').addEventListener('submit', (e) => {
+  e.preventDefault();
+  saveCf(document.getElementById('cfToken').value.trim());
+});
+document.getElementById('cfTest').addEventListener('click', () => saveCf(''));
+document.getElementById('cfClear').addEventListener('click', async () => {
+  const msg = document.getElementById('cfMsg');
+  await guard(await fetch('/api/settings/cfedge', { method: 'DELETE' }));
+  msg.style.color = ''; msg.textContent = t('Token removed.');
+  loadCfSettings();
+});
+
+// language switcher: mount, apply static labels, and re-render dynamic content
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => {
+  window.PVI18N.applyStatic();
+  loadSites();
+  loadRanking();
+  loadAiSettings(); // refreshes the key-state hint text
+  loadCfSettings();
+});
+
+loadSites();
+loadRanking();
+loadHomeSettings();
+loadUserTz();
+loadAiSettings();
+loadCfSettings();
+</script>
+</body>
+</html>

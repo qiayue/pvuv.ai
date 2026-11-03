@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
+<style>
+  body { font-size: 15px; display: grid; place-items: center; min-height: 100vh; }
+  .card { width: min(360px, 92vw); border-radius: var(--radius-lg); padding: 28px; }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  p.sub { margin: 0 0 22px; color: var(--muted); font-size: 13px; }
+  .oauth a { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; padding: 11px; border: 1px solid var(--border-2); border-radius: var(--radius-sm); color: inherit; font-weight: 600; transition: background .12s, border-color .12s; }
+  .oauth a:hover { background: var(--surface-2); border-color: var(--border-3); text-decoration: none; }
+  .err { color: var(--bad); font-size: 13px; margin-top: 14px; min-height: 1em; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 14px; }
+  .langrow { margin-top: 18px; text-align: center; }
+  .langrow select { background-color: var(--bg); color: var(--muted); font-size: 12px; min-height: 28px; padding: 3px 26px 3px 8px; }
+</style>
+</head>
+<body>
+<script src="/i18n.js"></script>
+<div class="card">
+  <h1>pvuv.ai</h1>
+  <p class="sub" data-i18n="self-hosted analytics · sign in">self-hosted analytics · sign in</p>
+  <div class="oauth" id="oauth"></div>
+  <div class="err" id="err"></div>
+  <div class="langrow"><select id="lang" aria-label="Language"></select></div>
+</div>
+<script>
+const t = (s) => window.PVI18N.t(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ERR = {
+  not_admin: 'That account is not an admin — login not allowed.',
+  bad_state: 'Login session expired — please try again.',
+  bad_request: 'Login was interrupted — please try again.',
+  no_email: 'No verified email was returned by the provider.',
+  token_exchange: 'OAuth exchange failed — check the provider configuration.',
+  userinfo: 'Could not read your profile from the provider.',
+  oauth_failed: 'Sign-in failed — please try again.',
+};
+const qerr = new URLSearchParams(location.search).get('error');
+if (qerr) document.getElementById('err').textContent = ERR[qerr] ? t(ERR[qerr]) : (t('Sign-in failed') + ' (' + qerr + ').');
+
+const LABEL = { google: 'Continue with Google', github: 'Continue with GitHub' };
+let lastProviders = null;
+function renderProviders(providers) {
+  lastProviders = providers;
+  const box = document.getElementById('oauth');
+  if (!providers.length) {
+    box.innerHTML = `<p class="note">${esc(t('No login provider is configured. The deployer must set up Google or GitHub OAuth — see DEPLOY.md.'))}</p>`;
+    return;
+  }
+  box.innerHTML = providers.map((p) => `<a href="/api/auth/${p}/start">${esc(t(LABEL[p]) || p)}</a>`).join('');
+}
+fetch('/api/auth/providers').then((r) => r.json()).then((cfg) => {
+  renderProviders(cfg.providers || []);
+}).catch(() => {
+  document.getElementById('err').textContent = t('Could not reach the server.');
+});
+
+// language switcher (auto-detects the browser language on first visit)
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => {
+  window.PVI18N.applyStatic();
+  if (lastProviders) renderProviders(lastProviders);
+});
+</script>
+</body>
+</html>

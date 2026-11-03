@@ -31,7 +31,7 @@ ua_clienthints_mismatch = 25      # 0x0004 UA vs Sec-CH-UA contradiction
 datacenter_asn         = 35       # 0x0008 request from a hosting/datacenter ASN
 sec_fetch_missing      = 25       # 0x0010 Sec-Fetch-* headers absent
 timezone_ip_mismatch   = 20       # 0x0020 JS timezone vs IP geo / cf.timezone
-zero_interaction_noleave = 20     # 0x0040 no interaction AND no page_leave
+zero_interaction_noleave = 20     # 0x0040 no interaction AND no page_leave — set by the hourly session pass as EVIDENCE for the drill-down + "no-interaction visits" alert; scoring separation already comes from the withheld has_interaction/has_page_leave trust credits below, so this weight is a reserved default and is NOT added again (no double penalty)
 software_webgl         = 15       # 0x0080 SwiftShader / llvmpipe / Mesa OffScreen
 mechanical_timing      = 15       # 0x0100 near-zero inter-event interval CV
 blocklist_cluster      = 40       # 0x0200 matches a KV-blocklisted cluster
@@ -39,12 +39,65 @@ honeypot               = "hard"   # 0x0400 hidden honeypot link followed
 screen_device_mismatch = 10       # 0x0800 per contradiction (screen / touch / cores)
 mobile_no_motion       = 15       # 0x1000 mobile UA but no motion data (Android)
 motion_static          = 10       # 0x2000 accel-incl-gravity perfectly constant
+search_ref_datacenter  = 35       # 0x4000 search-engine referrer from a datacenter ASN (stacks with datacenter_asn → bot)
+forged_search_referrer = 40       # 0x8000 implausible search-engine referrer (http / ?q= leak / Sec-Fetch contradiction)
+headless_ua            = 70       # 0x10000 UA advertises a headless engine ("HeadlessChrome") — self-declared automation
+headless_window        = 15       # 0x20000 desktop headless window tell (outerWidth/outerHeight === 0). Lowered from 30: on live traffic only 1 of 139 confirmed bots tripped it, while it fired on 22% of JP and 18% of TW visitors — corroborating strength at most, and at 30 it alone crossed the suspect band.
+ua_platform_mismatch   = 30       # 0x40000 navigator.platform contradicts the UA OS family (Win/Mac/iOS on Linux)
+synthetic_env          = 0        # 0x80000 DISABLED (evidence-only) — production data showed this fires on geography, not on synthetic environments: 0/209 headless-flagged and 2/209 datacenter visitors tripped it, vs 34% of CN visitors and ~0% of every other country. It was pushing real users into 'suspect' on its own (2 tells = 40). Still recorded in bot_flags for investigation; set >0 only after the probe is fixed and re-validated.
+http1_modern_browser   = 0        # 0x100000 evidence-only until validated on live traffic — modern Chromium UA speaking HTTP/1.x to the edge (real Chrome >=90 negotiates h2/h3; HTTP/1 + modern UA is typical of curl/python-tls behind a spoofed UA). Recorded in bot_flags; corporate MITM proxies can downgrade real users, so validate the false-positive profile (check the fired-signals panel against verdicts/geo) before setting a weight (suggested 10-15 once clean).
+mouse_mechanical       = 10       # 0x200000 per tell (max 3): near-constant pointer speed, zero-curvature paths, clicks with no nearby movement. Desktop mouse only; trackpads still show human variance. Behavioral (not env-only) but modest per-tell — validate against the fired-signals panel before raising.
+session_drift          = 30       # 0x400000 browser family / OS / language changed WITHIN one session_id — impossible for a real visitor (the sid cookie lives in one browser); a replayed cookie or a farm rotating environments (FP-Inconsistent temporal check: ~3% FP in the IMC 2025 study). Applied by the daily batch.
+unidentified_desktop   = 15       # 0x800000 desktop device + unrecognised browser family + unidentifiable OS, all three at once. Real desktop browsers are one of six families; the combination measured 0.1% of 244k pageviews of healthy traffic across 10 production sites, against 29.9% on a site under a scraping campaign. Environment-derived (corroboration only, never a verdict on its own) and scoped to desktop, so an in-app webview on a known mobile OS is untouched.
 
 [trust_credits]
 # Subtracted from bot_score (make legit traffic look cleaner).
 residential_or_mobile_asn = 10
 has_interaction           = 10
 has_page_leave            = 10
+human_motion              = 10   # rich human-like pointer dynamics observed (x15): real speed variance + curvature over enough samples — the strongest human evidence short of a challenge
+
+# ------------------------------------------------------------------
+# Dashboard "unreasonable data" alerts — self-contained plausibility
+# checks over the selected period (no external baseline). Each is a
+# fraction (0..1) or a raw ratio; a check fires when the measured value
+# crosses it. min_pageviews mutes small samples.
+# ------------------------------------------------------------------
+[alerts]
+min_pageviews          = 50      # below this many pageviews, stay silent
+invalid_share          = 0.30    # (bot+suspect)/pageviews above this → alert
+datacenter_share       = 0.25    # datacenter-ASN pageviews / pageviews
+fake_search_share      = 0.10    # forged/fake search-referrer pageviews / pageviews
+zero_interaction_share = 0.40    # no-interaction pageviews / pageviews
+bounce_low             = 0.05    # single-page bounce BELOW this is implausibly low
+pages_per_visitor_high = 15      # pageviews/visitor above this = scraping-like
+source_concentration   = 0.60    # a single non-direct source's session share
+
+# ------------------------------------------------------------------
+# Baseline anomaly detection (daily cron): compares yesterday against a
+# trailing per-day baseline from the rollups and flags large deviations
+# (traffic spikes/drops, invalid-share jumps, per-source surges).
+# ------------------------------------------------------------------
+[anomaly]
+baseline_days = 14      # trailing window length (days before yesterday)
+min_days      = 5       # need at least this many baseline days to judge
+spike_ratio   = 3.0     # yesterday >= baseline mean × this → spike
+drop_ratio    = 0.34    # yesterday <= baseline mean × this → drop
+min_pv        = 100     # site-level: ignore days below this many pageviews
+min_source_uv = 30      # source-level: ignore sources below this baseline visitors
+invalid_jump  = 0.15    # invalid-traffic share must rise by ≥ this many points
+
+# Distribution-shape checks (§6.4/§6.5): catch farms whose hits each pass as
+# "clean" but collectively collapse the CLEAN traffic onto one device profile
+# or landing page. Flags a concentration JUMP vs the trailing baseline (so a
+# site that is legitimately concentrated doesn't false-positive — only a change
+# does). Compares yesterday against the same [anomaly] baseline window.
+[distribution]
+min_pv           = 200   # min yesterday clean pageviews/sessions to test
+min_baseline_pv  = 600   # min baseline-window volume for a trustworthy baseline
+top_share_jump   = 0.25  # yesterday top-value share minus baseline top-value share
+top_share_floor  = 0.45  # yesterday top-value share must also be at least this (absolute)
+screen_bucket_px = 100   # screen-width bucket size for the device signature
 
 # ------------------------------------------------------------------
 # Detection toggles
@@ -54,6 +107,14 @@ expensive_checks_enabled   = true   # canvas/WebGL via requestIdleCallback
 expensive_checks_sample    = 1.0    # 0.0–1.0 sampling rate for expensive checks
 mobile_sensors_enabled     = true   # Android-only, passive, coarse (see §4.6)
 honeypot_enabled           = true
+# Environment signals (fonts/emoji, window geometry, screen metrics, UA & platform
+# strings, browser timezone) are inferred from client-reported properties that vary
+# hugely by country, language, device and privacy setup — on a global audience each
+# one eventually fires on a whole region of real people. With this on, a visitor
+# whose ONLY evidence is environmental stays in the clean band; reaching 'suspect'
+# needs a network / behavioural / self-declared-automation signal to agree.
+# Only ever caps a score, never raises one. See shared/flags.ts ENV_ONLY_FLAGS.
+env_signals_need_corroboration = true
 
 # ------------------------------------------------------------------
 # Population / batch analysis thresholds (daily Cron)
@@ -61,9 +122,20 @@ honeypot_enabled           = true
 [population]
 fp_cluster_min_visitors    = 20     # fp_hash shared by >= N visitor_ids -> flag
 ip24_share_threshold       = 0.30   # a /24 contributing >= 30% of site traffic -> flag
+ip24_min_events            = 100    # ...but only when the /24 sent >= N pageviews (small sites: noise guard)
+cookie_reset_min_visitors  = 10     # same fp+/24 cycling through >= N one-shot visitor_ids -> cookie-reset farm
+cookie_reset_epv_max       = 1.5    # ...where avg events per visitor_id <= this ("each appearing once")
+oneshot_min_visitors       = 200    # network/transport node (/24, ASN or TLS fingerprint) cycling >= N one-shot visitor_ids -> farm. Needs no fingerprint and no pre-existing bot label, which is what lets it break the seed deadlock the graph propagation cannot start without. Coarser key than cookie_reset's fp+/24, hence the far higher bar.
+oneshot_epv_max            = 1.5    # ...where avg events per visitor_id <= this. A real visitor sends at least pageview + page_leave, so <=1.5 means the node's visitors each appeared once and never returned.
 interval_cv_bot_ceiling    = 0.20   # per-visitor interval CV <= this -> mechanical
-path_signature_min_count   = 50     # identical path+dwell signature repeated >= N -> flag
-baseline_deviation_sigma   = 4.0    # MAD-based deviation to raise an anomaly
+interval_min_n             = 20     # ...only judged once a visitor has >= N measured intervals
+max_clusters_per_run       = 50     # safety cap: top-N clusters (by members) re-verdicted per daily run
+graph_min_members          = 5      # bipartite propagation: a fp/ip24 node needs >= N distinct visitors to be judged at all
+graph_seed_share           = 0.6    # direct taint: >= this share of a node's visitors already verdicted bot -> tainted
+graph_hop2_seed_share      = 0.25   # two-hop: a fp reached via tainted /24s (>= half its visitors there) needs only this much of its own bot evidence
+drift_max_sessions_per_run = 200    # safety cap: session-drift re-verdicts per daily run
+path_signature_min_count   = 50     # identical path+dwell signature repeated >= N -> flag (M3)
+baseline_deviation_sigma   = 4.0    # MAD-based deviation to raise an anomaly (M3)
 
 # ------------------------------------------------------------------
 # Cross-site blocklist behavior
@@ -85,4 +157,12 @@ shadow_days                = 7           # new sites: record-only before enforci
 # Data retention
 # ------------------------------------------------------------------
 [retention]
-raw_events_days            = 90     # raw events kept for drill-down; older -> aggregates only
+# Storage is dominated by raw event rows (~0.8 KB each incl. indexes; a
+# pageview now produces 2–5 rows once page_pulse/page_leave are counted).
+# Rollups keep every number on the dashboard forever; these windows only
+# decide how far back the raw drill-down (visitor journeys, suspicious
+# visitors) reaches. 0 = keep forever for that pass.
+raw_events_days            = 90     # whole monthly partitions dropped once the month is past this
+pulse_events_days          = 14     # page_pulse rows (behavior heartbeats) trimmed earlier — rollups consumed them within the hour
+bot_events_days            = 30     # raw rows of bot/crawler-judged traffic; already counted, drill-down only
+profiles_idle_days         = 180    # visitor_profiles not seen for this long are dropped (they only aid cross-visit scoring while active)

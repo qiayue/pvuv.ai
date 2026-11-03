@@ -1,0 +1,252 @@
+-- ============================================================================
+-- pvuv.ai D1 schema — PROJECT_PLAN.md §9.2 (M1 DDL, incl. M2+ placeholders)
+-- ============================================================================
+-- Canonical schema (the full current shape). Applied incrementally via the
+-- files in migrations/ — 0001_init.sql plus later additions. Keep in sync:
+--   wrangler d1 migrations apply pvuv-db --local | --remote
+--
+-- Raw events are monthly-partitioned (events_YYYYMM). This file creates the
+-- initial month; the consumer worker creates subsequent months on demand from
+-- the same template (index prefix idx_evYYYYMM_*).
+-- ============================================================================
+
+-- deployment-level settings (homepage name/description, future prefs)
+-- (added by migrations/0002_instance_settings.sql)
+CREATE TABLE instance_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT,
+  updated_at INTEGER
+);
+
+-- personal API tokens (added by migrations/0014_api_tokens.sql) — the credential
+-- the CLI, the MCP server and third-party integrations authenticate with.
+-- Only an HMAC of each token is stored; the plaintext is shown once at creation.
+CREATE TABLE api_tokens (
+  token_id    TEXT PRIMARY KEY,          -- public identifier (safe to display/log)
+  owner_id    TEXT NOT NULL,             -- users.user_id; the token acts as this owner
+  name        TEXT NOT NULL,             -- human label, e.g. "Claude Desktop"
+  token_hash  TEXT NOT NULL,             -- HMAC(HMAC_KEY, plaintext); never the token itself
+  prefix      TEXT NOT NULL,             -- leading chars of the plaintext, for identification
+  site_id     TEXT,                      -- NULL = all of this owner's sites; else one site
+  created_at  INTEGER NOT NULL,
+  last_used_at INTEGER,
+  revoked_at  INTEGER                    -- non-NULL = permanently unusable
+);
+CREATE UNIQUE INDEX idx_api_tokens_hash ON api_tokens(token_hash);
+CREATE INDEX idx_api_tokens_owner ON api_tokens(owner_id, created_at);
+
+-- users
+CREATE TABLE users (
+  user_id     TEXT PRIMARY KEY,
+  email       TEXT UNIQUE,
+  name        TEXT,
+  created_at  INTEGER NOT NULL,
+  status      TEXT DEFAULT 'active',
+  timezone    TEXT DEFAULT 'UTC'             -- user default for new sites (added by 0004)
+);
+
+-- sites
+CREATE TABLE sites (
+  site_id         TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  owner_id        TEXT NOT NULL,
+  allowed_domains TEXT NOT NULL,             -- JSON array
+  adguard_mode    TEXT DEFAULT 'off',        -- off/loose/balanced/strict/custom
+  adguard_config  TEXT,                      -- JSON custom thresholds/toggles
+  adclient        TEXT,                      -- ca-pub-xxx
+  settings        TEXT,
+  created_at      INTEGER NOT NULL,
+  status          TEXT DEFAULT 'active',
+  timezone        TEXT DEFAULT 'UTC',        -- display/aggregation tz, IMMUTABLE (added by 0004)
+  engaged_seconds INTEGER NOT NULL DEFAULT 15, -- GA4 engagement dwell threshold, set at creation (added by 0006)
+  shadow_until    INTEGER,                   -- record-only until this instant, then enforce ads (added by 0008)
+  public_token    TEXT                       -- non-NULL = read-only public dashboard enabled (added by 0016)
+);
+
+-- raw events (monthly-partitioned; initial month 202607)
+CREATE TABLE events_202607 (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  eid           TEXT,                            -- dedup key (added by 0005)
+  site_id       TEXT NOT NULL,
+  event         TEXT NOT NULL,
+  visitor_id    TEXT NOT NULL,
+  session_id    TEXT NOT NULL,
+  user_id       TEXT,
+  url           TEXT NOT NULL,
+  hostname      TEXT NOT NULL,
+  path          TEXT NOT NULL,
+  referrer      TEXT,
+  ref_domain    TEXT,
+  utm_source TEXT, utm_medium TEXT, utm_campaign TEXT, utm_term TEXT, utm_content TEXT,
+  click_id TEXT, click_id_type TEXT,
+  extra_params TEXT,
+  country TEXT, region TEXT, city TEXT,
+  browser TEXT, os TEXT, device_type TEXT,
+  screen_w INTEGER, screen_h INTEGER,
+  lang TEXT,
+  ip_hash TEXT, ip24_hash TEXT,
+  asn INTEGER, asn_type TEXT,
+  fp_hash TEXT,
+  duration_ms INTEGER, scroll_depth INTEGER, had_interaction INTEGER DEFAULT 0,
+  had_pointer INTEGER,             -- pointer/keyboard only; NULL = loader predates the split (0021)
+  revenue REAL, revenue_usd REAL, currency TEXT,
+  props TEXT,
+  ft_source TEXT, ft_medium TEXT, ft_campaign TEXT, ft_referrer TEXT,
+  bot_score INTEGER DEFAULT 0,
+  verdict TEXT DEFAULT 'clean',
+  bot_flags INTEGER DEFAULT 0,
+  score_stage TEXT DEFAULT 'realtime',
+  bot_category TEXT,             -- crawler category from the imported bot directory (0013); descriptive only
+  -- Core Web Vitals, reported once per page load on the first behavior carrier (0016)
+  lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
+  -- frustration/error deltas on page_pulse / page_leave carriers (0017)
+  err_count INTEGER, rage_count INTEGER, dead_count INTEGER,
+  -- transport fingerprint: JA4-inspired own-implementation hash + RTT + protocol (0018)
+  tls_fp TEXT, tcp_rtt INTEGER, http_protocol TEXT,
+  ts INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_ev202607_eid ON events_202607(eid);
+CREATE INDEX idx_ev202607_site_ts ON events_202607(site_id, ts);
+CREATE INDEX idx_ev202607_site_ev_ts ON events_202607(site_id, event, ts);
+CREATE INDEX idx_ev202607_visitor ON events_202607(site_id, visitor_id);
+CREATE INDEX idx_ev202607_session ON events_202607(session_id);
+CREATE INDEX idx_ev202607_verdict ON events_202607(site_id, verdict, ts);
+CREATE INDEX idx_ev202607_path    ON events_202607(site_id, path);
+CREATE INDEX idx_ev202607_botcat ON events_202607(site_id, bot_category, ts);
+
+-- sessions
+CREATE TABLE sessions (
+  session_id   TEXT NOT NULL,
+  site_id      TEXT NOT NULL,
+  visitor_id   TEXT NOT NULL,
+  user_id      TEXT,
+  entry_page   TEXT, exit_page TEXT, entry_host TEXT,
+  pageviews INTEGER DEFAULT 0, events_count INTEGER DEFAULT 0,
+  duration_ms INTEGER DEFAULT 0, had_interaction INTEGER DEFAULT 0,
+  had_pointer INTEGER,             -- pointer/keyboard only; NULL = never reported (0021)
+  is_bounce INTEGER,
+  source TEXT, medium TEXT, campaign TEXT, referrer TEXT,
+  country TEXT, device_type TEXT,
+  bot_score INTEGER DEFAULT 0, verdict TEXT DEFAULT 'clean', bot_flags INTEGER DEFAULT 0,
+  started_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
+  last_pageview_at INTEGER,        -- ts of the session's latest pageview; Plausible-style visit duration = this − started_at (added by 0010)
+  channel TEXT,                    -- GA4-style default channel group, from shared/channel.ts (added by 0016)
+  -- keyed per site: _pv_sid is shared across sibling subdomains, so two sites on
+  -- the same registrable domain must not merge sessions (added by 0009)
+  PRIMARY KEY (site_id, session_id)
+);
+CREATE INDEX idx_sess_site ON sessions(site_id, started_at);
+CREATE INDEX idx_sess_visitor ON sessions(site_id, visitor_id);
+
+-- identity map
+CREATE TABLE identities (
+  site_id TEXT NOT NULL, user_id TEXT NOT NULL, visitor_id TEXT NOT NULL,
+  traits TEXT, first_seen INTEGER, last_seen INTEGER,
+  PRIMARY KEY (site_id, user_id, visitor_id)
+);
+
+-- visitor profiles (incrementally updated by batch analysis)
+CREATE TABLE visitor_profiles (
+  site_id TEXT NOT NULL, visitor_id TEXT NOT NULL,
+  events_count INTEGER DEFAULT 0, sessions_count INTEGER DEFAULT 0,
+  interval_mean REAL, interval_m2 REAL, interval_cv REAL,
+  interval_n INTEGER NOT NULL DEFAULT 0,  -- Welford sample count (added by 0007)
+  active_hours INTEGER,
+  fp_hash TEXT, ip24_hash TEXT, asn INTEGER,
+  bot_score INTEGER DEFAULT 0, verdict TEXT DEFAULT 'clean',
+  first_seen INTEGER, last_seen INTEGER,
+  PRIMARY KEY (site_id, visitor_id)
+);
+-- NOTE: visitor_profiles is only ever read by its primary key. Indexes on
+-- fp_hash / ip24_hash were dropped in migration 0020 — the cluster analysis
+-- groups those columns over the EVENTS tables, so the indexes only cost a
+-- write on every event. Re-add one if a query ever looks a profile up by hash.
+
+-- daily rollups (with clean bucket)
+CREATE TABLE rollup_page_daily (
+  site_id TEXT, day TEXT, hostname TEXT, path TEXT,
+  pv INTEGER DEFAULT 0, uv INTEGER DEFAULT 0, sessions INTEGER DEFAULT 0,
+  bounces INTEGER DEFAULT 0, total_duration_ms INTEGER DEFAULT 0,
+  pv_clean INTEGER DEFAULT 0, uv_clean INTEGER DEFAULT 0,
+  PRIMARY KEY (site_id, day, hostname, path)
+);
+CREATE TABLE rollup_source_daily (
+  site_id TEXT, day TEXT, source TEXT, medium TEXT, campaign TEXT,
+  pv INTEGER DEFAULT 0, uv INTEGER DEFAULT 0, sessions INTEGER DEFAULT 0,
+  conversions INTEGER DEFAULT 0, revenue_usd REAL DEFAULT 0,
+  pv_clean INTEGER DEFAULT 0, uv_clean INTEGER DEFAULT 0,
+  PRIMARY KEY (site_id, day, source, medium, campaign)
+);
+CREATE TABLE rollup_site_daily (
+  site_id TEXT, day TEXT,
+  pv INTEGER DEFAULT 0, uv INTEGER DEFAULT 0, sessions INTEGER DEFAULT 0,
+  bounce_rate REAL,               -- GA4 engagement-based bounce (1 − engaged)
+  bounce_rate_single REAL,        -- single-page bounce (UA/Plausible style; added by 0006)
+  avg_duration_ms INTEGER,        -- GA4-style engaged dwell (sum of visible time, incl. exit page)
+  visit_duration_ms INTEGER,      -- Plausible/UA-style visit duration (last−first pageview; added by 0010)
+  bot_count INTEGER DEFAULT 0, suspect_count INTEGER DEFAULT 0,
+  crawler_count INTEGER DEFAULT 0, clean_count INTEGER DEFAULT 0,
+  conversions INTEGER DEFAULT 0, revenue_usd REAL DEFAULT 0,
+  -- hot flag tallies + per-verdict engaged pageviews, denormalized so the
+  -- alerts/adguard endpoints read completed days here instead of scanning raw
+  -- events (added by 0012). All SUMMABLE (never DISTINCT) → exact across days.
+  dc_pv INTEGER DEFAULT 0, zero_pv INTEGER DEFAULT 0,
+  fake_pv INTEGER DEFAULT 0, search_ref_pv INTEGER DEFAULT 0,
+  clean_eng_pv INTEGER DEFAULT 0, suspect_eng_pv INTEGER DEFAULT 0,
+  bot_eng_pv INTEGER DEFAULT 0, crawler_eng_pv INTEGER DEFAULT 0,
+  PRIMARY KEY (site_id, day)
+);
+
+-- Cloudflare edge request counts (optional; added by 0015_edge_requests.sql).
+-- Populated by the daily cron ONLY when the deployer has supplied a read-only
+-- Cloudflare API token. The gap between html_requests and pageviews is traffic
+-- that fetched HTML but never ran JavaScript — AI crawlers, scrapers, feeds.
+CREATE TABLE rollup_edge_daily (
+  site_id       TEXT NOT NULL,
+  day           TEXT NOT NULL,          -- YYYY-MM-DD in the site's timezone
+  requests      INTEGER DEFAULT 0,      -- all eyeball requests (assets included)
+  html_requests INTEGER DEFAULT 0,      -- HTML responses only — comparable to pageviews
+  zone_tag      TEXT,
+  updated_at    INTEGER,
+  PRIMARY KEY (site_id, day)
+);
+CREATE TABLE rollup_edge_agent_daily (
+  site_id    TEXT NOT NULL,
+  day        TEXT NOT NULL,
+  user_agent TEXT NOT NULL,
+  requests   INTEGER DEFAULT 0,
+  PRIMARY KEY (site_id, day, user_agent)
+);
+CREATE INDEX idx_edge_agent_site_day ON rollup_edge_agent_daily(site_id, day, requests);
+
+-- clusters / anomalies / AI (M2+, created in M1 as placeholders)
+CREATE TABLE cluster_flags (
+  cluster_id TEXT PRIMARY KEY, site_id TEXT,
+  type TEXT, member_count INTEGER, evidence TEXT,
+  action TEXT DEFAULT 'observe', created_at INTEGER, expires_at INTEGER
+);
+CREATE TABLE anomaly_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id TEXT, day TEXT, dimension TEXT,
+  baseline REAL, actual REAL, deviation REAL,
+  related_cluster TEXT, evidence TEXT,
+  status TEXT DEFAULT 'pending', created_at INTEGER
+);
+-- saved conversion funnels (migration 0019) — see that file for the rationale
+CREATE TABLE funnels (
+  site_id    TEXT NOT NULL,
+  funnel_id  TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  steps      TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (site_id, funnel_id)
+);
+CREATE INDEX idx_funnels_site ON funnels(site_id, updated_at);
+
+CREATE TABLE ai_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id TEXT, period TEXT, kind TEXT,
+  content TEXT, data_snapshot TEXT, created_at INTEGER
+);

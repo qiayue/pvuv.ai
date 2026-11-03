@@ -1,16 +1,32 @@
 # pvuv.ai
 
-**Self-hosted, privacy-conscious web analytics with built-in invalid-traffic detection and ad protection — on Cloudflare Workers + D1.**
+**Privacy-conscious web analytics with built-in invalid-traffic detection and ad protection. Use the hosted service, or run the whole thing yourself on Cloudflare.**
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](./LICENSE)
-[![Status: early development](https://img.shields.io/badge/status-early%20development-orange.svg)](#roadmap)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-blue.svg)](./CHANGELOG.md)
 [![Runs on Cloudflare](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-f38020.svg)](https://workers.cloudflare.com/)
 
 > 中文说明 / Chinese: [`README.zh-CN.md`](./README.zh-CN.md) · Full build spec: [`PROJECT_PLAN.md`](./PROJECT_PLAN.md)
 
-pvuv.ai is a lightweight analytics platform you host yourself on Cloudflare's edge. Beyond counting PV/UV, it scores every hit for authenticity, spots invalid traffic that only reveals itself in aggregate, and can gate ad code so it loads only for traffic judged trustworthy — helping protect ad accounts from invalid-traffic penalties.
+pvuv.ai is a lightweight analytics platform that runs on Cloudflare's edge. Beyond counting PV/UV, it scores every hit for authenticity, spots invalid traffic that only reveals itself in aggregate, and can gate ad code so it loads only for traffic judged trustworthy — helping protect ad accounts from invalid-traffic penalties.
 
-> **Status.** This repository is under active development. The [roadmap](#roadmap) tracks progress toward the first deployable milestone (M1). Interfaces and schema may change before a tagged release.
+## Two ways to use it
+
+**Not sure? Start hosted.** You can move to self-hosting later — it is the same product, and the snippet on your site is the only thing that changes.
+
+| | **Hosted — [pvuv.ai](https://pvuv.ai)** | **Self-hosted — this repo** |
+|---|---|---|
+| Getting started | Sign in with Google, add the snippet | 4 commands, ~10 minutes |
+| You need | nothing | a Cloudflare account (Workers Paid, $5/mo) and a domain on it |
+| Upgrades & uptime | handled for you | you run `git pull` and redeploy |
+| Where the data lives | on our servers | **only in your own Cloudflare account** — no third party, ever |
+| Tuning detection | product defaults | every signal weight and threshold is yours to change |
+| Licence | — | MIT: use it, modify it, sell it. No strings. |
+
+→ **Hosted:** go to [pvuv.ai](https://pvuv.ai), sign in with Google, and skip the rest of this README.
+→ **Self-hosted:** read on, then jump to [Before you start](#before-you-start).
+
+> **Status.** v0.1.0 is the first open-source release — see [`CHANGELOG.md`](./CHANGELOG.md). It is pre-1.0: interfaces and schema may still change between minor versions, and every schema change ships as a D1 migration with upgrade notes in [`DEPLOY.md`](./DEPLOY.md).
 
 ---
 
@@ -42,6 +58,12 @@ Most self-hosted analytics tools count traffic but treat every request as real. 
 **AI-powered analysis (optional)**
 - Scheduled and on-demand reports: *data anomaly → attribution → actionable recommendations*
 
+**Open by default**
+- Read-only REST API, an **MCP server** so your own chatbot can query your traffic, and a **CLI** — one revocable, scopeable token for all three ([`docs/API.md`](./docs/API.md))
+- Console in 7 languages (English, 中文, 日本語, 한국어, Deutsch, Français, Español), switchable client-side
+- One-click export of everything the dashboard shows, as JSON
+- Optional crawler categorisation (search vs AI-training vs SEO vs ad verification) from an imported public bot directory
+
 ## Architecture
 
 ```
@@ -62,44 +84,46 @@ browser (f.js)
 
 Cloudflare **Workers** (ingest, consumer, api, console, cron) · **D1** (SQLite, monthly-partitioned events) · **Queues** (spike buffering) · **KV** (blocklist, config cache) · **Cron Triggers** (rollups, batch analysis) · optional **R2** (archive/static). No external database, no server to run.
 
-## Quick start
+## Before you start
 
-> The commands below describe the intended deployment. Some pieces land incrementally — check the [roadmap](#roadmap).
+Self-hosting needs three things. **Check all three now** — the third one is the
+usual surprise, and it is easier to discover here than halfway through an install:
 
-**Prerequisites:** Node.js 18+, a Cloudflare account, and `wrangler` (`npm i -g wrangler`).
+- [ ] **Node.js 18+** on your machine
+- [ ] **A domain already added to Cloudflare** (any plan). You do not have to move
+      your website — only the domain needs to be on Cloudflare's DNS
+- [ ] **Workers Paid plan — $5/month.** Not optional: the ingest pipeline uses
+      Cloudflare Queues, which the free plan does not include
+
+Everything else — the database, the KV stores, the queues, DNS records, TLS
+certificates — is created for you.
+
+> Only want to try it? The [hosted service](https://pvuv.ai) needs none of this.
+
+## Install
+
+**Full step-by-step guide: [`DEPLOY.md`](./DEPLOY.md)** (中文: [`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md)). The short version:
 
 ```bash
-# 1. Clone
-git clone https://github.com/qiayue/pvuv.ai.git
-cd pvuv.ai
+git clone https://github.com/qiayue/pvuv.ai.git && cd pvuv.ai
 npm install
-
-# 2. Create Cloudflare resources
-wrangler d1 create pvuv
-wrangler kv namespace create BLOCKLIST
-wrangler kv namespace create SITE_CONFIG
-wrangler queues create INGEST_QUEUE
-
-# 3. Configure — copy placeholders and fill in your IDs (never commit real IDs)
-cp config.example.toml config.local.toml     # scoring weights/thresholds (gitignored)
-#   then paste the D1/KV/Queue IDs from step 2 into each workers/*/wrangler.toml
-
-# 4. Set secrets (never put these in any file)
-wrangler secret put HMAC_KEY                  # cookie signing / verdict integrity
-wrangler secret put AI_API_KEY                # optional, for AI analysis
-
-# 5. Apply the database schema
-wrangler d1 execute pvuv --file=./shared/schema.sql
-
-# 6. Deploy the Workers
-wrangler deploy --config workers/ingest/wrangler.toml
-wrangler deploy --config workers/consumer/wrangler.toml
-wrangler deploy --config workers/api/wrangler.toml
-wrangler deploy --config workers/console/wrangler.toml
-wrangler deploy --config workers/cron/wrangler.toml
+npx wrangler login
+npm run setup
 ```
 
-**Bind your domains** in the Cloudflare dashboard (or via routes): `js` + `in` → ingest/static, `api` → api Worker, apex → console.
+`npm run setup` does the rest: creates the D1 database, KV namespaces and queues, fills in every config placeholder, points the routes at your domain, applies the migrations, builds the SDK and deploys all five workers. It is safe to re-run — completed steps are skipped and an already-configured file is never overwritten. Add `--dry-run` first to see exactly what it would do.
+
+Your domain is asked for once, at the start, and written everywhere it is needed. DNS records and certificates are provisioned automatically (the workers use Cloudflare Custom Domains), so the **only** step that cannot be automated is creating a Google/GitHub OAuth app — console login is OAuth-only. It prints that step last, with your callback URLs filled in; [`DEPLOY.md`](./DEPLOY.md) walks through it.
+
+The domain must already be added to your Cloudflare account, and each hostname must be free — a worker serves its host entirely.
+
+Non-interactive (CI, scripted installs):
+
+```bash
+npm run setup -- --domain example.com --admin you@example.com
+```
+
+Then sign in at your console domain with Google/GitHub (your email must be in `ADMIN_EMAILS`), register a site, and embed the snippet it prints. Details, OAuth setup, DNS notes, verification, and troubleshooting: [`DEPLOY.md`](./DEPLOY.md).
 
 ## Add it to a site
 
@@ -112,11 +136,107 @@ Register a site in the console to get a `site_id`, then embed:
         data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
 ```
 
-Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (self-hosted reverse-proxy endpoint, see [`PROJECT_PLAN.md` §12](./PROJECT_PLAN.md)), `data-exclude="/admin/*"`, `data-sensors="off"` (disable mobile-sensor signals for compliance).
+Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (ingest endpoint override / self-hosted reverse proxy, see [`PROJECT_PLAN.md` §12](./PROJECT_PLAN.md)), `data-exclude="/admin/*"`, `data-sensors="off"` (disable mobile-sensor signals for compliance).
+
+> **Self-hosted deployments must set `data-api`** to their own ingest host (e.g. `data-api="https://in.example.com"`) — the SDK's built-in default points at the reference domain. The console generates a snippet with the right values for your deployment.
+
+## Your first week
+
+Ad protection ships **off**, on purpose. Blocking ad code for real people costs
+real money, so the product is built to make you look before you enforce.
+
+**Day 1 — confirm data is arriving.** Open the console, click *Self-check*, then
+watch the *realtime* row in your site's dashboard while you load your own page.
+
+**Days 1–7 — just watch.** Learn what normal looks like for *your* site before
+changing anything:
+
+- **Traffic quality** shows the clean / suspect / bot / crawler split and which
+  detection signals actually fired.
+- The **traffic-health strip** shows each monitored ratio and how far it is from
+  its alert threshold — so you see a number climbing before it becomes a problem.
+- The chart's **invalid-traffic band** tells you whether bad traffic is one short
+  burst or spread across the day. Those mean very different things.
+
+**Week 2 — preview what ad protection would do.** The *Ad protection* panel
+estimates, for each tier, how many pageviews it would block and the resulting
+false-positive rate — computed from *your own* recorded traffic. No setting has
+to change to see this, and it is available from the moment you have data.
+
+**Then enforce.** Pick the tier whose false-positive rate you can live with —
+`balanced` is usually the answer — and switch it on. You can go back to `off` at
+any time.
+
+> **Shadow mode** is a separate safety net for the other order of operations: if
+> you enable protection *when creating a site*, it records decisions while still
+> loading ads normally for the first `adguard.shadow_days` (7 by default), then
+> begins enforcing. A site created with protection `off` has nothing to shadow —
+> use the panel estimate above instead.
+
+Once it is running, useful next steps: create an **API token** to query your data
+from a chatbot or the CLI ([`docs/API.md`](./docs/API.md)), and tune the signal
+weights in `config.local.toml` if your traffic has quirks the defaults misjudge.
+
+**Optional, once you're comfortable — see what the script never saw.** Every
+number above comes from the tracking script, so all of it is limited to visitors
+whose browser ran JavaScript. AI crawlers and scrapers fetch your HTML and leave;
+they never run a script, so they are absent by construction. Cloudflare counted
+them anyway. Paste a **read-only Cloudflare API token** into ⚙ settings and the
+nightly job pulls those request counts, so the dashboard can show the gap:
+
+```
+Edge HTML requests   12,480    ← what Cloudflare served
+Browser pageviews     2,773    ← what the script reported
+Gap                   9,707    ← fetched HTML, never ran JS
+```
+
+Skip it and everything works exactly as it does today — the panel simply stays
+hidden. Setup is two read-only permissions and one paste:
+[DEPLOY.md → Cloudflare edge requests](./DEPLOY.md#cloudflare-edge-requests-optional-advanced).
 
 ## Configuration
 
 Scoring weights, verdict thresholds, and the blocklist are **tunable and deployment-private**. `config.example.toml` ships example defaults; copy it to `config.local.toml` (gitignored) and tune privately. The engine reads weights from config — nothing is hardcoded — so you can adjust detection without exposing it to fraudsters. See [`PROJECT_PLAN.md` §21](./PROJECT_PLAN.md).
+
+## API, MCP server & CLI
+
+Read your data from anywhere: a REST API for integrations, an **MCP server** so your own chatbot can answer questions about your traffic, and a **CLI** for terminals and cron jobs. All read-only, all sharing one credential.
+
+Create a personal API token in the console (⚙ → API tokens) — scoped to one site or all of yours, individually revocable, stored only as an HMAC.
+
+```bash
+export PVUV_API_URL=https://api.pvuv.ai
+export PVUV_TOKEN=pvuv_…
+
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
+node cli/pvuv.mjs overview <site_id> --period 7d
+```
+
+The MCP server and CLI are dependency-free single files, so nothing extra is installed around a token. Full reference: [`docs/API.md`](./docs/API.md).
+
+## External ranking API (optional)
+
+An external ranking/scoring system can pull a cross-site, clean-traffic leaderboard in one call, authorized with the server-side API token:
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://api.pvuv.ai/v1/ranking?period=30d"
+```
+
+Returns each active site with clean (bot/crawler/suspect-excluded) pageviews split into **internal** (mutual visits referred by another site in the same deployment) and **external** traffic. The default `score` is external clean pageviews, so mutual visits between your own sites can't inflate the ranking; every field is exposed so an external system can apply its own formula. Owners also see this as a "Site ranking" table in the console. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
+
+## Editions
+
+pvuv.ai is **open core** — see [Two ways to use it](#two-ways-to-use-it) for choosing between them:
+
+- **This repository — the self-hosted edition — is MIT-licensed.** Use it, modify it, run it commercially, fold it into a closed product. No copyleft, no attribution requirement, no strings. Use it without a second thought.
+- **The hosted service at [pvuv.ai](https://pvuv.ai)** (managed accounts, upgrades, support) is run by the author and is **not** part of this repository. The two do not overlap or conflict — this open-source edition is complete and fully functional on its own, with no feature held back and no phoning home.
+
+## Attribution (optional)
+
+The shipped default homepage carries a small "Powered by pvuv.ai" footer linking back to the project — **on the deployed instance's homepage only** (dashboards and inner pages have no links, and nothing is ever injected into the sites you measure). It's a courtesy, **not a requirement**: MIT imposes none. Keep it if you'd like to support the project, or remove it freely — provide your own `workers/console/public/home.html` (served verbatim, with no footer added) or edit the default page. A star on GitHub is always appreciated. 🙏
+
+> The default homepage is intentionally sparse — it is *meant* to be customized. Thousands of deployments sharing identical landing copy would only create duplicate-content noise in search engines.
 
 ## Privacy & compliance
 
@@ -148,4 +268,4 @@ Found a vulnerability? Please report it privately — see [`SECURITY.md`](./SECU
 
 ## License
 
-[GNU AGPL-3.0](./LICENSE). You may self-host and modify freely, but if you run a modified version as a network service, you must offer its source to your users. This keeps the project open while preventing closed-source commercial forks.
+[MIT](./LICENSE). Do whatever you want — self-host, modify, redistribute, or use it commercially — with no obligation to open your changes and no attribution requirement. The separately-offered hosted multi-tenant SaaS edition is licensed on its own terms and is not covered by this repository.
