@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor versions may include
 breaking changes, always with a D1 migration and upgrade notes in
-[`DEPLOY.md`](./DEPLOY.md)).
+[`DEPLOY.md`](https://github.com/qiayue/pvuv.ai/blob/main/DEPLOY.md)).
 
 ## [0.1.0] — 2026-11-03
 
@@ -36,12 +36,13 @@ pvuv.ai.
 - 21 D1 migrations (`migrations/0001`–`0021`), D1 retention trims and a
   storage panel.
 - Console: tabbed dashboard loaded on demand, first-run onboarding, mobile
-  record cards, English and Simplified Chinese UI.
+  record cards, UI in 7 languages (English, 中文, 日本語, 한국어, Deutsch,
+  Français, Español).
 - API tokens, CLI (`cli/pvuv.mjs`) and MCP server (`mcp/`); see
-  [`docs/API.md`](./docs/API.md).
+  [`docs/API.md`](https://github.com/qiayue/pvuv.ai/blob/main/docs/API.md).
 - Optional Cloudflare edge-request pull (opt-in, observation only).
-- Deployment guides in English and Chinese: [`DEPLOY.md`](./DEPLOY.md),
-  [`DEPLOY.zh-CN.md`](./DEPLOY.zh-CN.md).
+- Deployment guides in English and Chinese: [`DEPLOY.md`](https://github.com/qiayue/pvuv.ai/blob/main/DEPLOY.md),
+  [`DEPLOY.zh-CN.md`](https://github.com/qiayue/pvuv.ai/blob/main/DEPLOY.zh-CN.md).
 
 ### Requirements
 - Node.js 22+ (required by wrangler 4), a Cloudflare account on the Workers
