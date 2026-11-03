@@ -61,7 +61,7 @@ Optional attributes: `data-spa="true"` (listen to pushState routing), `data-api`
 - **Queue**: `/in` enqueues on receipt; the consumer batch-writes to D1 to absorb spikes.
 - **KV**: blocklist, site-config cache (for edge reads at `/v`). HMAC keys via Workers Secrets.
 - **Cron Triggers**: hourly rollup + profile updates; daily population analysis + blocklist refresh + AI reports.
-- **R2** (M2+, optional): archive old-month raw events, host static assets.
+- **R2** (optional, not implemented yet): archive old-month raw events, host static assets. Today expired monthly partitions are dropped, not archived.
 - **Static hosting**: `js.pvuv.ai` via Workers Static Assets or R2 + CDN, `f.js` long-cached.
 
 **Data flow**
@@ -540,7 +540,8 @@ CREATE TABLE rollup_site_daily (
   PRIMARY KEY (site_id, day)
 );
 
--- clusters / anomalies / AI (M2+, tables created in M1 as placeholders)
+-- clusters / anomalies / AI (created in M1; written by the daily batch,
+-- anomaly job and console AI report since M2–M4)
 CREATE TABLE cluster_flags (
   cluster_id TEXT PRIMARY KEY, site_id TEXT,
   type TEXT, member_count INTEGER, evidence TEXT,
@@ -570,22 +571,40 @@ CREATE TABLE ai_reports (
 
 ## 10. Query API
 
-Base: `https://api.pvuv.ai/v1`
+Base: `https://api.pvuv.ai/v1` (GET only). Endpoints as implemented in v0.1.0 —
+parameters, value lists and response fields are documented in
+[`docs/API.md`](./docs/API.md):
 
 ```
-GET /sites/:id/overview?period=30d
-GET /sites/:id/timeseries?metric=pv&interval=day
-GET /sites/:id/breakdown?dim=page|source|utm_campaign|country|device&period=...&filter=...
-GET /sites/:id/funnel?steps=pageview:/pricing,signup,purchase
-GET /sites/:id/visitors/:vid/sessions
-GET /sites/:id/sessions/:sid/events
-GET /sites/:id/visitors/:vid/profile
-GET /sites/:id/attribution?event=purchase&model=first|last|last_non_direct
+GET /sites                                   sites the caller can read
+GET /sites/summary?period=…                  per-site totals for a site list
+GET /ranking?period=…                        cross-site clean ranking (server token only)
+GET /sites/:id/overview?period=30d&filters=…
+GET /sites/:id/realtime
+GET /sites/:id/timeseries?metric=pv&interval=day&period=…
+GET /sites/:id/breakdown?dim=page|source|channel|utm_campaign|country|device|…&limit=…&filters=…
 GET /sites/:id/quality?period=30d
-GET /sites/:id/traffic?verdict=bot&min_score=70&period=...
+GET /sites/:id/vitals?period=…
+GET /sites/:id/ctit?period=…                 conversion timing
+GET /sites/:id/alerts?period=…
+GET /sites/:id/adguard?period=…
+GET /sites/:id/edge?period=…
+GET /sites/:id/anomalies
+GET /sites/:id/traffic?verdict=bot&min_score=70&period=…
+GET /sites/:id/funnels                       saved funnels
+GET /sites/:id/funnel?steps=[{"type":"page","value":"/pricing"},{"type":"event","value":"signup"}]
+GET /sites/:id/funnel?funnel_id=…&breakdown=source
+GET /sites/:id/funnel_dropoff?funnel_id=…&step=1
+GET /sites/:id/visitors?path=/pay*&verdict=…
+GET /sites/:id/visitors/:vid/profile
 ```
 
-Breakdown supports multi-dimension combined filtering. External ranking systems and AI analysis reuse the same API. Auth: owners query only their own site; external systems/AI use a server-side token.
+Not implemented yet (planned in earlier drafts): per-visitor session lists
+(`/visitors/:vid/sessions`), per-session event lists (`/sessions/:sid/events`)
+and an attribution endpoint with first / last / last-non-direct models.
+
+Breakdown and most metric endpoints support multi-dimension combined filtering
+via `filters` (a JSON array of `{dim,value}`). External ranking systems and AI analysis reuse the same API. Auth: owners query only their own site; external systems/AI use a server-side token.
 
 **Programmatic access (§10).** Three surfaces share one credential — the REST
 API (`/v1/*`), an MCP server so an owner's own chatbot can query their data, and
@@ -680,12 +699,15 @@ This is an optional adapter layer; the core platform does not depend on it.
 
 ## 17. Milestones
 
-| Milestone | Scope |
-|---|---|
-| **M1** (first deployable) | f.js (collection + hard checks + adguard progressive load + Android sensor signals); `/in` (with realtime first-pass scoring, writes four fields); `/v` fast verdict; D1 base tables; minimal console (PV/UV/sources/top pages + traffic-quality overview) |
-| **M2** | Sessions/dwell/bounce, full UTM dimensions, rollup acceleration, population analysis (fingerprint/IP-segment clusters + blocklist loop), shadow mode, reverse-proxy option |
-| **M3** | identify + custom events + revenue + funnel attribution; distribution tests + baseline anomalies |
-| **M4** | AI reports + full anti-fraud + external ranking integration + human-review UI |
+| Milestone | Scope | Status (v0.1.0) |
+|---|---|---|
+| **M1** (first deployable) | f.js (collection + hard checks + adguard progressive load + Android sensor signals); `/in` (with realtime first-pass scoring, writes four fields); `/v` fast verdict; D1 base tables; minimal console (PV/UV/sources/top pages + traffic-quality overview) | **Done.** The expensive WebGL/canvas fingerprint probe (`x7`) is not collected yet, so `fp_hash` is always NULL. |
+| **M2** | Sessions/dwell/bounce, full UTM dimensions, rollup acceleration, population analysis (fingerprint/IP-segment clusters + blocklist loop), shadow mode, reverse-proxy option | **Mostly done.** Sessions/dwell/bounce, full UTM + first-touch, rollups, shadow mode and the reverse-proxy worker (`workers/proxy`) are done. Population analysis is **partial**: the /24, one-shot network, session-drift and graph clusters run daily and re-verdict data. The fingerprint and cookie-reset clusters, cross-site detection and the KV fingerprint blocklist (`bl:fp:*`) are **dormant** because `fp_hash` is never produced. `bl:ip24:*` is written only when `share_bare_ip = true` (default off). |
+| **M3** | identify + custom events + revenue + funnel attribution; distribution tests + baseline anomalies | **Partial.** Custom events, goals, revenue, saved funnels with drop-off and segment breakdown, and daily baseline anomalies are done. `identify()` records a user↔visitor map, but there is **no cross-device merge**. Revenue is stored for USD only, with **no FX conversion** (other currencies give `revenue_usd = NULL`). **No attribution models** (first / last / last-non-direct). Distribution checks are concentration-jump heuristics only, **not statistical tests**. Behaviour-sequence clustering is not built. |
+| **M4** | AI reports + full anti-fraud + external ranking integration + human-review UI | **Partial.** External ranking (`/v1/ranking`, internal vs external clean traffic) is done. AI reports are **on-demand only** (console button, OpenAI-compatible or Anthropic API, en/zh): **no scheduled reports** and no per-anomaly "why flagged" explanation. **No human-review UI** (anomaly reports stay `pending`). Full anti-fraud waits on the fingerprint probe (see M2). |
+
+Not in any milestone yet: an R2 archive of old months. The retention job drops
+whole expired `events_YYYYMM` partitions instead of archiving them.
 
 ---
 
@@ -702,7 +724,7 @@ Must-have:
 6. **console (pvuv.ai)**: login, site registration (issue site_id + embed snippet), traffic dashboard, traffic-quality overview + high-score drill-down.
 7. **D1 schema**: create all tables from §9.2 (including M2+ tables as placeholders).
 
-May skip in M1 (create tables / stub endpoints only): population batch analysis, distribution tests, AI reports, funnels, shadow-mode backtest.
+May skip in M1 (create tables / stub endpoints only): population batch analysis, distribution tests, AI reports, funnels, shadow-mode backtest. *(Historical: all of these have since been built, except that distribution tests are concentration heuristics rather than statistical tests — see §17.)*
 
 ---
 
@@ -767,11 +789,11 @@ A public repo can't hide client-side logic from anyone reading the code, so the 
 
 **License: MIT (open core).** The self-hosted edition in this repo is MIT — use, modify, redistribute, or commercialize it with no copyleft and no attribution requirement, so adopters can use it without reservation. Commercialization is handled by a separately-offered, closed-source hosted **multi-tenant SaaS** edition (managed accounts, billing, org isolation, support) that is not part of this repository; the two do not overlap or conflict.
 
-**Pre-open-source security checklist (confirm every item):**
-- [ ] No secrets anywhere in the repo (HMAC key, Cloudflare token, AI API key, `.dev.vars`)
-- [ ] `.gitignore` includes `node_modules`, `.dev.vars`, `.env`, `config.local.*`, `dist` scratch
-- [ ] `wrangler.toml` uses placeholders; real account_id / binding IDs stay out of the repo
-- [ ] All secrets go through `wrangler secret put`
-- [ ] No secrets in commit history (scan with `git log -p` / gitleaks; if ever committed, rotate before open-sourcing)
-- [ ] `SECURITY.md` provides a vulnerability-reporting channel
-- [ ] README states compliance boundaries and deployer responsibility (§16)
+**Release security checklist (re-confirm before every release; ticked = verified for v0.1.0):**
+- [x] No secrets anywhere in the repo (HMAC key, Cloudflare token, AI API key, `.dev.vars`)
+- [x] `.gitignore` includes `node_modules`, `.dev.vars`, `.env`, `config.local.*`, `dist` scratch
+- [x] `wrangler.toml` uses placeholders; real account_id / binding IDs stay out of the repo
+- [x] All secrets go through `wrangler secret put` (or the console's settings, stored in the deployer's own D1)
+- [x] No secrets in commit history. Verified for v0.1.0 by a pattern scan of the full history (`git log -p`: no token- or key-shaped strings, no real IDs, no `.dev.vars`/`.env`/`config.local.*` ever tracked). Run gitleaks before each release; if anything was ever committed, rotate it.
+- [x] `SECURITY.md` provides a vulnerability-reporting channel
+- [x] README states compliance boundaries and deployer responsibility (§16)

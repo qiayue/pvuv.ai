@@ -2,7 +2,7 @@
  * pvuv.ai cron worker — scheduled jobs (PROJECT_PLAN.md §18.4)
  *
  * Dispatches by cron expression:
- *   "5 * * * *"  → hourly rollup (src/rollup.ts) — M1
+ *   "5 * * * *"  → hourly rollup (src/rollup.ts)
  *   "30 3 * * *" → daily population/batch analysis (src/batch.ts) + retention purge
  *
  * The expressions below MUST match workers/cron/wrangler.toml exactly. They are

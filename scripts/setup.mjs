@@ -73,7 +73,7 @@ async function main() {
   // ---- 0. preflight ------------------------------------------------------
   step(0, 'Checking prerequisites');
   const major = Number(process.versions.node.split('.')[0]);
-  if (major < 18) { say(c.r(`  Node 18+ required (found ${process.versions.node})`)); process.exit(1); }
+  if (major < 22) { say(c.r(`  Node 22+ required (wrangler 4) (found ${process.versions.node})`)); process.exit(1); }
   ok(`Node ${process.versions.node}`);
 
   const who = wrangler(['whoami']);

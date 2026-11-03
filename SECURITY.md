@@ -13,11 +13,18 @@ contact the maintainer through the address listed on the GitHub profile
 Please include:
 - a description of the issue and its impact,
 - steps to reproduce (a minimal proof of concept if possible),
-- affected component (SDK / ingest / api / console / cron) and version or commit.
+- affected component (SDK / ingest / consumer / api / console / cron / proxy /
+  CLI / MCP server) and version or commit.
 
 We aim to acknowledge reports within a few days and to coordinate a fix and
 disclosure timeline with you. Please give us reasonable time to address the
 issue before any public disclosure.
+
+## Supported versions
+
+pvuv.ai is pre-1.0. Security fixes land on `main` and in the next release; only
+the latest release (currently **v0.1.0**) is supported, so upgrade before
+reporting an issue against an older build.
 
 ## Scope
 
@@ -48,7 +55,7 @@ interest include, but are not limited to:
 
 ## For deployers
 
-Before running pvuv.ai in production, review the pre-open-source security
-checklist in [`PROJECT_PLAN.md` §22](./PROJECT_PLAN.md): keep all secrets in
+Before running pvuv.ai in production, review the security checklist in
+[`PROJECT_PLAN.md` §22](./PROJECT_PLAN.md): keep all secrets in
 `wrangler secret`, never commit `.dev.vars` / `config.local.*` / real account
 IDs, and scan history for accidentally committed secrets (rotate if found).

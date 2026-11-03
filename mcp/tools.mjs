@@ -7,7 +7,7 @@
  */
 
 export const PROTOCOL_VERSION = '2024-11-05';
-export const SERVER_INFO = { name: 'pvuv.ai', version: '1.0.0' };
+export const SERVER_INFO = { name: 'pvuv.ai', version: '0.1.0' };
 
 export const PERIODS = [
   '24h', 'today', 'yesterday', '7d', '30d', '90d',

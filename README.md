@@ -39,14 +39,18 @@ Most self-hosted analytics tools count traffic but treat every request as real. 
 **Full-dimension analytics**
 - Multi-site and multi-subdomain, per-page PV/UV
 - Referrers, full UTM set, and all click/tracking params (gclid, fbclid, ttclid, msclkid, ref, …)
-- Bounce rate (engagement-based, GA4-style) and true dwell time
-- Custom events with revenue (auto-converted to USD)
-- Session- and user-level full-path attribution (first-touch + last-touch), cross-device identity merge
+- GA4-style channel groups, first-touch source/medium/campaign per visitor
+- Bounce rate (engagement-based, GA4-style), true dwell time, scroll depth, per-visitor journeys
+- Custom events and goals with revenue (recorded in USD; other currencies are stored but not yet converted)
+- Funnels with segment breakdown, drop-off drill-down, friction signals and saved funnels
+- Core Web Vitals, plus frustration / JS-error / form-abandon signals
+- `identify()` to tie a visitor to your own user id
+- Public read-only share links for a site's dashboard
 
 **Invalid-traffic detection (three layers)**
-- **Client signals** — headless/automation traits, environment contradictions, WebGL/canvas, honeypots
-- **Session features** — inter-page timing, path patterns, interaction presence
-- **Population statistics** — fingerprint / IP-segment clusters, distribution-shape tests, timing regularity, baseline anomalies, and cross-site detection
+- **Client signals** — headless/automation traits, environment contradictions, canvas render probes, a honeypot link, pointer dynamics
+- **Request & session features** — transport fingerprint, declared AI agents, inter-page timing, path patterns, scroll vs pointer interaction, session drift
+- **Population statistics** (daily batch) — network/transport clusters and one-shot farms, graph propagation, conversion-timing analysis, concentration shifts and baseline anomalies
 - Every event carries a 0–100 score, a verdict (`clean`/`suspect`/`bot`/`crawler`), and a bit-flag record of which signals fired
 
 **Ad protection (optional)**
@@ -56,12 +60,13 @@ Most self-hosted analytics tools count traffic but treat every request as real. 
 - Per-site owner-controlled thresholds with a shadow (record-only) mode to preview impact before enforcing
 
 **AI-powered analysis (optional)**
-- Scheduled and on-demand reports: *data anomaly → attribution → actionable recommendations*
+- On-demand written reports per site: *data anomaly → attribution → actionable recommendations*, using any OpenAI-compatible endpoint or the Anthropic API that you configure
 
 **Open by default**
 - Read-only REST API, an **MCP server** so your own chatbot can query your traffic, and a **CLI** — one revocable, scopeable token for all three ([`docs/API.md`](./docs/API.md))
 - Console in 7 languages (English, 中文, 日本語, 한국어, Deutsch, Français, Español), switchable client-side
 - One-click export of everything the dashboard shows, as JSON
+- Configurable D1 retention with a storage panel, so a busy site stays inside D1's limits
 - Optional crawler categorisation (search vs AI-training vs SEO vs ad verification) from an imported public bot directory
 
 ## Architecture
@@ -78,18 +83,20 @@ browser (f.js)
   pvuv.ai           console (dashboards, traffic quality)   in.pvuv.ai/v ←┘ fast verdict
 ```
 
-**Domain split** — exposed subdomains (`js`, `in`) that get embedded on measured sites are isolated from internal ones (`api`, apex console), so if an exposed subdomain ever hits a blocklist, dashboards and queries are unaffected. See [`PROJECT_PLAN.md` §1](./PROJECT_PLAN.md).
+Hostnames above are the reference deployment. A self-hosted install defaults to `analytics.<domain>` (console, which also serves `f.js`), `in.<domain>` (ingest) and `api.<domain>` (query API) — `npm run setup` asks, and every host can be overridden.
+
+**Domain split** — the ingest host that gets embedded on measured sites is kept separate from the internal ones (`api`, console), so if an exposed host ever hits a blocklist, dashboards and queries are unaffected. For the strongest isolation, serve the SDK first-party through the optional `workers/proxy`. See [`PROJECT_PLAN.md` §1](./PROJECT_PLAN.md).
 
 ## Tech stack
 
-Cloudflare **Workers** (ingest, consumer, api, console, cron) · **D1** (SQLite, monthly-partitioned events) · **Queues** (spike buffering) · **KV** (blocklist, config cache) · **Cron Triggers** (rollups, batch analysis) · optional **R2** (archive/static). No external database, no server to run.
+Cloudflare **Workers** (ingest, consumer, api, console, cron, optional proxy) · **D1** (SQLite, monthly-partitioned events) · **Queues** (spike buffering) · **KV** (blocklist, config cache) · **Cron Triggers** (rollups, batch analysis, retention). No external database, no server to run.
 
 ## Before you start
 
 Self-hosting needs three things. **Check all three now** — the third one is the
 usual surprise, and it is easier to discover here than halfway through an install:
 
-- [ ] **Node.js 18+** on your machine
+- [ ] **Node.js 22+** on your machine (required by wrangler 4)
 - [ ] **A domain already added to Cloudflare** (any plan). You do not have to move
       your website — only the domain needs to be on Cloudflare's DNS
 - [ ] **Workers Paid plan — $5/month.** Not optional: the ingest pipeline uses
@@ -130,15 +137,16 @@ Then sign in at your console domain with Google/GitHub (your email must be in `A
 Register a site in the console to get a `site_id`, then embed:
 
 ```html
-<script defer src="https://js.pvuv.ai/f.js"
+<script defer src="https://analytics.example.com/f.js"
         data-site="YOUR_SITE_ID"
+        data-api="https://in.example.com"
         data-adguard="balanced"
         data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
 ```
 
-Optional attributes: `data-spa="true"` (SPA route tracking), `data-api` (ingest endpoint override / self-hosted reverse proxy, see [`PROJECT_PLAN.md` §12](./PROJECT_PLAN.md)), `data-exclude="/admin/*"`, `data-sensors="off"` (disable mobile-sensor signals for compliance).
+`data-api` is your ingest host (or the first-party reverse proxy, see [`PROJECT_PLAN.md` §12](./PROJECT_PLAN.md)). Optional attributes: `data-spa="true"` (SPA route tracking), `data-exclude="/admin/*"`, `data-sensors="off"` (disable mobile-sensor signals for compliance).
 
-> **Self-hosted deployments must set `data-api`** to their own ingest host (e.g. `data-api="https://in.example.com"`) — the SDK's built-in default points at the reference domain. The console generates a snippet with the right values for your deployment.
+> **Always keep `data-api`** — without it the SDK falls back to the reference ingest host. The snippet the console generates already has the right `src` and `data-api` for your deployment, so copying it is the safest route.
 
 ## Your first week
 
@@ -146,7 +154,7 @@ Ad protection ships **off**, on purpose. Blocking ad code for real people costs
 real money, so the product is built to make you look before you enforce.
 
 **Day 1 — confirm data is arriving.** Open the console, click *Self-check*, then
-watch the *realtime* row in your site's dashboard while you load your own page.
+watch the *realtime* count at the top of your site's dashboard while you load your own page.
 
 **Days 1–7 — just watch.** Learn what normal looks like for *your* site before
 changing anything:
@@ -158,7 +166,7 @@ changing anything:
 - The chart's **invalid-traffic band** tells you whether bad traffic is one short
   burst or spread across the day. Those mean very different things.
 
-**Week 2 — preview what ad protection would do.** The *Ad protection* panel
+**Week 2 — preview what ad protection would do.** The *Ad protection* tab
 estimates, for each tier, how many pageviews it would block and the resulting
 false-positive rate — computed from *your own* recorded traffic. No setting has
 to change to see this, and it is available from the moment you have data.
@@ -171,7 +179,7 @@ any time.
 > you enable protection *when creating a site*, it records decisions while still
 > loading ads normally for the first `adguard.shadow_days` (7 by default), then
 > begins enforcing. A site created with protection `off` has nothing to shadow —
-> use the panel estimate above instead.
+> use the tab's estimate above instead.
 
 Once it is running, useful next steps: create an **API token** to query your data
 from a chatbot or the CLI ([`docs/API.md`](./docs/API.md)), and tune the signal
@@ -205,7 +213,7 @@ Read your data from anywhere: a REST API for integrations, an **MCP server** so 
 Create a personal API token in the console (⚙ → API tokens) — scoped to one site or all of yours, individually revocable, stored only as an HMAC.
 
 ```bash
-export PVUV_API_URL=https://api.pvuv.ai
+export PVUV_API_URL=https://api.example.com   # your API host
 export PVUV_TOKEN=pvuv_…
 
 curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
@@ -216,11 +224,11 @@ The MCP server and CLI are dependency-free single files, so nothing extra is ins
 
 ## External ranking API (optional)
 
-An external ranking/scoring system can pull a cross-site, clean-traffic leaderboard in one call, authorized with the server-side API token:
+An external ranking/scoring system can pull a cross-site, clean-traffic leaderboard in one call, authorized with the server-side `API_TOKEN` secret (not set by `npm run setup` — add it with `npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml` if you need this):
 
 ```bash
 curl -H "Authorization: Bearer $API_TOKEN" \
-  "https://api.pvuv.ai/v1/ranking?period=30d"
+  "https://api.example.com/v1/ranking?period=30d"
 ```
 
 Returns each active site with clean (bot/crawler/suspect-excluded) pageviews split into **internal** (mutual visits referred by another site in the same deployment) and **external** traffic. The default `score` is external clean pageviews, so mutual visits between your own sites can't inflate the ranking; every field is exposed so an external system can apply its own formula. Owners also see this as a "Site ranking" table in the console. See [`PROJECT_PLAN.md` §14](./PROJECT_PLAN.md).
@@ -249,14 +257,14 @@ pvuv.ai is designed to minimize what it stores:
 
 ## Roadmap
 
-| Milestone | Scope |
-|---|---|
-| **M1** (first deployable) | SDK + ingest + fast verdict + D1 schema + minimal console (PV/UV, sources, top pages, traffic-quality overview) |
-| **M2** | Sessions/dwell/bounce, full UTM, rollup acceleration, population analysis + blocklist loop, shadow mode, reverse-proxy option |
-| **M3** | identify + custom events + revenue + funnel attribution, distribution tests + baseline anomalies |
-| **M4** | AI reports, full anti-fraud, external ranking integration, human-review UI |
+| Milestone | Scope | Status in v0.1.0 |
+|---|---|---|
+| **M1** (first deployable) | SDK + ingest + fast verdict + D1 schema + minimal console (PV/UV, sources, top pages, traffic-quality overview) | ✅ Done |
+| **M2** | Sessions/dwell/bounce, full UTM, rollup acceleration, population analysis + blocklist loop, shadow mode, reverse-proxy option | 🟡 Mostly — all done except fingerprint-based clusters and the fingerprint blocklist, which stay dormant until the expensive client checks ship |
+| **M3** | identify + custom events + revenue + funnel attribution, distribution tests + baseline anomalies | 🟡 Partly — events, revenue, funnels and baseline anomalies are done; currency conversion, cross-device merge, attribution models and statistical distribution tests are not yet |
+| **M4** | AI reports, full anti-fraud, external ranking integration, human-review UI | 🟡 Partly — on-demand AI reports and the ranking API are done; scheduled reports, WebGL/canvas fingerprinting with cross-site clusters, and the human-review UI are not yet |
 
-Full details in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
+Release history: [`CHANGELOG.md`](./CHANGELOG.md). Full details in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 
 ## Contributing
 

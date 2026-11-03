@@ -39,14 +39,18 @@ pvuv.ai 是一个跑在 Cloudflare 边缘的轻量统计平台。它不只统计
 **全维度统计**
 - 多站点、多子域，per-page PV/UV
 - 来源、完整 UTM，以及全部点击/跟踪参数（gclid、fbclid、ttclid、msclkid、ref…）
-- 跳出率（基于互动、GA4 口径）与真实停留时长
-- 含金额的自定义事件（自动折算 USD）
-- 会话级与用户级全链路归因（首触 + 末触），跨设备身份合并
+- GA4 口径的渠道分组，每个访客的首触来源/媒介/广告系列
+- 跳出率（基于互动、GA4 口径）、真实停留时长、滚动深度、单访客轨迹
+- 自定义事件与目标，可带金额（按 USD 记录；其他币种会保存但暂不折算）
+- 漏斗：分群对比、流失下钻、摩擦信号、保存常用漏斗
+- Core Web Vitals，以及挫败点击 / JS 错误 / 表单放弃等信号
+- `identify()` 把访客关联到你自己的用户 ID
+- 站点面板的公开只读分享链接
 
 **虚假流量识别（三层）**
-- **前端信号** —— 无头/自动化特征、环境矛盾、WebGL/canvas、蜜罐
-- **会话特征** —— 页间时序、路径模式、是否有交互
-- **群体统计** —— 指纹 / IP 段聚簇、分布形态检验、时序规律性、基线异动，以及跨站识别
+- **前端信号** —— 无头/自动化特征、环境矛盾、canvas 渲染探针、蜜罐链接、指针动力学
+- **请求与会话特征** —— 传输层指纹、自报身份的 AI agent、页间时序、路径模式、滚动与指针交互、会话漂移
+- **群体统计**（每日批处理）—— 网络/传输层聚簇与一次性刷量农场、图传播、转化时序分析、集中度突变与基线异动
 - 每条事件都带 0–100 分、判定（`clean`/`suspect`/`bot`/`crawler`）、以及命中信号的位标记
 
 **广告防护（可选）**
@@ -56,12 +60,13 @@ pvuv.ai 是一个跑在 Cloudflare 边缘的轻量统计平台。它不只统计
 - 阈值由站长自己控制，提供影子（只记录不拦截）模式，先看影响再启用
 
 **AI 分析（可选）**
-- 定时与按需报告：*数据异动 → 归因判断 → 可执行建议*
+- 按站点按需生成书面报告：*数据异动 → 归因判断 → 可执行建议*，可接入任意 OpenAI 兼容接口或 Anthropic API，由你自行配置
 
 **默认开放**
 - 只读 REST API、让你自己的 Chatbot 查询流量的 **MCP 服务器**、以及 **CLI**——三者共用同一个可限权、可吊销的令牌（[`docs/API.md`](./docs/API.md)）
 - 控制台支持 7 种语言（English、中文、日本語、한국어、Deutsch、Français、Español），前端即时切换
 - 一键导出仪表盘展示的全部数据（JSON）
+- 可配置的 D1 数据保留策略与存储面板，访问量大的站点也能稳在 D1 限额内
 - 可选的爬虫分类（搜索引擎 / AI 训练 / SEO / 广告验证），来自导入的公开爬虫目录
 
 ## 架构
@@ -78,18 +83,20 @@ pvuv.ai 是一个跑在 Cloudflare 边缘的轻量统计平台。它不只统计
   pvuv.ai           控制台（看板、流量质量）  in.pvuv.ai/v ←┘ 快速判定
 ```
 
-**域名分离** —— 会嵌到被统计站点上的暴露子域（`js`、`in`）与内部子域（`api`、主域后台）隔离，暴露子域即使某天进了拦截列表，后台和查询也不受影响。详见 [`PROJECT_PLAN.zh-CN.md` §1](./PROJECT_PLAN.zh-CN.md)。
+以上主机名是参考部署。自部署默认使用 `analytics.<域名>`（控制台，同时提供 `f.js`）、`in.<域名>`（上报）和 `api.<域名>`（查询 API）——`npm run setup` 会询问，每个主机名都可以改。
+
+**域名分离** —— 会嵌到被统计站点上的上报域名与内部域名（`api`、控制台）分开，暴露的域名即使某天进了拦截列表，后台和查询也不受影响。想要最强隔离，可以通过可选的 `workers/proxy` 以第一方方式提供 SDK。详见 [`PROJECT_PLAN.zh-CN.md` §1](./PROJECT_PLAN.zh-CN.md)。
 
 ## 技术栈
 
-Cloudflare **Workers**（ingest、consumer、api、console、cron）· **D1**（SQLite，事件按月分表）· **Queues**（削峰）· **KV**（黑名单、配置缓存）· **Cron Triggers**（聚合、批量分析）· 可选 **R2**（归档/静态）。无外部数据库，无需自己运维服务器。
+Cloudflare **Workers**（ingest、consumer、api、console、cron，可选 proxy）· **D1**（SQLite，事件按月分表）· **Queues**（削峰）· **KV**（黑名单、配置缓存）· **Cron Triggers**（聚合、批量分析、数据保留）。无外部数据库，无需自己运维服务器。
 
 ## 开始之前
 
 自部署需要三样东西。**请现在就把三条都确认一遍**——第三条是最容易踩坑的,
 在这里发现比装到一半才发现要好得多:
 
-- [ ] 本机装有 **Node.js 18+**
+- [ ] 本机装有 **Node.js 22+**(wrangler 4 的要求)
 - [ ] **域名已经添加到 Cloudflare**(任意套餐即可)。不需要把网站搬过去,
       只要域名的 DNS 托管在 Cloudflare 就行
 - [ ] **Workers 付费套餐 —— 每月 $5**。这条无法绕过:数据接收链路用到了
@@ -129,23 +136,24 @@ npm run setup -- --domain example.com --admin you@example.com
 在控制台注册站点拿到 `site_id`，然后嵌入：
 
 ```html
-<script defer src="https://js.pvuv.ai/f.js"
+<script defer src="https://analytics.example.com/f.js"
         data-site="YOUR_SITE_ID"
+        data-api="https://in.example.com"
         data-adguard="balanced"
         data-adclient="ca-pub-xxxxxxxxxxxxxxxx"></script>
 ```
 
-可选属性：`data-spa="true"`（SPA 路由追踪）、`data-api`（上报地址覆盖 / 自建反代，见 [`PROJECT_PLAN.zh-CN.md` §12](./PROJECT_PLAN.zh-CN.md)）、`data-exclude="/admin/*"`、`data-sensors="off"`（关闭移动端传感器信号，供合规）。
+`data-api` 是你的上报域名（或第一方反代，见 [`PROJECT_PLAN.zh-CN.md` §12](./PROJECT_PLAN.zh-CN.md)）。可选属性：`data-spa="true"`（SPA 路由追踪）、`data-exclude="/admin/*"`、`data-sensors="off"`（关闭移动端传感器信号，供合规）。
 
-> **自部署必须设置 `data-api`** 指向你自己的上报域名（如 `data-api="https://in.example.com"`）——SDK 内置默认值是参考域名。控制台生成的嵌入代码会自动带上适配你部署的值。
+> **务必保留 `data-api`**——缺了它，SDK 会退回参考部署的上报域名。控制台生成的嵌入代码已经带好适配你部署的 `src` 和 `data-api`，直接复制最稳妥。
 
 ## 上手第一周
 
 广告防护**默认是关闭的**,这是刻意设计。误拦真人的广告是真金白银的损失,
 所以产品的思路是:先看清楚,再决定拦不拦。
 
-**第 1 天 —— 确认数据进来了。** 打开控制台点「Self-check」,然后一边访问自己的
-页面,一边看站点面板里的实时那一行。
+**第 1 天 —— 确认数据进来了。** 打开控制台点「自检」,然后一边访问自己的
+页面,一边看站点面板顶部的实时在线数。
 
 **第 1–7 天 —— 只看,不动。** 在改任何设置之前,先摸清**你自己站点**的正常水位:
 
@@ -156,7 +164,7 @@ npm run setup -- --domain example.com --admin you@example.com
 - 图表下方的**异常流量色带**告诉你坏流量是**一次性爆发**还是**全天弥漫**,
   这两者的应对方式完全不同。
 
-**第 2 周 —— 预演广告防护会拦掉什么。**「广告防护」面板会按档位估算:会拦掉多少
+**第 2 周 —— 预演广告防护会拦掉什么。**「广告防护」标签页会按档位估算:会拦掉多少
 浏览量、以及由此产生的误伤率——全部基于**你自己**已记录的流量。**不需要改任何
 设置**就能看到,只要有数据就可以看。
 
@@ -165,7 +173,7 @@ npm run setup -- --domain example.com --admin you@example.com
 
 > **影子模式**是针对另一种操作顺序的保护:如果你在**建站时就开启了防护**,
 > 它会在最初 `adguard.shadow_days` 天(默认 7 天)照常出广告、只记录判定,
-> 之后才开始真正拦截。建站时选了 `off` 的站点没有东西可影子——用上面的面板
+> 之后才开始真正拦截。建站时选了 `off` 的站点没有东西可影子——用上面标签页里的
 > 估算即可。
 
 跑起来之后可以做的事:创建 **API 令牌**,用 Chatbot 或 CLI 查询自己的数据
@@ -199,7 +207,7 @@ npm run setup -- --domain example.com --admin you@example.com
 在控制台(⚙ → API 令牌)创建个人 API 令牌——可限定到单个站点或全部站点,可单独吊销,仅以 HMAC 形式存储。
 
 ```bash
-export PVUV_API_URL=https://api.pvuv.ai
+export PVUV_API_URL=https://api.example.com   # 你的 API 域名
 export PVUV_TOKEN=pvuv_…
 
 curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/sites"
@@ -210,21 +218,21 @@ MCP 服务器和 CLI 都是零依赖单文件,不会在持有令牌的地方引�
 
 ## 外部排名 API（可选）
 
-外部排名/评分系统可以用服务端 API token 一次拉取跨站点、基于清洗流量的榜单：
+外部排名/评分系统可以用服务端 `API_TOKEN` 密钥一次拉取跨站点、基于清洗流量的榜单（`npm run setup` 不会设置它，需要时执行 `npx wrangler secret put API_TOKEN -c workers/api/wrangler.toml`）：
 
 ```bash
 curl -H "Authorization: Bearer $API_TOKEN" \
-  "https://api.pvuv.ai/v1/ranking?period=30d"
+  "https://api.example.com/v1/ranking?period=30d"
 ```
 
-返回每个活跃站点的 clean（已排除 bot/crawler/suspect）浏览量，并拆分为**内部**（本部署内另一站点带来的互访）与**外部**流量。默认 `score` 用的是外部 clean 浏览量——所以你自己站点之间的互访不会抬高排名；所有字段都暴露出来，外部系统可自行套用公式。站长也能在 console 里看到「Site ranking」表格。详见 [`PROJECT_PLAN.zh-CN.md` §14](./PROJECT_PLAN.zh-CN.md)。
+返回每个活跃站点的 clean（已排除 bot/crawler/suspect）浏览量，并拆分为**内部**（本部署内另一站点带来的互访）与**外部**流量。默认 `score` 用的是外部 clean 浏览量——所以你自己站点之间的互访不会抬高排名；所有字段都暴露出来，外部系统可自行套用公式。站长也能在控制台的站点列表页看到「站点排名 · 清洗流量」表格。详见 [`PROJECT_PLAN.zh-CN.md` §14](./PROJECT_PLAN.zh-CN.md)。
 
 ## 版本（开放内核）
 
 pvuv.ai 采用**开放内核（open core）**模式——两者怎么选见[两种使用方式](#两种使用方式)：
 
 - **本仓库——自托管版——采用 MIT 许可**。随便用、随便改、可商用、可闭源集成进你自己的产品。没有 copyleft、没有署名要求、没有任何附加条件。**无所顾忌地用。**
-- **托管的多租户 SaaS 版**（托管账号、计费、组织隔离、技术支持）由作者单独提供，**不在本仓库内**。两者不重叠、不冲突——开源版本身就是完整可用的。
+- **[pvuv.ai](https://pvuv.ai) 托管服务**（托管账号、升级、技术支持）由作者运营，**不在本仓库内**。两者不重叠、不冲突——开源版本身就完整可用，没有保留任何功能，也不会向外回传数据。
 
 ## 署名（可选）
 
@@ -243,14 +251,14 @@ pvuv.ai 以数据最小化为设计原则：
 
 ## 路线图
 
-| 里程碑 | 范围 |
-|---|---|
-| **M1**（首个可部署） | SDK + 上报 + 快速判定 + D1 表 + 最简控制台（PV/UV、来源、Top 页、流量质量概览） |
-| **M2** | 会话/停留/跳出、完整 UTM、rollup 加速、群体分析 + 黑名单闭环、影子模式、反代方案 |
-| **M3** | identify + 自定义事件 + revenue + 漏斗归因、分布检验 + 基线异动 |
-| **M4** | AI 报告、完整反作弊、外部排名对接、人工复核界面 |
+| 里程碑 | 范围 | v0.1.0 状态 |
+|---|---|---|
+| **M1**（首个可部署） | SDK + 上报 + 快速判定 + D1 表 + 最简控制台（PV/UV、来源、Top 页、流量质量概览） | ✅ 已完成 |
+| **M2** | 会话/停留/跳出、完整 UTM、rollup 加速、群体分析 + 黑名单闭环、影子模式、反代方案 | 🟡 大部分——仅基于指纹的聚簇与指纹黑名单暂未生效，要等高开销的前端检测上线 |
+| **M3** | identify + 自定义事件 + revenue + 漏斗归因、分布检验 + 基线异动 | 🟡 部分——事件、金额、漏斗、基线异动已完成；币种折算、跨设备合并、归因模型、统计学分布检验尚未完成 |
+| **M4** | AI 报告、完整反作弊、外部排名对接、人工复核界面 | 🟡 部分——按需 AI 报告和排名 API 已完成；定时报告、WebGL/canvas 指纹与跨站聚簇、人工复核界面尚未完成 |
 
-完整细节见 [`PROJECT_PLAN.zh-CN.md`](./PROJECT_PLAN.zh-CN.md)。
+版本历史见 [`CHANGELOG.md`](./CHANGELOG.md)。完整细节见 [`PROJECT_PLAN.zh-CN.md`](./PROJECT_PLAN.zh-CN.md)。
 
 ## 参与贡献
 
