@@ -1,6 +1,7 @@
 # Publish a GitHub Release whose notes are that version's CHANGELOG.md section.
 # Run it from Actions → Release → Run workflow (enter e.g. v0.1.0), or push a
-# v* tag. The version must already have a "## [x.y.z]" section in CHANGELOG.md.
+# v* tag; re-running it for an existing release refreshes the notes. The
+# version must already have a "## [x.y.z]" section in CHANGELOG.md.
 name: Release
 
 on:
@@ -41,5 +42,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release create "$TAG" --target "$GITHUB_SHA" \
-            --title "pvuv.ai $TAG" --notes-file notes.md
+          # re-running for an existing release refreshes its notes and title
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "pvuv.ai $TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" \
+              --title "pvuv.ai $TAG" --notes-file notes.md
+          fi
