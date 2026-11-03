@@ -260,8 +260,8 @@ pvuv.ai is designed to minimize what it stores:
 | Milestone | Scope | Status in v0.1.0 |
 |---|---|---|
 | **M1** (first deployable) | SDK + ingest + fast verdict + D1 schema + minimal console (PV/UV, sources, top pages, traffic-quality overview) | ✅ Done |
-| **M2** | Sessions/dwell/bounce, full UTM, rollup acceleration, population analysis + blocklist loop, shadow mode, reverse-proxy option | ✅ Done — the fingerprint blocklist stays dormant until the expensive client checks ship |
-| **M3** | identify + custom events + revenue + funnel attribution, distribution tests + baseline anomalies | 🟡 Mostly — events, revenue, funnels and baseline anomalies are done; currency conversion, cross-device merge, attribution models and statistical distribution tests are not yet |
+| **M2** | Sessions/dwell/bounce, full UTM, rollup acceleration, population analysis + blocklist loop, shadow mode, reverse-proxy option | 🟡 Mostly — all done except fingerprint-based clusters and the fingerprint blocklist, which stay dormant until the expensive client checks ship |
+| **M3** | identify + custom events + revenue + funnel attribution, distribution tests + baseline anomalies | 🟡 Partly — events, revenue, funnels and baseline anomalies are done; currency conversion, cross-device merge, attribution models and statistical distribution tests are not yet |
 | **M4** | AI reports, full anti-fraud, external ranking integration, human-review UI | 🟡 Partly — on-demand AI reports and the ranking API are done; scheduled reports, WebGL/canvas fingerprinting with cross-site clusters, and the human-review UI are not yet |
 
 Release history: [`CHANGELOG.md`](./CHANGELOG.md). Full details in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).

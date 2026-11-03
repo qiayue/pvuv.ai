@@ -61,7 +61,7 @@
 - **Queue**：`/in` 接收后先入队，消费者批量写 D1，抗峰值。
 - **KV**：黑名单、站点配置缓存（供 `/v` 边缘读取）。HMAC 密钥用 Workers Secrets。
 - **Cron Triggers**：每小时 rollup + 画像更新；每天群体分析 + 黑名单刷新 + AI 报告。
-- **R2**（M2+，可选）：老月份原始事件归档、静态资源托管。
+- **R2**（可选，尚未实现）：老月份原始事件归档、静态资源托管。目前过期的月分表会被直接删除，而非归档。
 - **静态托管**：`js.pvuv.ai` 用 Workers Static Assets 或 R2 + CDN，f.js 长缓存。
 
 **数据流**
@@ -214,6 +214,28 @@ Body: JSON（单条或数组；SDK 攒批，≤10 条或每 3 秒发一次）
 | — | 住宅/移动 ASN + 有交互 + 有 leave | 信任减分 −10/项 |
 
 **示例分档**：0–29 clean｜30–69 suspect｜70+ bot。verified crawler 单独归类。`score_stage` 记录本条分是哪一审给的，支持展示「初审→批量改判」的变化。
+
+### 6.6 爬虫分类（可选，仅分类）
+
+爬虫各不相同：能带来访客的搜索引擎、AI 训练采集器、SEO 竞品工具、广告验证机器人，
+目前都只表现为 `verdict='crawler'`，但站长想把它们区分开。
+
+Cloudflare 的 BotBase 只在企业版 Bot Management 中提供，自托管部署无法在运行时读取。
+同一份目录有公开发布的版本（Cloudflare Radar 的 bots-and-agents 目录及社区镜像），
+部署者下载一次，在控制台导入即可（`/api/settings/botdir`）。目录存放在
+`instance_settings` 并同步到 KV；ingest 按每个请求的 User-Agent 匹配，写入
+`events.bot_category`。
+
+刻意的约束：
+
+* **只做分类。** 分类结果从不传给打分器，也不进入 ad-guard 决策——导入目录不会改变
+  任何人的判定。基于分类制定策略是另一个、以后再做的决定。
+* **可选。** 不导入时该列保持 NULL，看板面板自动隐藏；不涉及任何账号、token 或第三方请求。
+* **只做子串匹配，从不使用导入的正则**——不可信的文件不能对每个事件触发灾难性回溯。
+  形似正则的模式会被缩减为其中最长的字面量片段。
+* **格式宽容的导入 + 预览。** 不同来源、不同版本发布的格式不一样，所以解析器既接受
+  裸数组也接受外层包装对象，并识别常见的字段名变体；控制台会报告它实际理解了什么
+  （条数、跳过数、分类直方图），解析错的文件一眼可见，而不是悄无声息地什么都没分类。
 
 ### 6.7 Cloudflare 边缘请求（可选，仅观察）
 
@@ -468,7 +490,7 @@ CREATE TABLE rollup_site_daily (
   PRIMARY KEY (site_id, day)
 );
 
--- 簇 / 异动 / AI（M2+，M1 建表预留）
+-- 簇 / 异动 / AI（M1 建表；M2–M4 起由每日批量分析、异动任务和控制台 AI 报告写入）
 CREATE TABLE cluster_flags (
   cluster_id TEXT PRIMARY KEY, site_id TEXT,
   type TEXT, member_count INTEGER, evidence TEXT,
@@ -498,22 +520,42 @@ CREATE TABLE ai_reports (
 
 ## 10. 查询 API
 
-Base：`https://api.pvuv.ai/v1`
+Base：`https://api.pvuv.ai/v1`（仅 GET）。以下为 v0.1.0 实际实现的接口——参数、取值列表与返回字段见
+[`docs/API.md`](./docs/API.md)：
 
 ```
-GET /sites/:id/overview?period=30d
-GET /sites/:id/timeseries?metric=pv&interval=day
-GET /sites/:id/breakdown?dim=page|source|utm_campaign|country|device&period=...&filter=...
-GET /sites/:id/funnel?steps=pageview:/pricing,signup,purchase
-GET /sites/:id/visitors/:vid/sessions
-GET /sites/:id/sessions/:sid/events
-GET /sites/:id/visitors/:vid/profile
-GET /sites/:id/attribution?event=purchase&model=first|last|last_non_direct
+GET /sites                                   调用方可读的站点
+GET /sites/summary?period=…                  站点列表的逐站汇总
+GET /ranking?period=…                        跨站清洗流量排名（仅服务端 token）
+GET /sites/:id/overview?period=30d&filters=…
+GET /sites/:id/realtime
+GET /sites/:id/timeseries?metric=pv&interval=day&period=…
+GET /sites/:id/breakdown?dim=page|source|channel|utm_campaign|country|device|…&limit=…&filters=…
 GET /sites/:id/quality?period=30d
-GET /sites/:id/traffic?verdict=bot&min_score=70&period=...
+GET /sites/:id/vitals?period=…
+GET /sites/:id/ctit?period=…                 转化耗时
+GET /sites/:id/alerts?period=…
+GET /sites/:id/adguard?period=…
+GET /sites/:id/edge?period=…
+GET /sites/:id/anomalies
+GET /sites/:id/traffic?verdict=bot&min_score=70&period=…
+GET /sites/:id/funnels                       已保存的漏斗
+GET /sites/:id/funnel?steps=[{"type":"page","value":"/pricing"},{"type":"event","value":"signup"}]
+GET /sites/:id/funnel?funnel_id=…&breakdown=source
+GET /sites/:id/funnel_dropoff?funnel_id=…&step=1
+GET /sites/:id/visitors?path=/pay*&verdict=…
+GET /sites/:id/visitors/:vid/profile
 ```
 
-breakdown 支持多维度组合过滤。外部排名系统与 AI 分析复用同一套 API。鉴权：站长只查自己的 site；外部系统/AI 用服务端 token。
+尚未实现（早期草案中规划过）：访客会话列表（`/visitors/:vid/sessions`）、会话事件列表（`/sessions/:sid/events`），以及支持首次/末次/末次非直接三种模型的归因接口。
+
+breakdown 及多数指标接口支持通过 `filters`（`{dim,value}` 的 JSON 数组）做多维度组合过滤。外部排名系统与 AI 分析复用同一套 API。鉴权：站长只查自己的 site；外部系统/AI 用服务端 token。
+
+**程序化访问（§10）。** 三种方式共用同一凭证——REST API（`/v1/*`）、让站长自己的聊天机器人查询数据的 MCP server，以及 CLI。全部只读。
+
+个人 API token 在控制台创建：按站长归属，可限定到单个站点，可单独吊销，只存 HMAC（明文只显示一次、无法找回），并带 `pvuv_` 前缀，便于密钥扫描工具识别泄露的 token。部署级的 `API_TOKEN` 密钥仍可用于跨站的 `/v1/ranking`，但它无法限定范围、无法单独吊销、也无法归属到具体客户端，所以不应该放进聊天机器人配置或笔记本的 shell 里。
+
+MCP server 和 CLI 都是零依赖的单文件（`mcp/`、`cli/`），共用一个客户端，因此接入聊天机器人不会给 token 引入任何供应链。详见 `docs/API.md`。
 
 ---
 
@@ -593,12 +635,14 @@ verified crawler 单独归类不混进 bot；suspect 用黄色（存疑非确凿
 
 ## 17. 分期路线
 
-| 期 | 内容 |
-|---|---|
-| **M1**（首个可部署里程碑） | f.js（采集+硬检测+adguard 渐进加载+Android 传感器信号）、`/in`（含实时初审打分，写四字段）、`/v` 快速判定、D1 基础表、最简后台（PV/UV/来源/Top 页 + 流量质量概览） |
-| **M2** | 会话/时长/跳出率、UTM 完整维度、rollup 加速、群体分析（指纹簇/IP 段簇 + blocklist 闭环）、影子模式、反代方案 |
-| **M3** | identify + 自定义事件 + revenue + 漏斗归因、分布检验 + 基线异动 |
-| **M4** | AI 报告 + 完整反作弊 + 外部排名对接 + 人工复核界面 |
+| 期 | 内容 | 状态（v0.1.0） |
+|---|---|---|
+| **M1**（首个可部署里程碑） | f.js（采集+硬检测+adguard 渐进加载+Android 传感器信号）、`/in`（含实时初审打分，写四字段）、`/v` 快速判定、D1 基础表、最简后台（PV/UV/来源/Top 页 + 流量质量概览） | **已完成**。高开销的 WebGL/canvas 指纹探测（`x7`）尚未采集，因此 `fp_hash` 始终为 NULL。 |
+| **M2** | 会话/时长/跳出率、UTM 完整维度、rollup 加速、群体分析（指纹簇/IP 段簇 + blocklist 闭环）、影子模式、反代方案 | **大部分完成**。会话/时长/跳出、完整 UTM + 首次触点、rollup、影子模式、反代 Worker（`workers/proxy`）已完成。群体分析**部分完成**：/24、一次性网络、会话漂移、图传播簇每天运行并改判数据。指纹簇、cookie 重置簇、跨站检测和 KV 指纹黑名单（`bl:fp:*`）因 `fp_hash` 从未产生而**处于休眠**。`bl:ip24:*` 仅在 `share_bare_ip = true`（默认关闭）时写入。 |
+| **M3** | identify + 自定义事件 + revenue + 漏斗归因、分布检验 + 基线异动 | **部分完成**。自定义事件、目标、revenue、带流失分析和分群拆解的已保存漏斗、每日基线异动已完成。`identify()` 会记录 user↔visitor 映射，但**没有跨设备合并**。revenue 只存 USD，**没有汇率换算**（其他币种的 `revenue_usd = NULL`）。**没有归因模型**（首次/末次/末次非直接）。分布检验只是集中度跳变启发式，**不是统计检验**。行为序列聚类尚未实现。 |
+| **M4** | AI 报告 + 完整反作弊 + 外部排名对接 + 人工复核界面 | **部分完成**。外部排名（`/v1/ranking`，区分内部互访与外部清洗流量）已完成。AI 报告**仅支持按需生成**（控制台按钮，OpenAI 兼容或 Anthropic API，中/英）：**没有定时报告**，也没有逐条异动的「为何判为可疑」解释。**没有人工复核界面**（异动报告一直是 `pending`）。完整反作弊有赖于指纹探测（见 M2）。 |
+
+尚未纳入任何里程碑：老月份的 R2 归档。保留期任务会直接删除整张过期的 `events_YYYYMM` 分表，而非归档。
 
 ---
 
@@ -615,7 +659,7 @@ verified crawler 单独归类不混进 bot；suspect 用黄色（存疑非确凿
 6. **console（pvuv.ai）**：登录、站点注册（发 site_id + 嵌入代码）、流量看板、流量质量概览 + 高分下钻。
 7. **D1 schema**：§9.2 全部建表（M2+ 表也建好预留）。
 
-M1 可略过（建表/留接口即可）：群体批量分析、分布检验、AI 报告、漏斗、影子模式回测。
+M1 可略过（建表/留接口即可）：群体批量分析、分布检验、AI 报告、漏斗、影子模式回测。*（历史记录：这些此后均已实现，只是分布检验目前是集中度启发式而非统计检验——见 §17。）*
 
 ---
 
@@ -679,11 +723,11 @@ pvuv.ai/
 
 **License：MIT（开放内核）。** 本仓库的自托管版采用 MIT——随便用、改、再分发、商用，没有 copyleft、也没有署名要求，让采用者无所顾忌地使用。商业化由单独提供的、闭源的托管**多租户 SaaS** 版承担（托管账号、计费、组织隔离、技术支持），不在本仓库内；两者不重叠、不冲突。
 
-**开源前安全清单（务必逐项确认）**：
-- [ ] 仓库无任何密钥（HMAC key、Cloudflare token、AI API key、`.dev.vars`）
-- [ ] `.gitignore` 含 `node_modules`、`.dev.vars`、`.env`、`config.local.*`、`dist` 临时产物
-- [ ] `wrangler.toml` 用占位符，真实 account_id / 绑定 ID 不入库
-- [ ] 所有密钥走 `wrangler secret put`
-- [ ] 历史提交中无误提交的密钥（用 `git log -p` / gitleaks 扫一遍；若曾提交，rotate 后再开源）
-- [ ] `SECURITY.md` 提供漏洞上报渠道
-- [ ] README 明确合规边界与部署者责任（§16）
+**发布安全清单（每次发布前重新确认；已勾选 = v0.1.0 已核实）**：
+- [x] 仓库无任何密钥（HMAC key、Cloudflare token、AI API key、`.dev.vars`）
+- [x] `.gitignore` 含 `node_modules`、`.dev.vars`、`.env`、`config.local.*`、`dist` 临时产物
+- [x] `wrangler.toml` 用占位符，真实 account_id / 绑定 ID 不入库
+- [x] 所有密钥走 `wrangler secret put`（或控制台设置，存于部署者自己的 D1）
+- [x] 历史提交中无误提交的密钥。v0.1.0 已对完整历史做模式扫描核实（`git log -p`：没有形似 token 或密钥的字符串，没有真实 ID，`.dev.vars`/`.env`/`config.local.*` 从未入库）。每次发布前用 gitleaks 再扫；若曾提交，先 rotate。
+- [x] `SECURITY.md` 提供漏洞上报渠道
+- [x] README 明确合规边界与部署者责任（§16）
