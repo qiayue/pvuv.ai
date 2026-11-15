@@ -30,6 +30,7 @@ CREATE TABLE api_tokens (
   site_id     TEXT,                      -- NULL = all of this owner's sites; else one site
   created_at  INTEGER NOT NULL,
   last_used_at INTEGER,
+  permission  TEXT NOT NULL DEFAULT 'read', -- read, write, or site-scoped ingest
   revoked_at  INTEGER                    -- non-NULL = permanently unusable
 );
 CREATE UNIQUE INDEX idx_api_tokens_hash ON api_tokens(token_hash);

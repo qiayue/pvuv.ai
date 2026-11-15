@@ -171,10 +171,11 @@
     </form>
     <form class="create" id="tokenSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="API tokens">API tokens</strong>
-        <span style="font-size:12px;color:#8b93a1" data-i18n="token-help"> — read-only credentials for the CLI, the MCP server (so your own chatbot can query this data) and other integrations. Shown once at creation.</span></div>
+        <span style="font-size:12px;color:#8b93a1"> — Choose read-only for reports or read/write for integrations that create sites. Shown once at creation.</span></div>
       <div><label><span data-i18n="Token name">Token name</span><input id="tokName" maxlength="60" placeholder="Claude Desktop"></label></div>
       <div><label><span data-i18n="Scope">Scope</span>
         <select id="tokSite"><option value="" data-i18n="All my sites">All my sites</option></select></label></div>
+      <div><label>权限 / Permission <select id="tokPermission"><option value="read">只读 / Read only</option><option value="write">读取和创建站点 / Read and create sites</option></select></label></div>
       <p class="err" id="tokMsg"></p>
       <div class="full" id="tokNew" hidden style="background:#0c1117;border:1px solid #2b3a2e;border-radius:8px;padding:12px;margin-bottom:4px">
         <div style="font-size:12px;color:#9ece9e;margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
@@ -483,7 +484,7 @@ async function loadTokens() {
     + live.map((x) => `<tr style="border-top:1px solid #1e2530">
         <td style="padding:5px 0">${esc(x.name)}</td>
         <td style="color:#c7cdd8"><code>${esc(x.prefix)}…</code></td>
-        <td>${x.site_id ? esc(x.site_id) : te('all sites')}</td>
+        <td>${x.site_id ? esc(x.site_id) : te('all sites')} · ${esc(x.permission || 'read')}</td>
         <td style="color:#8b93a1">${x.last_used_at ? te('used') + ' ' + esc(new Date(x.last_used_at).toISOString().slice(0, 10)) : te('never used')}</td>
         <td style="text-align:right"><button type="button" data-revoke="${esc(x.token_id)}"
           style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Revoke')}</button></td>
@@ -503,6 +504,7 @@ document.getElementById('tokenSettings').addEventListener('submit', async (e) =>
     body: JSON.stringify({
       name: document.getElementById('tokName').value.trim(),
       site_id: document.getElementById('tokSite').value || undefined,
+      permission: document.getElementById('tokPermission').value,
     }),
   }));
   const d = await r.json().catch(() => ({}));
