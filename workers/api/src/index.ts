@@ -22,13 +22,15 @@
 import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
-import { hmacSign } from '../../../shared/ids';
+import { hmacSign, generateSiteId } from '../../../shared/ids';
+import { CONFIG } from '../../../shared/config.gen';
 
 export interface Env {
   DB: D1Database;
   /** Secrets via `wrangler secret put` — never in any file. */
   HMAC_KEY: string;
   API_TOKEN: string;
+  SITE_CONFIG: KVNamespace;
 }
 
 export default {
@@ -44,6 +46,7 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 async function route(request: Request, env: Env): Promise<Response> {
+  if (request.method === 'POST') return handleWrite(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
 
   const url = new URL(request.url);
@@ -163,6 +166,66 @@ async function route(request: Request, env: Env): Promise<Response> {
   return json({ error: 'not found' }, 404);
 }
 
+async function handleWrite(request: Request, env: Env): Promise<Response> {
+  const path = new URL(request.url).pathname;
+  const token = bearerFrom(request);
+  if (!token || !looksLikeApiToken(token)) throw new ApiError(401, 'auth required');
+  const hash = await hashToken(env.HMAC_KEY, token);
+  const caller = await env.DB.prepare('SELECT owner_id, site_id, permission, revoked_at FROM api_tokens WHERE token_hash = ?')
+    .bind(hash).first<{owner_id: string; site_id: string | null; permission: string; revoked_at: number | null}>();
+  if (!caller || caller.revoked_at) throw new ApiError(401, 'bad token');
+  if (caller.permission !== 'write' || caller.site_id) throw new ApiError(403, 'write permission required');
+  try { await env.DB.prepare('UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?').bind(Date.now(),hash).run(); } catch { /* telemetry only */ }
+  const length = Number(request.headers.get('content-length') || 0);
+  if (length > 16384) return json({error:'request too large'},413);
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > 16384) return json({error:'request too large'},413);
+  let body: Record<string, unknown>;
+  try { body = JSON.parse(text); } catch { return json({error: 'bad json'}, 400); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json({error: 'bad json'}, 400);
+  if (path === '/v1/sites') {
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 100) : '';
+    const domain = typeof body.domain === 'string' ? body.domain.trim().toLowerCase() : '';
+    if (!name || domain.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/.test(domain)) return json({error:'valid name and domain required'},400);
+    const existing = await env.DB.prepare("SELECT site_id,name,allowed_domains,timezone FROM sites WHERE owner_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM json_each(allowed_domains) WHERE value = ?) LIMIT 1")
+      .bind(caller.owner_id, domain).first<{site_id:string;name:string;allowed_domains:string;timezone:string}>();
+    if (existing) return json({created:false,site:{site_id:existing.site_id,name:existing.name,domains:JSON.parse(existing.allowed_domains),timezone:existing.timezone}});
+    const owner = await env.DB.prepare('SELECT timezone FROM users WHERE user_id = ?').bind(caller.owner_id).first<{timezone:string}>();
+    const timezone = owner?.timezone || 'UTC';
+    const now = Date.now(), siteId = generateSiteId(), shadow = now + Math.max(0, CONFIG.adguard.shadow_days) * 86400000;
+    const inserted = await env.DB.prepare(`INSERT INTO sites (site_id,name,owner_id,allowed_domains,adguard_mode,timezone,engaged_seconds,shadow_until,created_at)
+      SELECT ?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM sites WHERE owner_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM json_each(allowed_domains) WHERE value = ?))`)
+      .bind(siteId,name,caller.owner_id,JSON.stringify([domain]),'off',timezone,15,shadow,now,caller.owner_id,domain).run();
+    if (!inserted.meta.changes) {
+      const winner = await env.DB.prepare("SELECT site_id,name,allowed_domains,timezone FROM sites WHERE owner_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM json_each(allowed_domains) WHERE value = ?) LIMIT 1")
+        .bind(caller.owner_id,domain).first<{site_id:string;name:string;allowed_domains:string;timezone:string}>();
+      if (!winner) throw new ApiError(409,'site creation conflicted; retry');
+      return json({created:false,site:{site_id:winner.site_id,name:winner.name,domains:JSON.parse(winner.allowed_domains),timezone:winner.timezone}});
+    }
+    await env.SITE_CONFIG.put(`site:${siteId}`,JSON.stringify({site_id:siteId,allowed_domains:[domain],adguard_mode:'off',adclient:null,status:'active',shadow_until:shadow}),{expirationTtl:300});
+    return json({created:true,site:{site_id:siteId,name,domains:[domain],timezone}});
+  }
+  const match = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/(tokens|funnels)$/);
+  if (match) {
+    const siteId = match[1];
+    await requireOwner(env, siteId, caller.owner_id);
+    // GeFeiSites treats an absent token as disabled crawler reporting. The
+    // self-hosted analytics schema counts crawler pageviews in overall UV, so
+    // minting an ingest token here would misrepresent crawlers as visitors.
+    if (match[2] === 'tokens') return json({token:null, supported:false, reason:'crawler reporting is unavailable'});
+    const steps = Array.isArray(body.steps) ? body.steps.filter((x: unknown): x is {type: 'page' | 'event'; value: string} => {
+      if (!x || typeof x !== 'object') return false;
+      const step = x as Record<string, unknown>;
+      return (step.type === 'page' || step.type === 'event') && typeof step.value === 'string' && step.value.length > 0;
+    }).slice(0,8) : [];
+    if (steps.length < 2) return json({error:'a funnel needs 2–8 valid steps'},400);
+    const id = generateSiteId(), now = Date.now(), name = typeof body.name === 'string' ? body.name.trim().slice(0,60) || 'Funnel' : 'Funnel';
+    await env.DB.prepare('INSERT INTO funnels (site_id,funnel_id,name,steps,created_at,updated_at) VALUES (?,?,?,?,?,?)').bind(siteId,id,name,JSON.stringify(steps),now,now).run();
+    return json({funnel_id:id,name,steps,updated_at:now});
+  }
+  return json({error:'not found'},404);
+}
+
 // ---------------------------------------------------------------------------
 // auth
 // ---------------------------------------------------------------------------
@@ -185,9 +248,10 @@ async function authorizeToken(request: Request, env: Env): Promise<void> {
 async function resolveApiToken(env: Env, plaintext: string): Promise<{ owner_id: string; site_id: string | null } | null> {
   const hash = await hashToken(env.HMAC_KEY, plaintext);
   const row = await env.DB
-    .prepare('SELECT token_id, owner_id, site_id, revoked_at FROM api_tokens WHERE token_hash = ?')
-    .bind(hash).first<{ token_id: string; owner_id: string; site_id: string | null; revoked_at: number | null }>();
+    .prepare('SELECT token_id, owner_id, site_id, revoked_at, permission FROM api_tokens WHERE token_hash = ?')
+    .bind(hash).first<{ token_id: string; owner_id: string; site_id: string | null; revoked_at: number | null; permission: string }>();
   if (!row || row.revoked_at) return null;
+  if (row.permission === 'ingest') throw new ApiError(403, 'ingest token cannot read');
   try {
     await env.DB.prepare('UPDATE api_tokens SET last_used_at = ? WHERE token_id = ?').bind(Date.now(), row.token_id).run();
   } catch { /* telemetry only */ }

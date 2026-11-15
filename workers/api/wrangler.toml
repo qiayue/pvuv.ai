@@ -17,6 +17,10 @@ routes = [
   { pattern = "api.pvuv.ai", custom_domain = true }
 ]
 
+kv_namespaces = [
+  { binding = "SITE_CONFIG", id = "PLACEHOLDER_KV_SITE_CONFIG_ID" }
+]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "pvuv-db"

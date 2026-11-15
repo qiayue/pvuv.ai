@@ -306,8 +306,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/tokens') {
     if (request.method === 'GET') {
       const rows = await env.DB.prepare(`
-        SELECT token_id, name, prefix, site_id, created_at, last_used_at, revoked_at
-        FROM api_tokens WHERE owner_id = ? ORDER BY created_at DESC LIMIT 100
+        SELECT token_id, name, prefix, site_id, permission, created_at, last_used_at, revoked_at
+        FROM api_tokens WHERE owner_id = ? AND revoked_at IS NULL ORDER BY created_at DESC
       `).bind(user).all();
       return json({ tokens: rows.results });
     }
@@ -315,6 +315,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       let body: Record<string, unknown> = {};
       try { body = await request.json(); } catch { /* name/scope are optional */ }
       const name = String(body.name ?? '').trim().slice(0, 60) || 'API token';
+      const permission = body.permission ?? 'read';
+      if (permission !== 'read' && permission !== 'write') return json({ error: 'invalid permission' }, 400);
+      if (permission === 'write' && body.site_id) return json({ error: 'write token must cover all sites' }, 400);
       // a site-scoped token must name a site this owner actually holds, so a
       // scope can never be widened by guessing an id
       let siteId: string | null = null;
@@ -326,9 +329,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       }
       const { plaintext, row } = await createToken(env.HMAC_KEY, user, name, siteId);
       await env.DB.prepare(`
-        INSERT INTO api_tokens (token_id, owner_id, name, token_hash, prefix, site_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).bind(row.token_id, row.owner_id, row.name, row.token_hash, row.prefix, row.site_id, row.created_at).run();
+        INSERT INTO api_tokens (token_id, owner_id, name, token_hash, prefix, site_id, created_at, permission)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(row.token_id, row.owner_id, row.name, row.token_hash, row.prefix, row.site_id, row.created_at, permission).run();
       return json({ token: plaintext, token_id: row.token_id, name: row.name, prefix: row.prefix, site_id: row.site_id, created_at: row.created_at });
     }
     if (request.method === 'DELETE') {
