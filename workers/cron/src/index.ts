@@ -25,6 +25,7 @@ import { runDailyBatch, isDailyBatchStale } from './batch';
 import { runRetentionPurge } from './retention';
 import { runAnomalyDetection } from './anomaly';
 import { runEdgePull } from './edge';
+import { runExternalSync } from '../../../shared/external/sync';
 
 // NOT exported: a Workers entry module treats every named export as a handler
 // or binding, so exporting a plain string here makes the whole worker fail to
@@ -36,6 +37,14 @@ const CRON_DAILY = '30 3 * * *';
 export interface Env {
   DB: D1Database;
   BLOCKLIST: KVNamespace;
+  /** External integrations (optional; docs/INTEGRATIONS.md): HMAC_KEY decrypts
+   *  the stored credentials — same value as the console's — and the Google
+   *  OAuth client refreshes access tokens. Absent → integrations sync is off. */
+  HMAC_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  EXT_GOOGLE_CLIENT_ID?: string;
+  EXT_GOOGLE_CLIENT_SECRET?: string;
 }
 
 export default {
@@ -56,6 +65,8 @@ export default {
           await runAnomalyDetection(env);
           await runRetentionPurge(env);
         }
+        // light external pass (revenue for today/yesterday + rotation); never fatal
+        try { await runExternalSync(env, { mode: 'hourly' }); } catch (err) { console.error('external sync failed', err); }
         break;
       case CRON_DAILY:
         await runDailyBatch(env);
@@ -65,6 +76,8 @@ export default {
         // guarded, because it is the only job that depends on a third-party API
         // — it must never be able to hold up or break the ones above.
         try { await runEdgePull(env); } catch (err) { console.error('edge pull failed', err); }
+        // ad revenue / Search Console / ads.txt (opt-in, third-party): last and guarded
+        try { await runExternalSync(env, { mode: 'daily' }); } catch (err) { console.error('external sync failed', err); }
         break;
       default:
         console.error(

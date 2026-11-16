@@ -43,6 +43,8 @@ import { runRetentionPurge, storageReport } from '../../cron/src/retention';
 import { CONFIG } from '../../../shared/config.gen';
 import { LlmError } from './llm';
 import { generateReport, type ReportLang } from './report';
+import { integrationsApi } from './integrations';
+import { siteExternal } from '../../api/src/external';
 
 /** KV key the ingest worker reads the compiled directory from (§6.6). */
 const BOTDIR_KV_KEY = 'botdir:v1';
@@ -295,6 +297,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // everything below requires a session
   const user = await verifySession(env.HMAC_KEY, request.headers.get('cookie'));
   if (!user) throw new ApiError(401, 'auth required');
+
+  // external integrations (AdSense / Search Console / Adsterra) — portfolio:p3
+  const integ = await integrationsApi(request, env, url, user);
+  if (integ) return integ;
 
   if (request.method === 'GET' && path === '/api/me') {
     return json({
@@ -824,6 +830,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
     if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
+    if (resource === 'external') return json(await siteExternal(env.DB, siteId, period)); // portfolio:p3
     if (resource === 'funnel' || resource === 'funnel_dropoff') {
       const fsteps = await resolveFunnelSteps(env.DB, siteId, q);
       if (resource === 'funnel_dropoff') {
