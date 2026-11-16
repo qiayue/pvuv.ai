@@ -17,6 +17,7 @@
  *   GET /v1/sites/:id/experiment?experiment=…&goal=…  — A/B readout (reports.ts)
  *   GET /v1/sites/:id/experiments | event_inventory | ai_referrals
  *   GET /v1/templates                               — the owner's site templates
+ *   GET /v1/portfolio?period=7d                     — portfolio overview (all-sites tokens)
  *
  * Site provisioning (write tokens only — see handleWrite):
  *   POST  /v1/sites, PATCH /v1/sites/:id, POST /v1/sites/:id/funnels,
@@ -38,6 +39,7 @@ import {
   prepareCrawlerHits, crawlerHitStatements, CRAWLER_HITS_MAX_BODY_BYTES, CRAWLER_HITS_MAX_PER_REQUEST, MAX_INGEST_TOKENS_PER_SITE,
 } from '../../../shared/crawler_hits';
 import { extraReport } from './reports';
+import { cachedPortfolio } from './portfolio';
 import { hmacSign } from '../../../shared/ids';
 import { CONFIG } from '../../../shared/config.gen';
 import {
@@ -110,6 +112,17 @@ async function route(request: Request, env: Env): Promise<Response> {
         };
       }),
     });
+  }
+
+  // portfolio overview (docs/design/portfolio-ui.md §3.1) — every site of the
+  // token's owner, so a site-scoped token is refused. Same payload and 5-minute
+  // cache as the console's /api/portfolio.
+  if (url.pathname === '/v1/portfolio') {
+    const caller = await resolveCaller(request, env);
+    if (caller.siteId) throw new ApiError(403, 'portfolio needs a token for all sites');
+    const q = url.searchParams;
+    const { body, hit } = await cachedPortfolio(env.DB, caller.ownerId, q.get('period'), q.get('compare'), q.get('fresh') === '1');
+    return new Response(body, { headers: { 'content-type': 'application/json', 'x-cache': hit ? 'hit' : 'miss' } });
   }
 
   // site templates (migration 0023) — what an integration may pass as

@@ -12,6 +12,7 @@
  *   GET|POST /api/templates, DELETE /api/templates/:id   (site templates)
  *   GET  /api/sites/:id/(overview|timeseries|breakdown|quality|traffic)
  *   GET  /api/sites/:id/visitors/:vid/profile
+ *   GET  /api/portfolio?period=7d&compare=previous   (portfolio overview)
  *
  * Auth: OAuth-only (Google / GitHub). Single-tenant — every email in
  * ADMIN_EMAILS (a plain var, comma-separated) shares one 'admin' owner and
@@ -26,6 +27,7 @@ import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { crawlers, truthyParam } from '../../api/src/crawlers';
 import { extraReport } from '../../api/src/reports';
+import { cachedPortfolio } from '../../api/src/portfolio';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
 import {
@@ -35,7 +37,7 @@ import {
 import { isValidTimezone } from '../../../shared/tz';
 import {
   ADGUARD_MODES, ADCLIENT_RE, normalizeDomains, resolveSettings, insertSite, validateSteps, funnelName,
-  listTemplates, validateTemplate,
+  listTemplates, validateTemplate, findTemplate, ensureFunnel, type SiteTemplate,
 } from '../../../shared/sites';
 import { zoneForDomains } from '../../../shared/cfedge';
 import { readCfToken, verifyCfToken, CF_TOKEN_KEY, CF_STATUS_KEY } from '../../cron/src/edge';
@@ -612,6 +614,16 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(await probeEvent(env, siteId, vid, Date.now()));
   }
 
+  // portfolio overview (docs/design/portfolio-ui.md §3.1): every site of this
+  // owner with lifecycle stage, trend, crawl milestones and attention reasons.
+  // Rollup-only and batched; cached 5 minutes per owner+period (`fresh=1`
+  // bypasses — the console sends it right after a write).
+  if (path === '/api/portfolio' && request.method === 'GET') {
+    const q = url.searchParams;
+    const { body, hit } = await cachedPortfolio(env.DB, user, q.get('period'), q.get('compare'), q.get('fresh') === '1');
+    return new Response(body, { headers: { 'content-type': 'application/json', 'x-cache': hit ? 'hit' : 'miss' } });
+  }
+
   // one batched row per site for the site grid (see sitesSummary): the list used
   // to fire one /overview per site, each a whole-period raw scan
   if (path === '/api/sites/summary' && request.method === 'GET') {
@@ -959,7 +971,14 @@ async function createSite(request: Request, env: Env, owner: string): Promise<Re
   // timezone is fixed at creation (immutable): fall back to the user's default,
   // then UTC; an invalid IANA id is refused rather than stored. Ad-guard mode /
   // adclient fall back to off / none when malformed (non-strict).
-  const resolved = resolveSettings(body, null, await userTimezone(env, owner), false);
+  // optional site template (same presets POST /v1/sites {"template"} applies):
+  // explicit form fields still win over the template's values
+  let template: SiteTemplate | null = null;
+  if (body.template !== undefined && body.template !== null && body.template !== '') {
+    template = await findTemplate(env.DB, owner, String(body.template));
+    if (!template) return json({ error: `no such template: ${String(body.template)}` }, 400);
+  }
+  const resolved = resolveSettings(body, template, await userTimezone(env, owner), false);
   if ('error' in resolved) return json({ error: resolved.error }, 400);
   const s = resolved.settings;
 
@@ -968,7 +987,9 @@ async function createSite(request: Request, env: Env, owner: string): Promise<Re
   const { site } = await insertSite(env.DB, env.SITE_CONFIG, owner, { name, domains, ...s },
     { dedupe: false, shadowDays: CONFIG.adguard.shadow_days });
 
-  return json({ site_id: site.site_id, name, domains, adguard_mode: s.adguard_mode, adclient: s.adclient, timezone: s.timezone, shadow_until: site.shadow_until });
+  for (const f of template?.funnels ?? []) await ensureFunnel(env.DB, site.site_id, f.name, f.steps);
+
+  return json({ site_id: site.site_id, name, domains, adguard_mode: s.adguard_mode, adclient: s.adclient, timezone: s.timezone, shadow_until: site.shadow_until, ...(template ? { template: template.template_id } : {}) });
 }
 
 /** The user's default timezone for new sites (users.timezone), fallback UTC. */

@@ -317,3 +317,13 @@ CREATE TABLE ai_reports (
   site_id TEXT, period TEXT, kind TEXT,
   content TEXT, data_snapshot TEXT, created_at INTEGER
 );
+
+-- Portfolio labels (added by 0026_site_labels.sql): star, tags (JSON array of
+-- strings) and a private note per site; no row = unstarred, untagged.
+CREATE TABLE site_labels (
+  site_id    TEXT PRIMARY KEY,
+  starred    INTEGER DEFAULT 0,
+  tags       TEXT DEFAULT '[]',
+  notes      TEXT,
+  updated_at INTEGER
+);

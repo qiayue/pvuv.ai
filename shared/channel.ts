@@ -124,3 +124,18 @@ export function aiAssistantOf(source: string | null | undefined): string | null 
   for (const a of AI_ASSISTANTS) if (inList(s, a.domains) || sourceNames(s, a.domains)) return a.id;
   return null;
 }
+
+/** SQL predicate that PRE-FILTERS stored session sources (a referrer host or a
+ *  utm_source) down to those that may be organic search or an AI assistant, so
+ *  batched rollup reads (the portfolio overview) don't ship every long-tail
+ *  referrer back. Deliberately a superset: the caller still runs
+ *  classifyChannel on what comes back. Only constant domain literals are
+ *  inlined — never user input. */
+export function searchOrAiSourceSql(col: string): string {
+  const domains = [...SEARCH_DOMAINS, ...AI_DOMAINS];
+  const bare = new Set(domains.map((d) => d.split('.')[0]));
+  const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+  const exact = [...domains, ...bare].map(q).join(',');
+  const suffix = domains.map((d) => `${col} LIKE ${q('%.' + d)}`).join(' OR ');
+  return `(${col} IN (${exact}) OR ${suffix})`;
+}
