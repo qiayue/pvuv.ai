@@ -220,3 +220,79 @@ td.lead .lead-in > .txt { overflow: hidden; text-overflow: ellipsis; white-space
 .skel { background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 4px; color: transparent !important; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .loading::before, .skel { animation: none; } }
+
+/* portfolio:p3 ─ integrations page (integrations.html) + external-data chips.
+   Scoped under body.p3 so it can never restyle another page; the ext-* chip
+   classes are shared with the portfolio table / drawer. Premium dark palette
+   per docs/design/portfolio-mock.html, with fallbacks if P1 tokens are absent. */
+body.p3 {
+  --p3-bg: #08090c; --p3-panel: #0f1115; --p3-line: #1c1f26; --p3-mut: #7d8390; --p3-acc: #8b7cff;
+  background: radial-gradient(1200px 600px at 70% -200px, #1b1640 0%, #08090c 60%) fixed, #08090c;
+  font-family: Inter, var(--font);
+}
+body.p3 header { background: rgba(8,9,12,.6); border-bottom-color: var(--p3-line); }
+body.p3 .p3-back { color: var(--p3-mut); font-size: 13px; }
+body.p3 .sp { flex: 1; }
+.p3-main { max-width: 1180px; margin: 22px auto 60px; padding: 0 20px; }
+.p3-lead { color: var(--p3-mut); max-width: 860px; margin: 0 0 18px; }
+.p3-hint { color: var(--p3-mut); font-size: 12.5px; margin: 0 0 10px; line-height: 1.5; }
+.p3-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .p3-cards { grid-template-columns: 1fr; } }
+.p3-card, .p3-panel {
+  background: linear-gradient(180deg, #12141a, #0e1014); border: 1px solid var(--p3-line); border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+.p3-card { padding: 14px 16px; display: flex; flex-direction: column; min-height: 210px; }
+.p3-skel { opacity: .5; }
+.p3-card-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.p3-card-h .muted { font-size: 12px; }
+.p3-logo { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; font-weight: 700; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+.p3-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; border-top: 1px solid #15171d; }
+.p3-kv span { color: var(--p3-mut); }
+.p3-kv b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p3-kv b.mono { font-family: var(--mono); }
+.p3-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 12px; align-items: center; }
+body.p3 .btn { background: #14161d; border: 1px solid #262a35; color: var(--text); border-radius: 8px; padding: 6px 12px; font-size: 13px; }
+body.p3 .btn:hover { border-color: #3a3f4d; text-decoration: none; }
+body.p3 .btn.p { background: linear-gradient(180deg, #8b7cff, #6b5cf0); border: 0; color: #fff; box-shadow: 0 0 0 1px #7c6cff, 0 6px 20px rgba(124,108,255,.3); }
+body.p3 .btn.danger { color: #ff8a8a; }
+body.p3 .btn.sm { padding: 3px 9px; font-size: 12px; }
+.p3-in, .p3-num-in, .p3-sel { background: #0b0c10; border: 1px solid #262a35; border-radius: 8px; color: var(--text); padding: 6px 9px; }
+.p3-in { flex: 1; min-width: 140px; }
+.p3-num-in { width: 90px; margin: 0 6px; }
+.p3-sel { max-width: 280px; font-size: 12.5px; padding: 4px 7px; }
+.p3-sel.warn { border-color: #5a4524; }
+.p3-msg { font-size: 12.5px; margin-top: 8px; min-height: 1em; }
+.p3-msg.good { color: #6fe0a3; } .p3-msg.bad { color: #ff8a8a; }
+.p3-sec-head { display: flex; align-items: center; gap: 10px; margin: 28px 0 10px; flex-wrap: wrap; }
+.p3-sec-head h2 { margin: 0; font-size: 14px; color: #c7cdd8; }
+.p3-pad { padding: 12px 16px; }
+.p3-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 13px; }
+.p3-inline .btn { margin-left: 10px; }
+.p3-inline .muted { margin-left: 8px; }
+.p3-table { width: 100%; border-collapse: collapse; }
+.p3-table th { text-align: left; font-weight: 500; color: var(--p3-mut); font-size: 12px; padding: 9px 12px; border-bottom: 1px solid var(--p3-line); background: #101217; white-space: nowrap; }
+.p3-table th:first-child { border-top-left-radius: 12px; } .p3-table th:last-child { border-top-right-radius: 12px; }
+.p3-table td { padding: 9px 12px; border-bottom: 1px solid #15171d; font-size: 13px; vertical-align: middle; }
+.p3-table tr:last-child td { border-bottom: 0; }
+.p3-table tr:hover td { background: #14161d; }
+.p3-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.p3-dim td { opacity: .5; }
+.p3-err { color: #ff8a8a; font-size: 12px; }
+.p3-empty { text-align: center; color: var(--p3-mut); padding: 26px !important; }
+.p3-src { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.p3-src i { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+.p3-tag { font-size: 11px; color: var(--p3-mut); border: 1px solid var(--p3-line); border-radius: 4px; padding: 0 5px; margin-left: 4px; }
+.p3-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.p3-fchip { background: var(--p3-panel); border: 1px solid var(--p3-line); border-radius: 999px; padding: 4px 11px; color: #c7cdd8; font-size: 12px; }
+.p3-fchip b { color: var(--p3-mut); font-weight: 500; margin-left: 3px; }
+.p3-fchip.on { border-color: var(--p3-acc, #8b7cff); background: #1a1830; color: #fff; }
+.p3-banner { border-radius: 10px; padding: 10px 14px; margin: 0 0 14px; font-size: 13px; }
+.p3-banner.good { background: #123826; color: #6fe0a3; }
+.p3-banner.bad { background: #3d1a1e; color: #ff8a8a; }
+/* status chips — shared with the portfolio table / drawer (ext-*) */
+.p3-chip, .ext-chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: #22252d; color: #a0a6b2; white-space: nowrap; }
+.p3-chip.good, .ext-chip.good { background: #123826; color: #6fe0a3; }
+.p3-chip.warn, .ext-chip.warn { background: #3a2b14; color: #f2b65e; }
+.p3-chip.bad, .ext-chip.bad { background: #3d1a1e; color: #ff8a8a; }
+/* /portfolio:p3 */

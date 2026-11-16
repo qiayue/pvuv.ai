@@ -9,6 +9,26 @@ breaking changes, always with a D1 migration and upgrade notes in
 ## [Unreleased]
 
 ### Added
+- External integrations (migration `0028_external_integrations.sql`; see
+  [`docs/INTEGRATIONS.md`](./docs/INTEGRATIONS.md)):
+  - Google AdSense + Search Console via Google OAuth (read-only scopes) and
+    Adsterra via a Publisher API token. Credentials are encrypted at rest
+    (AES-GCM, key derived from `HMAC_KEY`) and never returned to the browser.
+  - The cron worker syncs per-site daily revenue (USD + original currency),
+    impressions, clicks, AdSense site state and policy issues, Adsterra
+    per-domain stats, and Search Console clicks/impressions, pages with
+    impressions and homepage index status. It also runs its own ads.txt
+    check. The daily pass is full; the hourly pass is light. Upserts are
+    idempotent, quota errors back off, and a failure never breaks the cron.
+  - Properties map to sites by domain (www/apex, `sc-domain:` properties),
+    with manual override or ignore.
+  - New console page **Integrations** (`/integrations.html`): connect /
+    disconnect, sync status and errors, "sync now", mapping table, and the
+    "traffic but no revenue" threshold.
+  - `GET /v1/sites/{id}/external` and `GET /api/sites/{id}/external`. The
+    portfolio's `external` field (`loadExternal`) adds the attention codes
+    `traffic_no_revenue`, `adsense_needs_attention`, `ads_txt_problem`,
+    `network_declined` and `external_stale`.
 - Reports for site launchers and A/B-testing clients (api + console, MCP, CLI;
   see [`docs/API.md`](./docs/API.md)):
   - `GET /v1/sites/{id}/experiment` — Bayesian readout of an experiment

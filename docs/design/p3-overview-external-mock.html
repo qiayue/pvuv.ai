@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Portfolio overview with external columns · mock (P3)</title>
+<!-- Mock of the portfolio table once integrations are connected: the columns
+     P1 renders when any site carries `external` data (contract §3.3). Data is
+     fictional. Rendered to docs/design/screens/p3-overview-external.png. -->
+<style>
+:root{--bg:#08090c;--panel:#0f1115;--line:#1c1f26;--text:#eceef3;--mut:#7d8390;--green:#4cc38a;--red:#ff7a85}
+*{box-sizing:border-box}body{margin:0;color:var(--text);font:13px/1.4 Inter,-apple-system,"PingFang SC",sans-serif;background:radial-gradient(1200px 600px at 70% -200px,#1b1640 0%,#08090c 60%)}
+header{display:flex;gap:14px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line)}.brand{font-weight:700}.sp{flex:1}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:#c7cdd8;font-size:12px;background:var(--panel)}.chip.on{border-color:#8b7cff;background:#1a1830;color:#fff}
+main{padding:16px 20px}.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px}
+.k{border:1px solid var(--line);border-radius:12px;background:linear-gradient(180deg,#12141a,#0e1014);padding:12px 14px}.k .l{color:var(--mut);font-size:12px}.k .n{font-size:20px;font-weight:650;margin-top:2px}
+.up{color:var(--green)}.dn{color:var(--red)}small{font-size:12px;margin-left:6px}
+.bar{display:flex;gap:8px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#12141a,#0e1014)}
+th{background:#101217;text-align:left;font-weight:500;color:var(--mut);font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th.ext{color:#b9a6ff}td{padding:9px 10px;border-bottom:1px solid #15171d;white-space:nowrap}.num{text-align:right;font-variant-numeric:tabular-nums}
+.av{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;font-weight:700;color:#fff;margin-right:9px;vertical-align:middle}
+.site{display:flex;align-items:center}.site small{display:block;color:var(--mut);margin:0}
+.st{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:500}
+.s4{background:#123826;color:#6fe0a3}.s3{background:#2a2050;color:#b9a6ff}.s9{background:#3d1a1e;color:#ff8a8a}.s2{background:#14284a;color:#7fb2ff}
+.c{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:500;background:#22252d;color:#a0a6b2;margin-right:4px}
+.c.g{background:#123826;color:#6fe0a3}.c.w{background:#3a2b14;color:#f2b65e}.c.b{background:#3d1a1e;color:#ff8a8a}
+.att{display:inline-block;padding:3px 9px;border-radius:7px;background:#2a1418;color:#ff8a8a;font-size:12px}.att.w{background:#2e2312;color:#f2b65e}
+.note{color:var(--mut);font-size:12px;margin-top:10px}
+</style></head><body>
+<header><span class="brand">pvuv.ai</span><span class="chip">Last 7 days ▾</span><span class="chip">vs previous period</span><span class="sp"></span><span class="chip">Integrations ✓</span></header>
+<main>
+<div class="kpis">
+<div class="k"><div class="l">Clean visitors</div><div class="n">48,210<small class="up">▲ 12%</small></div></div>
+<div class="k"><div class="l">Ad revenue</div><div class="n">$1,284<small class="up">▲ 9%</small></div></div>
+<div class="k"><div class="l">RPM (clean pageviews)</div><div class="n">$9.73<small class="dn">▼ 3%</small></div></div>
+<div class="k"><div class="l">Search clicks</div><div class="n">21,904<small class="up">▲ 18%</small></div></div>
+<div class="k"><div class="l">Sites with revenue issues</div><div class="n">4</div></div>
+</div>
+<div class="bar"><span class="chip on">Needs attention 6</span><span class="chip">Traffic, no revenue 2</span><span class="chip">ads.txt 2</span><span class="chip">AdSense 1</span></div>
+<table><thead><tr><th>Site</th><th>Stage</th><th class="num">Clean visitors</th><th class="num">Δ</th>
+<th class="num ext">Revenue</th><th class="num ext">Δ</th><th class="num ext">RPM</th><th class="ext">AdSense · ads.txt</th><th class="ext">Adsterra</th><th class="num ext">Search clicks</th><th class="num ext">Indexed*</th><th>Needs attention</th></tr></thead><tbody id="rows"></tbody></table>
+<p class="note">Mock data. Revenue = AdSense + Adsterra (USD). RPM = revenue per 1,000 clean pageviews measured by pvuv. *Indexed = pages with ≥ 1 Google impression in 28 days (a lower bound; the API exposes no index total).</p>
+</main>
+<script>
+const R=[
+['Snake Rush','snakerush.io','#7c6cff','s4','Growing',9120,18,412.3,11,11.2,['g','Ready'],['g','ok'],null,6210,184,''],
+['Gem Swap','gemswap.games','#22b07d','s4','Growing',6833,7,288.9,4,10.1,['g','Ready'],['b','mismatch'],null,4120,122,'w|ads.txt problem: mismatch'],
+['Word Hunt','wordhunt.fun','#e0663f','s9','Declining',2104,-38,61.2,-41,8.4,null,null,['g','active'],1301,61,''],
+['Tile Merge','tilemerge.app','#2f8cf0','s3','Organic',1980,64,0,null,0,null,null,['w','no impressions'],1460,12,'b|1,980 clean visitors but no ad revenue'],
+['Pixel Golf','pixelgolf.io','#d64f8a','s9','Declining',1544,-12,9.8,-70,2.1,['b','Needs attention'],['b','missing'],null,512,48,'b|AdSense needs attention · ads.txt missing'],
+['Neon Run','neonrun.games','#c9a227','s2','Crawled',212,null,0,null,0,['w','Getting ready'],['g','ok'],null,38,3,''],
+];
+const f=(n)=>n.toLocaleString('en-US');const d=(v)=>v==null?'<span style="color:#7d8390">new</span>':`<span class="${v<0?'dn':'up'}">${v<0?'▼':'▲'} ${Math.abs(v)}%</span>`;
+const c=(x)=>x?`<span class="c ${x[0]}">${x[1]}</span>`:'<span style="color:#7d8390">—</span>';
+document.getElementById('rows').innerHTML=R.map(r=>{const [w,txt]=(r[15]||'|').split('|');return `<tr><td><span class="site"><span class="av" style="background:${r[2]}">${r[0][0]}</span><span><b>${r[0]}</b><small>${r[1]}</small></span></span></td>
+<td><span class="st ${r[3]}">${r[4]}</span></td><td class="num">${f(r[5])}</td><td class="num">${d(r[6])}</td>
+<td class="num">$${r[7].toFixed(2)}</td><td class="num">${d(r[8])}</td><td class="num">${r[9]?'$'+r[9].toFixed(2):'—'}</td>
+<td>${c(r[10])}${r[11]?c(r[11]):''}</td><td>${c(r[12])}</td><td class="num">${f(r[13])}</td><td class="num">${r[14]}</td>
+<td>${txt?`<span class="att ${w==='w'?'w':''}">${txt}</span>`:''}</td></tr>`}).join('');
+</script></body></html>
