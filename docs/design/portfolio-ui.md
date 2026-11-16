@@ -5,10 +5,12 @@ that rebuild the console for owners of many sites (50–500, one new site a day)
 Every stream branches from `claude/dreamy-turing-jm0cm9` and must stay inside
 its ownership boundaries below so the three branches merge cleanly.
 
-- Visual reference: `docs/design/portfolio-mock.html` / `portfolio-mock.png`
-  (the approved "premium dark" style). The drawer layout is in
-  `portfolio-drawer-mock.*` — its content is right, but render it in the
-  premium style, not the older palette in that file.
+- Visual reference (CURRENT): `docs/design/portfolio-mock-light.html` /
+  `portfolio-mock-light.png` — calm light, neutral SaaS style. Copy its CSS
+  variables verbatim as the console tokens.
+- SUPERSEDED: `portfolio-mock.*` (premium dark) and the palette of
+  `portfolio-drawer-mock.*`. Use those files only for *content/layout* (what
+  the table columns and the drawer contain), never for colours or decoration.
 - No hard-coded product names of client integrations anywhere (code, docs,
   commits). Refer to "a site launcher" / "an integration".
 
@@ -24,7 +26,7 @@ its ownership boundaries below so the three branches merge cleanly.
 | Crawled but no organic overdue | first crawl > 14 days ago and no organic-search visitor |
 | No data alert | site created/active and no event in the last 24 h |
 | IVT alert | invalid-traffic share > 20 % (critical when ad-guard mode is `off`) |
-| Style | premium dark (see mock): gradient-area sparklines (red when Δ < 0), KPI cards with mini area charts, coloured letter avatars, soft filled status chips, progress bars on the lifecycle funnel |
+| Style | **light neutral** (see `portfolio-mock-light.*`): page `#f7f7f8`, white cards, 1px `#e7e7ea` borders, 12px radius, no shadows/glows/gradients except a very faint fill under the main line chart; one blue data accent (`#3b82f6`), green primary CTA, grey secondary text; large page title + underline tabs; segmented controls for filters/toggles; "Synced <time> · Refresh" on the right; KPI cards = icon + label, delta % small top-right (green/red), big number; breakdowns as thin progress bars with value / % / extra columns; status as a small coloured dot + grey text (no filled pills); sparklines are thin 1.5px lines (red when Δ < 0), no area fill; site identity = neutral bordered initial tile (no coloured avatars); line-style 16px icons; left sidebar with grouped sections (站点 / 分析 / 配置) and counts. No emoji in UI chrome. Dark mode is out of scope for now (keep tokens as CSS variables so it can be added later). |
 | Stack | keep no-build static console; vendor Preact + htm standalone and uPlot; in-house SVG sparklines |
 
 ## 2. Lifecycle stages
