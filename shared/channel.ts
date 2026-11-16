@@ -39,13 +39,30 @@ const VIDEO_DOMAINS = [
   'youtube.com', 'youtu.be', 'bilibili.com', 'b23.tv', 'vimeo.com', 'twitch.tv',
 ];
 // AI assistants/answer engines — a channel classic analytics tools don't have,
-// and increasingly where content sites get discovered.
-const AI_DOMAINS = [
-  'chatgpt.com', 'chat.openai.com', 'openai.com', 'perplexity.ai', 'claude.ai',
-  'gemini.google.com', 'copilot.microsoft.com', 'you.com', 'phind.com', 'poe.com',
-  'kimi.com', 'kimi.moonshot.cn', 'doubao.com', 'deepseek.com', 'tongyi.aliyun.com',
-  'yiyan.baidu.com', 'metaso.cn', 'felo.ai', 'mistral.ai', 'grok.com',
+// and increasingly where content sites get discovered. One entry per assistant
+// so the ai_referrals report can name WHICH assistant sent a visit; the
+// channel's domain list is derived from it, so the two never drift.
+export const AI_ASSISTANTS: ReadonlyArray<{ id: string; label: string; domains: readonly string[] }> = [
+  { id: 'chatgpt', label: 'ChatGPT', domains: ['chatgpt.com', 'chat.openai.com', 'openai.com'] },
+  { id: 'perplexity', label: 'Perplexity', domains: ['perplexity.ai'] },
+  { id: 'claude', label: 'Claude', domains: ['claude.ai'] },
+  { id: 'gemini', label: 'Gemini', domains: ['gemini.google.com', 'bard.google.com'] },
+  { id: 'copilot', label: 'Microsoft Copilot', domains: ['copilot.microsoft.com'] },
+  { id: 'poe', label: 'Poe', domains: ['poe.com'] },
+  { id: 'you', label: 'You.com', domains: ['you.com'] },
+  { id: 'phind', label: 'Phind', domains: ['phind.com'] },
+  { id: 'deepseek', label: 'DeepSeek', domains: ['deepseek.com'] },
+  { id: 'kimi', label: 'Kimi', domains: ['kimi.com', 'kimi.moonshot.cn'] },
+  { id: 'doubao', label: 'Doubao', domains: ['doubao.com'] },
+  { id: 'tongyi', label: 'Tongyi Qianwen', domains: ['tongyi.aliyun.com', 'qianwen.aliyun.com', 'tongyi.com'] },
+  { id: 'yiyan', label: 'ERNIE Bot (Yiyan)', domains: ['yiyan.baidu.com'] },
+  { id: 'yuanbao', label: 'Tencent Yuanbao', domains: ['yuanbao.tencent.com'] },
+  { id: 'metaso', label: 'Metaso', domains: ['metaso.cn'] },
+  { id: 'felo', label: 'Felo', domains: ['felo.ai'] },
+  { id: 'mistral', label: 'Mistral Le Chat', domains: ['mistral.ai'] },
+  { id: 'grok', label: 'Grok', domains: ['grok.com'] },
 ];
+const AI_DOMAINS = AI_ASSISTANTS.flatMap((a) => a.domains);
 
 const PAID_MEDIUMS = new Set(['cpc', 'ppc', 'sem', 'paid', 'cpm', 'cpv', 'cpa', 'display', 'banner', 'retargeting', 'paid_social', 'paidsocial']);
 const EMAIL_MEDIUMS = new Set(['email', 'e-mail', 'newsletter', 'mail']);
@@ -95,4 +112,15 @@ export function classifyChannel(input: {
   // 4. anything else with an attribution → referral; nothing at all → direct
   if (ref || src) return 'referral';
   return 'direct';
+}
+
+/** Which AI assistant a stored session source (a canonical referrer host, or a
+ *  utm_source such as `chatgpt.com` / `chatgpt`) names, or null. Same matching
+ *  rules as the channel classifier, so every session it names is in the 'ai'
+ *  channel. */
+export function aiAssistantOf(source: string | null | undefined): string | null {
+  const s = (source ?? '').trim().toLowerCase();
+  if (!s) return null;
+  for (const a of AI_ASSISTANTS) if (inList(s, a.domains) || sourceNames(s, a.domains)) return a.id;
+  return null;
 }

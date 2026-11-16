@@ -9,6 +9,26 @@ breaking changes, always with a D1 migration and upgrade notes in
 ## [Unreleased]
 
 ### Added
+- Reports for site launchers and A/B-testing clients (api + console, MCP, CLI;
+  see [`docs/API.md`](./docs/API.md)):
+  - `GET /v1/sites/{id}/experiment` — Bayesian readout of an experiment
+    measured from `exposure` custom events: per variant visitors (first
+    exposure wins), conversions to a `goal` event within `window_hours`,
+    rate, `p_best` (seeded Beta-Binomial Monte Carlo, deterministic),
+    `p_beat_baseline`, `lift`, and a `decision` (`insufficient` / `running` /
+    `winner` with `losers`).
+  - `GET /v1/sites/{id}/experiments` — experiments and variants seen in
+    exposure events.
+  - `GET /v1/sites/{id}/event_inventory` — custom events with counts,
+    visitors, first/last seen and observed prop keys (what can be a goal).
+  - `GET /v1/sites/{id}/ai_referrals` — clean visits from AI assistants
+    (per assistant, daily series, landing pages; `assistant` filter). The
+    AI domain list in `shared/channel.ts` is now per assistant and adds
+    bard.google.com, qianwen.aliyun.com, tongyi.com and yuanbao.tencent.com.
+  - `overview?compare=previous`, `realtime?window=` (5–60 min), funnel
+    `mode=ordered|unordered|open`, breakdown dims `release` and `not_found`.
+- f.js: `data-release` (stored as `props.release` on pageviews) and
+  `<meta name="pvuv:404">` (stored as `props.not_found = 1`). No migration.
 - Crawler / indexing signals, a separate metric for newly launched sites: has
   Googlebot (Bing, Yandex, Baidu, Applebot, …) come yet, how often, and which
   pages. A built-in engine matcher (`shared/crawlers.ts`) classifies crawlers

@@ -14,6 +14,8 @@
  *   GET /v1/sites/:id/visitors?path=/pay&limit=50
  *   GET /v1/sites/:id/visitors/:vid/profile
  *   GET /v1/sites/:id/crawlers?period=30d             — crawler/indexing signals (separate metric)
+ *   GET /v1/sites/:id/experiment?experiment=…&goal=…  — A/B readout (reports.ts)
+ *   GET /v1/sites/:id/experiments | event_inventory | ai_referrals
  *   GET /v1/templates                               — the owner's site templates
  *
  * Site provisioning (write tokens only — see handleWrite):
@@ -24,9 +26,10 @@
  * session cookie and can only read their own sites.
  */
 
-import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
+import { parsePeriod, siteTimezone, overviewCompare, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { crawlers, firstSearchCrawls } from './crawlers';
+import { extraReport } from './reports';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
 import { hmacSign } from '../../../shared/ids';
 import { CONFIG } from '../../../shared/config.gen';
@@ -136,8 +139,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   const q = url.searchParams;
   const filters = parseFilters(q.get('filters'));
 
-  if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
-  if (resource === 'overview') return json(await overview(env.DB, siteId, period, filters));
+  if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now(), parseInt(q.get('window') ?? '30', 10)));
+  if (resource === 'overview') return json(await overviewCompare(env.DB, siteId, period, filters, q.get('compare')));
   if (resource === 'timeseries') {
     return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day', filters));
   }
@@ -173,7 +176,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       return json(await funnelDropoff(env.DB, siteId, period, fsteps, parseInt(q.get('step') ?? '0', 10), filters,
         parseInt(q.get('limit') ?? '50', 10)));
     }
-    return json(await funnel(env.DB, siteId, period, fsteps, filters, { breakdown: q.get('breakdown') }));
+    return json(await funnel(env.DB, siteId, period, fsteps, filters, { breakdown: q.get('breakdown'), mode: q.get('mode') }));
   }
   if (resource === 'traffic') {
     return json(await traffic(env.DB, siteId, period, {
@@ -191,6 +194,10 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (resource === 'visitors' && subId && subResource === 'profile') {
     return json(await visitorProfile(env.DB, siteId, subId, period));
+  }
+  if (!subId) {
+    const extra = await extraReport(env.DB, siteId, resource, q, period);
+    if (extra !== undefined) return json(extra);
   }
 
   return json({ error: 'not found' }, 404);
