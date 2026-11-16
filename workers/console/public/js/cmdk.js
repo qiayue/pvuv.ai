@@ -70,14 +70,15 @@
     if (document.getElementById('cmdk-css')) return;
     var st = document.createElement('style');
     st.id = 'cmdk-css';
-    st.textContent = '.cmdk{position:fixed;inset:0;z-index:200;background:rgba(4,5,8,.62);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh}'
-      + '.cmdk[hidden]{display:none}.cmdk-box{width:min(560px,92vw);background:linear-gradient(180deg,#14161d,#0f1115);border:1px solid #262a35;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);overflow:hidden}'
-      + '.cmdk input{width:100%;border:0;border-bottom:1px solid #1f232c;background:transparent;color:#eceef3;padding:14px 16px;font-size:15px;outline:none}'
-      + '.cmdk ul{list-style:none;margin:0;padding:6px;max-height:52vh;overflow:auto}.cmdk li{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;color:#cdd1da}'
-      + '.cmdk li.on{background:#1a1830;color:#fff;box-shadow:inset 2px 0 0 #8b7cff}.cmdk li small{color:#7d8390;margin-left:auto;font-size:12px;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
-      + '.cmdk .cav{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;font-size:11px;font-weight:700;color:#fff;background:#5e6ad2;flex:none}'
-      + '.cmdk .hint{padding:8px 14px;border-top:1px solid #1f232c;color:#7d8390;font-size:11.5px;display:flex;gap:14px}.cmdk .empty{padding:18px;color:#7d8390;text-align:center}'
-      + '.cmdk kbd{border:1px solid #2a2f3a;border-radius:4px;padding:0 5px;font:11px/1.6 inherit;color:#9aa1ad}.cmdk .sec{padding:6px 10px 2px;color:#7d8390;font-size:11px;letter-spacing:.04em}';
+    st.textContent = '.cmdk{position:fixed;inset:0;z-index:200;background:rgba(24,24,27,.28);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh}'
+      + '.cmdk[hidden]{display:none}.cmdk-box{width:min(560px,92vw);background:var(--surface,#fff);color:var(--text,#18181b);border:1px solid var(--line,#e7e7ea);border-radius:12px;box-shadow:0 12px 40px rgba(24,24,27,.14);overflow:hidden}'
+      + '.cmdk input{width:100%;border:0;border-bottom:1px solid var(--line,#e7e7ea);border-radius:0;background:transparent;color:inherit;padding:14px 16px;font-size:15px;outline:none;min-height:0}'
+      + '.cmdk input:focus{border-color:var(--line,#e7e7ea)}'
+      + '.cmdk ul{list-style:none;margin:0;padding:6px;max-height:52vh;overflow:auto}.cmdk li{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--text,#18181b)}'
+      + '.cmdk li.on{background:#f4f4f5}.cmdk li small{color:var(--mut,#8a8a93);margin-left:auto;font-size:12px;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      + '.cmdk .cav{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;font-size:11px;color:var(--text-2,#52525b);border:1px solid var(--line,#e7e7ea);background:#fafafa;flex:none}'
+      + '.cmdk .hint{padding:8px 14px;border-top:1px solid var(--line,#e7e7ea);color:var(--mut,#8a8a93);font-size:11.5px;display:flex;gap:14px}.cmdk .empty{padding:18px;color:var(--mut,#8a8a93);text-align:center}'
+      + '.cmdk kbd{border:1px solid var(--line,#e7e7ea);border-radius:4px;padding:0 5px;font:11px/1.6 inherit;color:var(--mut,#8a8a93)}.cmdk .sec{padding:6px 10px 2px;color:var(--mut,#8a8a93);font-size:11px;letter-spacing:.04em}';
     document.head.appendChild(st);
   }
   function build() {
@@ -117,12 +118,10 @@
     if (active >= items.length) active = 0;
     if (!items.length) { list.innerHTML = '<div class="empty">' + esc(t('No matching sites')) + '</div>'; return; }
     var rec = recent();
-    var colors = window.pvuvUI ? window.pvuvUI.colors.avatar : ['#5e6ad2'];
-    var h = function (s) { var x = 0; for (var i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return Math.abs(x); };
     list.innerHTML = (!input.value && rec.length ? '<div class="sec">' + esc(t('Recent and all sites')) + '</div>' : '') + items.map(function (s, i) {
       var ch = (String(s.name).trim().match(/./u) || ['?'])[0].toUpperCase();
       return '<li role="option" data-i="' + i + '" class="' + (i === active ? 'on' : '') + '" aria-selected="' + (i === active) + '">'
-        + '<span class="cav" style="background:' + colors[h(s.site_id) % colors.length] + '">' + esc(ch) + '</span>'
+        + '<span class="cav">' + esc(ch) + '</span>'
         + '<span>' + esc(s.name) + (s.status === 'archived' ? ' <small style="margin:0">· ' + esc(t('archived')) + '</small>' : '') + '</span>'
         + '<small>' + esc(s.domains.join(', ')) + '</small></li>';
     }).join('');

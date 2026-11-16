@@ -15,17 +15,19 @@ breaking changes, always with a D1 migration and upgrade notes in
     totals vs the previous period with daily series, lifecycle funnel, stage
     counts and, per site, 14-day trend, organic-search / AI visitors, invalid
     traffic, first/last crawl per engine, daily health, lifecycle stage and
-    attention reasons. Rollup tables only, 95 sites per round trip, cached
+    attention reasons; `totals.series` covers every day with
+    `launched_per_day`. Rollup tables only, 95 sites per round trip, cached
     5 minutes; thresholds configurable via the `portfolio_thresholds`
     instance setting. See [`docs/API.md`](./docs/API.md#portfolio-overview).
   - Migration `0026_site_labels.sql` (star, tags, notes per site) and the
     automatic launch cohort tag `launch:YYYY-Www`.
-  - The console's site list is rewritten as the portfolio overview: KPI cards,
-    lifecycle funnel, sidebar views (needs attention, starred, stages, tags,
-    archived), quick filters, a sortable, configurable table (state in the URL),
-    row selection and j / k / Enter keyboard navigation. The cross-site ranking
-    is now a column set of that table. The settings panel moved off this page
-    (⚙ links to `/settings.html`).
+  - The console's site list is rewritten as the portfolio overview, in a new
+    light console style (shared tokens in `console.css`): grouped sidebar,
+    overview / sites / lifecycle tabs, tag filter, KPI cards, sites by
+    lifecycle stage, daily chart with launches, and a sortable, configurable
+    table (column sets incl. the cross-site ranking, state in the URL) with
+    quick filters, row selection and j / k / Enter keyboard navigation. The
+    settings panel moved to `/settings.html`.
   - ⌘K / `/` site switcher on every console page, with recent sites.
   - Console site creation accepts a site template (`template`), like
     `POST /v1/sites`.

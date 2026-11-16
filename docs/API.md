@@ -272,13 +272,13 @@ bypasses the cache).
   "period": { "token": "7d", "start": "2026-11-10", "end": "2026-11-16" },
   "compare": "previous",
   "generated_at": 1763270000000,
-  "thresholds": { "growth_min_uv": 1000, "ivt_high_pct": 20, … },
+  "thresholds": { "growth_uv_7d": 1000, "growth_min_delta_pct": -10, "decline_pct": 30, "ivt_pct": 20, … },
   "totals": {                       // active sites
     "uv": 48210, "uv_prev": 43000, "pv": 131904, "pv_prev": 121000,
     "ivt_pct": 6.8, "ivt_pct_prev": 5.6,
     "organic_uv": 19377, "organic_uv_prev": 16000, "ai_uv": 1204, "ai_uv_prev": 734,
     "top10_share": 0.71,            // share of visitors from the top 10 % of sites
-    "series": [{ "day": "2026-11-10", "uv": 6900, "pv": 18800, "ivt_pct": 6.1, "organic_uv": 2700, "ai_uv": 150 }]
+    "series": [{ "day": "2026-11-10", "uv": 6900, "pv": 18800, "ivt_pct": 6.1, "organic_uv": 2700, "ai_uv": 150, "launched_per_day": 1 }]   // every day of the period
   },
   "funnel": { "total": 126, "has_data": 124, "google_crawled": 119, "organic": 101, "weekly_1000": 27 },
   "stage_counts": { "setup": 2, "awaiting_crawl": 5, "crawled": 18, "organic": 61, "growing": 27, "declining": 13, "archived": 4 },
@@ -311,21 +311,21 @@ bypasses the cache).
 - **Stages** (first match from the bottom wins; `archived` is the site status):
   `setup` no data ever → `awaiting_crawl` data, no search-engine crawl →
   `crawled` crawled, no organic-search / AI visitor yet → `organic` at least one
-  → `growing` ≥ `growth_min_uv` clean visitors in the last 7 complete days and
+  → `growing` ≥ `growth_uv_7d` clean visitors in the last 7 complete days and
   a 7-day change ≥ `growth_min_delta_pct` → `declining` 28-day clean visitors
   down more than `decline_pct` (takes precedence).
 - **Attention codes**: `no_data_24h` (critical once the site had data, high
   before), `crawl_overdue` (live > `crawl_overdue_days`, no search crawl),
   `organic_overdue` (first crawl > `organic_overdue_days` ago, no search
-  visitor), `declining`, `ivt_high` (> `ivt_high_pct`; critical when ad
+  visitor), `declining`, `ivt_high` (> `ivt_pct`; critical when ad
   protection is off), `ivt_spike` (yesterday's share ≥ `ivt_spike_pts` points
   above the previous period). Integrations may add their own codes.
-- **Thresholds** default to the values above and can be overridden with the
-  instance setting `portfolio_thresholds` (a JSON object with any of
-  `growth_min_uv`, `growth_min_delta_pct`, `decline_pct`, `decline_min_uv`,
-  `crawl_overdue_days`, `organic_overdue_days`, `no_data_hours`,
-  `ivt_high_pct`, `ivt_spike_pts`, `ivt_min_pv`); the payload echoes the
-  values in effect.
+- **Thresholds**: `growth_uv_7d` (1000), `growth_min_delta_pct` (−10),
+  `decline_pct` (30) and `ivt_pct` (20) are tunable — instance setting
+  `portfolio_thresholds`, edited on the console's settings page. The others
+  are fixed: `decline_min_uv` 100, `crawl_overdue_days` 3,
+  `organic_overdue_days` 14, `no_data_hours` 24, `ivt_spike_pts` 10,
+  `ivt_min_pv` 50. The payload echoes every value in effect.
 
 ### Crawler / indexing signals
 

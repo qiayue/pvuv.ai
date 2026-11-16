@@ -31,7 +31,7 @@
       if (n == null) return '–';
       var a = Math.abs(n);
       if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
-      if (a >= 1e4) return (n / 1e3).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/, '') + 'k';
+      if (a >= 1e4) return (n / 1e3).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/, '') + 'K';
       return nf().format(Math.round(n));
     },
     pct: function (n, digits) { return n == null ? '–' : (Math.round(n * 10) / 10).toFixed(digits == null ? (Math.abs(n) < 10 && n % 1 ? 1 : 0) : digits) + '%'; },
@@ -59,10 +59,8 @@
     },
   };
 
-  // ── colours ───────────────────────────────────────────────────────────
-  var AVATAR = ['#7c6cff', '#22b07d', '#e0663f', '#2f8cf0', '#d64f8a', '#c9a227', '#11a3a3', '#8a5cf6', '#5e6ad2'];
-  var hash = function (s) { var h = 0; s = String(s || ''); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
-  var SPARK = '#9a8cff', SPARK_NEG = '#ff7a85';
+  // ── colours (mirror console.css tokens; SVG strokes need literals) ────
+  var BLUE = '#3b82f6', RED = '#dc2626';
   var uid = 0;
 
   // ── sparklines ────────────────────────────────────────────────────────
@@ -74,58 +72,89 @@
     });
   }
   var ptsStr = function (p) { return p.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' '); };
+  var values = function (vals) { return (vals || []).map(function (v) { return typeof v === 'object' && v ? v.uv : v; }); };
 
-  /** gradient-filled area sparkline; red when `neg` (Δ < 0). Values oldest first.
-   *  opts: {w, h, color, neg, fluid (stretch to container width), label} */
-  function areaSpark(vals, opts) {
-    opts = opts || {};
-    vals = (vals || []).map(function (v) { return typeof v === 'object' && v ? v.uv : v; });
-    var w = opts.w || 110, h = opts.h || 26;
-    var c = opts.color || (opts.neg ? SPARK_NEG : SPARK);
-    var id = 'ga' + (++uid);
-    if (!vals.length) vals = [0, 0];
-    var p = points(vals, w, h, 2);
-    var line = ptsStr(p);
-    var size = opts.fluid ? 'width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"' : 'width="' + w + '" height="' + h + '"';
-    return '<svg class="spark" ' + size + ' role="img" aria-label="' + esc(opts.label || t('trend')) + '">'
-      + '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + c + '" stop-opacity=".42"/><stop offset="1" stop-color="' + c + '" stop-opacity="0"/></linearGradient></defs>'
-      + '<polygon fill="url(#' + id + ')" points="0,' + h + ' ' + line + ' ' + w + ',' + h + '"/>'
-      + '<polyline fill="none" stroke="' + c + '" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="' + line + '"/></svg>';
-  }
-
-  /** plain line sparkline */
+  /** thin 1.5px line sparkline, red when `neg` (Δ < 0). Values oldest first
+   *  (numbers or {uv}). opts: {w, h, color, neg, label} */
   function sparkline(vals, opts) {
     opts = opts || {};
-    vals = (vals || []).map(function (v) { return typeof v === 'object' && v ? v.uv : v; });
-    var w = opts.w || 96, h = opts.h || 22, c = opts.color || (opts.neg ? SPARK_NEG : SPARK);
+    vals = values(vals);
+    var w = opts.w || 90, h = opts.h || 22, c = opts.color || (opts.neg ? RED : BLUE);
     if (!vals.length) vals = [0, 0];
-    return '<svg class="spark" width="' + w + '" height="' + h + '" role="img" aria-label="' + esc(opts.label || t('trend')) + '"><polyline fill="none" stroke="' + c + '" stroke-width="1.5" points="' + ptsStr(points(vals, w, h, 2)) + '"/></svg>';
+    return '<svg class="spark" width="' + w + '" height="' + h + '" role="img" aria-label="' + esc(opts.label || t('trend')) + '"><polyline fill="none" stroke="' + c + '" stroke-width="1.5" stroke-linejoin="round" points="' + ptsStr(points(vals, w, h, 2)) + '"/></svg>';
+  }
+
+  /** line + very faint fill (the light style allows a fill only under the main
+   *  chart); same options as sparkline plus `fluid` (stretch to the container). */
+  function areaSpark(vals, opts) {
+    opts = opts || {};
+    vals = values(vals);
+    var w = opts.w || 110, h = opts.h || 26;
+    var c = opts.color || (opts.neg ? RED : BLUE);
+    var id = 'ga' + (++uid);
+    if (!vals.length) vals = [0, 0];
+    var line = ptsStr(points(vals, w, h, 2));
+    var size = opts.fluid ? 'width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"' : 'width="' + w + '" height="' + h + '"';
+    return '<svg class="spark" ' + size + ' role="img" aria-label="' + esc(opts.label || t('trend')) + '">'
+      + '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + c + '" stop-opacity=".14"/><stop offset="1" stop-color="' + c + '" stop-opacity="0"/></linearGradient></defs>'
+      + '<polygon fill="url(#' + id + ')" points="0,' + h + ' ' + line + ' ' + w + ',' + h + '"/>'
+      + '<polyline fill="none" stroke="' + c + '" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="' + line + '"/></svg>';
+  }
+
+  /** main chart: smooth line + faint fill, optional grey bars (secondary
+   *  series, own scale) and y-axis labels. points: [{label, v, bar}] */
+  function lineChart(pts, opts) {
+    opts = opts || {};
+    var W = opts.w || 1000, H = opts.h || 240, L = 46, T = 10, B = 24, R = 8;
+    var n = pts.length;
+    if (!n) return '';
+    var maxV = Math.max.apply(null, pts.map(function (p) { return p.v || 0; }).concat([1]));
+    var step = Math.pow(10, Math.floor(Math.log10(maxV))); var nice = Math.ceil(maxV / step) * step;
+    if (nice / 4 < step / 2) nice = Math.ceil(maxV / (step / 2)) * (step / 2);
+    if (!opts.fmtY && nice < 4) nice = 4; // integer counts: never label the axis 0.25, 0.5, …
+    var maxB = Math.max.apply(null, pts.map(function (p) { return p.bar || 0; }).concat([1]));
+    var x = function (i) { return L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)); };
+    var y = function (v) { return T + (H - T - B) * (1 - v / nice); };
+    var s = '<defs><linearGradient id="lcf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + BLUE + '" stop-opacity=".14"/><stop offset="1" stop-color="' + BLUE + '" stop-opacity="0"/></linearGradient></defs>';
+    for (var g = 0; g <= 4; g++) {
+      var v = nice * g / 4;
+      s += '<line x1="' + L + '" x2="' + W + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="#ececef"' + (g ? ' stroke-dasharray="3 4"' : '') + '/>'
+        + '<text x="' + (L - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end" font-size="11" fill="#8a8a93">' + esc(opts.fmtY ? opts.fmtY(v) : fmt.compact(v)) + '</text>';
+    }
+    var bw = Math.max(3, Math.min(14, (W - L - R) / n * 0.5));
+    pts.forEach(function (p, i) {
+      if (p.bar) { var bh = (p.bar / maxB) * (H - T - B) * 0.35; s += '<rect x="' + (x(i) - bw / 2) + '" y="' + (H - B - bh) + '" width="' + bw + '" height="' + bh + '" rx="2" fill="#e4e4e7"><title>' + esc(p.barTitle || '') + '</title></rect>'; }
+    });
+    var d = 'M' + x(0) + ',' + y(pts[0].v || 0);
+    for (var i = 1; i < n; i++) { var cx = (x(i - 1) + x(i)) / 2; d += ' C' + cx + ',' + y(pts[i - 1].v || 0) + ' ' + cx + ',' + y(pts[i].v || 0) + ' ' + x(i) + ',' + y(pts[i].v || 0); }
+    s += '<path d="' + d + ' L' + x(n - 1) + ',' + (H - B) + ' L' + x(0) + ',' + (H - B) + 'Z" fill="url(#lcf)"/><path d="' + d + '" fill="none" stroke="' + BLUE + '" stroke-width="2.2" vector-effect="non-scaling-stroke"/>';
+    pts.forEach(function (p, i) { s += '<circle cx="' + x(i) + '" cy="' + y(p.v || 0) + '" r="8" fill="transparent"><title>' + esc(p.label + ': ' + (opts.fmtV ? opts.fmtV(p.v) : fmt.num(p.v)) + (p.bar ? ' · ' + (p.barTitle || '') : '')) + '</title></circle>'; });
+    return '<svg class="lchart" width="100%" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="' + esc(opts.label || '') + '">' + s + '</svg>';
   }
 
   // ── atoms ─────────────────────────────────────────────────────────────
-  /** coloured letter avatar, stable colour per seed (site id) */
-  function avatar(name, seed, size) {
+  /** neutral bordered initial tile (site identity) */
+  function avatar(name) {
     var ch = (String(name || '?').trim().match(/./u) || ['?'])[0].toUpperCase();
-    var s = size ? ' style="width:' + size + 'px;height:' + size + 'px;background:' + AVATAR[hash(seed || name) % AVATAR.length] + '"' : ' style="background:' + AVATAR[hash(seed || name) % AVATAR.length] + '"';
-    return '<span class="av" aria-hidden="true"' + s + '>' + esc(ch) + '</span>';
+    return '<span class="fav" aria-hidden="true">' + esc(ch) + '</span>';
   }
-  /** soft filled chip; tone: muted|amber|blue|violet|green|red|accent */
+  /** small grey tag */
   function chip(text, tone, title) {
-    return '<span class="pchip ' + (tone || 'muted') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + esc(text) + '</span>';
+    return '<span class="ptag' + (tone ? ' ' + esc(tone) : '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + esc(text) + '</span>';
   }
 
   var STAGES = ['setup', 'awaiting_crawl', 'crawled', 'organic', 'growing', 'declining', 'archived'];
-  var STAGE_TONE = { setup: 'muted', awaiting_crawl: 'amber', crawled: 'blue', organic: 'violet', growing: 'green', declining: 'red', archived: 'muted' };
+  var STAGE_COLOR = { setup: 'var(--stage-setup)', awaiting_crawl: 'var(--stage-awaiting_crawl)', crawled: 'var(--stage-crawled)', organic: 'var(--stage-organic)', growing: 'var(--stage-growing)', declining: 'var(--stage-declining)', archived: 'var(--stage-archived)' };
+  // English source strings shared with the management stream's i18n keys
   var STAGE_EN = {
-    setup: 'Setup', awaiting_crawl: 'Awaiting crawl', crawled: 'Crawled', organic: 'Organic',
-    growing: 'Growing', declining: 'Declining', archived: 'Archived',
+    setup: 'Awaiting install', awaiting_crawl: 'Awaiting crawl', crawled: 'Crawled', organic: 'Organic traffic',
+    growing: 'Stable growth', declining: 'Declining', archived: 'Archived',
   };
-  var STAGE_LONG_EN = {
-    setup: 'Setup (no data yet)', awaiting_crawl: 'Live · awaiting crawl', crawled: 'Crawled', organic: 'Organic traffic',
-    growing: 'Stable growth', declining: 'Declining / stalled', archived: 'Archived',
-  };
-  var stageLabel = function (s, long) { return tk((long ? 'stage-long.' : 'stage.') + s, (long ? STAGE_LONG_EN : STAGE_EN)[s] || s); };
-  function stageChip(stage) { return chip(stageLabel(stage), STAGE_TONE[stage]); }
+  var stageLabel = function (s) { return t(STAGE_EN[s] || s); };
+  /** status: coloured dot + grey text */
+  function stageChip(stage, title) {
+    return '<span class="stage"' + (title ? ' title="' + esc(title) + '"' : '') + '><i style="background:' + (STAGE_COLOR[stage] || 'var(--muted-2)') + '"></i>' + esc(stageLabel(stage)) + '</span>';
+  }
 
   /** 14 daily health bars (ok | warn | bad | none) */
   function healthBar(health) {
@@ -134,7 +163,7 @@
       + (health || []).map(function (h) { return '<i class="' + esc(h) + '" title="' + esc(title[h] || '') + '"></i>'; }).join('') + '</span>';
   }
 
-  /** G B Y 百 crawl chips: ok = crawled, late = crawl overdue (Google only) */
+  /** G B Y 百 crawl letters: dark = crawled, grey = not yet, amber = overdue (Google) */
   var ENGINES = [['google', 'G', 'Google'], ['bing', 'B', 'Bing'], ['yandex', 'Y', 'Yandex'], ['baidu', '百', 'Baidu']];
   function engineChips(crawl, opts) {
     opts = opts || {};
@@ -172,18 +201,18 @@
     'attn.ivt_high_off': 'Invalid traffic {ivt_pct}% while ad protection is off',
     'attn.ivt_spike': 'Invalid traffic jumped to {ivt_pct}% (was {prev_pct}%)',
   };
-  /** top attention item as a soft chip (red for critical/high, amber for normal) */
+  /** top attention item as coloured text (red for critical/high, amber for normal) */
   function attnChip(list) {
     if (!list || !list.length) return '';
     var a = list.slice().sort(function (x, y) { return (SEV_RANK[x.severity] || 9) - (SEV_RANK[y.severity] || 9); })[0];
     var more = list.length > 1 ? ' <b>+' + (list.length - 1) + '</b>' : '';
-    return '<span class="att ' + (a.severity === 'normal' ? 'w' : '') + '" title="' + esc(list.map(attnText).join('\n')) + '">' + esc(attnText(a)) + more + '</span>';
+    return '<span class="att ' + (a.severity === 'normal' ? 'w' : 'c') + '" title="' + esc(list.map(attnText).join('\n')) + '">' + esc(attnText(a)) + more + '</span>';
   }
 
   window.pvuvUI = {
-    esc: esc, fill: fill, fmt: fmt, areaSpark: areaSpark, sparkline: sparkline, avatar: avatar, chip: chip,
-    stageChip: stageChip, stageLabel: stageLabel, STAGES: STAGES, STAGE_TONE: STAGE_TONE,
+    esc: esc, fill: fill, fmt: fmt, areaSpark: areaSpark, sparkline: sparkline, lineChart: lineChart, avatar: avatar, chip: chip,
+    stageChip: stageChip, stageLabel: stageLabel, STAGES: STAGES, STAGE_COLOR: STAGE_COLOR,
     healthBar: healthBar, engineChips: engineChips, attnText: attnText, attnChip: attnChip, SEV_RANK: SEV_RANK,
-    colors: { spark: SPARK, sparkNeg: SPARK_NEG, avatar: AVATAR },
+    colors: { line: BLUE, neg: RED },
   };
 })();

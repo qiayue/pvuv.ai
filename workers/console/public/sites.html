@@ -6,119 +6,121 @@
 <title>Sites — pvuv.ai</title>
 <link rel="stylesheet" href="/console.css">
 <style>
-  /* portfolio overview (docs/design/portfolio-ui.md, portfolio-mock.html) */
-  .topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 10px 20px; min-height: 56px;
-    background: rgba(8,9,12,.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid var(--p-line); }
-  .topbar .brand { font-weight: 700; font-size: 15px; white-space: nowrap; }
-  .topbar .brand img.logo { height: 26px; display: block; }
-  .search { flex: 0 1 380px; display: flex; align-items: center; gap: 8px; background: var(--p-panel); border: 1px solid var(--p-line-2); border-radius: 9px; padding: 0 10px; min-height: 34px; }
-  .search input, .search input[type=search] { -webkit-appearance: none; appearance: none; box-shadow: none; border-radius: 0; flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--p-text); font-size: 13px; padding: 6px 0; }
-  .search input:focus-visible { outline: none; }
-  .search input[type=search] { border: 0 !important; background: transparent !important; min-height: 0; padding: 6px 0; }
-  .search:focus-within { border-color: var(--p-accent); }
-  .search input::placeholder { color: var(--p-mut); }
-  .search kbd { cursor: pointer; }
+  /* portfolio overview — docs/design/portfolio-mock-light.html */
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+  .app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+  aside.side { background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
+  .logo { display: flex; align-items: center; gap: 10px; padding: 16px 18px; font-weight: 650; font-size: 17px; border-bottom: 1px solid var(--line); color: var(--text); }
+  .logo:hover { text-decoration: none; }
+  .logo .mark { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--text); display: grid; place-items: center; font-size: 10px; font-weight: 800; }
+  .logo img { height: 24px; display: block; }
+  .ws { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .ws small { color: var(--mut); font-size: 13px; }
+  .ws div { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .side .cta { margin: 12px; justify-content: center; padding: 9px 0; }
+  nav.groups { padding: 4px 8px; flex: 1; overflow: auto; }
+  nav.groups h5 { margin: 16px 8px 6px; font-size: 13px; font-weight: 500; color: var(--mut); }
+  nav.groups a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--text); text-decoration: none; }
+  nav.groups a:hover { background: var(--surface-2); }
+  nav.groups a.on { background: #f1f1f3; font-weight: 600; }
+  nav.groups a.dim { color: var(--mut); }
+  nav.groups a .n { margin-left: auto; font-size: 12px; color: var(--mut); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .me { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); position: relative; }
+  .me .av { width: 30px; height: 30px; border-radius: 50%; background: #e4e4e7; display: grid; place-items: center; font-size: 13px; color: var(--text-2); flex: none; }
+  .me small { display: block; color: var(--mut); font-size: 12px; }
+  .me .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  main.pf { max-width: none; margin: 0; padding: 26px 32px 40px; min-width: 0; }
+  h1.title { font-size: 30px; font-weight: 650; letter-spacing: -.01em; margin: 0 0 14px; color: var(--text); }
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
   .sp { flex: 1; }
-  .menu { position: relative; }
-  .menu-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px; background: #12141a; border: 1px solid var(--p-line-2); border-radius: 10px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
-  .menu-pop a, .menu-pop button, .menu-pop label { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 9px; border-radius: 7px; border: 0; background: none; color: var(--p-text-2); font-size: 13px; text-align: left; cursor: pointer; }
-  .menu-pop a:hover, .menu-pop button:hover, .menu-pop label:hover { background: var(--p-panel-2); text-decoration: none; color: #fff; }
-  .menu-pop h5 { margin: 6px 9px 4px; font-size: 11px; color: var(--p-mut); font-weight: 600; letter-spacing: .04em; }
-  .menu-pop hr { border: 0; border-top: 1px solid var(--p-line); margin: 5px 2px; }
-  .menu-pop select { width: 100%; margin: 2px 0; }
-
-  .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 56px); }
-  aside.side { border-right: 1px solid var(--p-line); padding: 14px 10px; position: sticky; top: 56px; align-self: start; max-height: calc(100vh - 56px); overflow: auto; }
-  aside.side h4 { margin: 16px 8px 6px; font-size: 11px; color: var(--p-mut); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-  aside.side h4:first-child { margin-top: 2px; }
-  .v { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px; background: none; color: var(--p-text-2); font-size: 13px; text-align: left; }
-  .v:hover { background: var(--p-panel-2); color: #fff; }
-  .v.on { background: var(--p-accent-bg); color: #fff; box-shadow: inset 2px 0 0 var(--p-accent); }
-  .v span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .v b { font-weight: 500; color: var(--p-mut); font-variant-numeric: tabular-nums; }
-  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
-
-  main.pf { max-width: none; margin: 0; padding: 16px 20px 40px; min-width: 0; }
-  .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
-  .k { position: relative; overflow: hidden; padding: 12px 14px 34px; }
-  .k .l { color: var(--p-mut); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .k .n { font-size: 21px; font-weight: 650; margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .k .n small { font-size: 12px; margin-left: 7px; font-weight: 600; }
-  .k .mini { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; }
-  .funnel { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
-  .fs { position: relative; overflow: hidden; padding: 8px 12px 10px; font-size: 12px; color: var(--p-mut); }
-  .fs b { display: block; font-size: 17px; color: var(--p-text); font-variant-numeric: tabular-nums; }
-  .fs .pb { position: absolute; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, #8b7cff, #4cc38a); border-radius: 0 3px 3px 0; }
-  .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-  .qchip { border: 1px solid var(--p-line-2); background: var(--p-panel); color: var(--p-text-2); border-radius: 999px; padding: 4px 11px; font-size: 12px; }
-  .qchip:hover { border-color: #353a48; color: #fff; }
-  .qchip.on { border-color: var(--p-accent); background: var(--p-accent-bg); color: #fff; }
-  .qchip b { font-weight: 600; margin-left: 4px; }
-  .seg { display: inline-flex; border: 1px solid var(--p-line-2); border-radius: 9px; overflow: hidden; }
-  .seg button { border: 0; background: var(--p-panel); color: var(--p-text-2); padding: 5px 11px; font-size: 12px; }
-  .seg button + button { border-left: 1px solid var(--p-line-2); }
-  .seg button.on { background: var(--p-accent-bg); color: #fff; }
-  .seg button:disabled { color: #4f5664; }
-
-  .tablewrap { overflow: auto; border: 1px solid var(--p-line); border-radius: var(--p-radius); background: var(--p-panel-grad); box-shadow: var(--p-shadow); }
-  table.pt { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-  table.pt th { position: sticky; top: 0; z-index: 2; background: #101217; text-align: left; font-weight: 500; color: var(--p-mut); font-size: 12px; padding: 9px 10px;
-    border-bottom: 1px solid var(--p-line); white-space: nowrap; user-select: none; }
-  table.pt th.sortable { cursor: pointer; } table.pt th.sortable:hover { color: var(--p-text); }
-  table.pt th.sorted { color: var(--p-text); }
-  table.pt td { padding: 9px 10px; border-bottom: 1px solid var(--p-row); white-space: nowrap; vertical-align: middle; }
+  .sync { color: var(--mut); font-size: 12.5px; white-space: nowrap; }
+  .syncbtn { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; font-size: 14px; background: none; border: 0; color: var(--text); padding: 4px 2px; }
+  .syncbtn:disabled svg { animation: spin 1s linear infinite; }
+  .caption { color: var(--mut); font-size: 13px; margin: 18px 0 10px; }
+  .caption button { background: none; border: 0; padding: 0; color: var(--link); font-size: 13px; }
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+  .sec { margin-top: 16px; padding: 18px 20px; }
+  .sec h3 { margin: 0 0 14px; font-size: 15px; font-weight: 500; color: var(--text-2); }
+  .chart-h { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .chart-h h3 { margin: 0; flex: 1; }
+  .xaxis { display: flex; justify-content: space-between; color: var(--mut); font-size: 12px; padding: 0 6px 0 46px; }
+  .legend { color: var(--mut); font-size: 12.5px; margin-top: 6px; }
+  .tbl { margin-top: 16px; overflow: hidden; }
+  .tbl .th { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .tbl .th h3 { margin: 0; font-size: 15px; font-weight: 500; color: var(--text-2); flex: 1; }
+  .search { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0 10px; width: 240px; display: flex; gap: 7px; align-items: center; color: var(--mut); background: var(--surface); }
+  .search input[type=search] { flex: 1; min-width: 0; border: 0 !important; background: transparent !important; outline: none; padding: 6px 0; min-height: 0; font-size: 13px; color: var(--text); -webkit-appearance: none; appearance: none; }
+  .search:focus-within { border-color: var(--accent); }
+  .search kbd { cursor: pointer; border: 0; background: none; padding: 0; }
+  .tscroll { overflow-x: auto; }
+  table.pt { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.pt th { font-weight: 500; color: var(--mut); font-size: 12.5px; text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; user-select: none; background: var(--surface); }
+  table.pt th.sortable { cursor: pointer; } table.pt th.sortable:hover, table.pt th.sorted { color: var(--text); }
+  table.pt td { padding: 11px 14px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; vertical-align: middle; }
+  table.pt tbody tr:last-child td { border-bottom: 0; }
   table.pt tbody tr { cursor: pointer; }
-  table.pt tbody tr:hover td { background: var(--p-panel-2); }
-  table.pt tbody tr.focus td { background: #15142a; }
-  table.pt tbody tr.focus td:first-child { box-shadow: inset 2px 0 0 var(--p-accent); }
-  table.pt tbody tr.sel td { background: #13122a; }
+  table.pt tbody tr:hover td { background: #fafafa; }
+  table.pt tbody tr.focus td { background: var(--accent-soft); }
+  table.pt tbody tr.sel td { background: #f5f8ff; }
   table.pt .num { text-align: right; font-variant-numeric: tabular-nums; }
-  table.pt td.att-c { white-space: normal; min-width: 170px; max-width: 230px; }
-  table.pt td.cb, table.pt th.cb { width: 34px; padding-right: 0; }
-  input.pcb { width: 15px; height: 15px; accent-color: var(--p-accent); cursor: pointer; vertical-align: middle; }
-  .site { display: flex; align-items: center; gap: 10px; min-width: 210px; }
-  .site .tx { min-width: 0; }
-  .site .nm { font-weight: 600; color: var(--p-text); }
-  .site .dm { color: var(--p-mut); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
-  .star { color: var(--p-star); margin-right: 3px; }
-  .muted2 { color: var(--p-mut); }
-  .note { color: var(--p-mut); font-size: 12px; margin-top: 10px; }
-  .banner { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 12px; }
-  .banner .ic { font-size: 22px; }
-  .banner p { margin: 2px 0 0; color: var(--p-mut); font-size: 12.5px; }
-  .empty-state { text-align: center; padding: 60px 20px; }
-  .empty-state h2 { color: var(--p-text); font-size: 18px; margin: 10px 0 6px; }
-  .empty-state p { color: var(--p-mut); margin: 0 0 18px; }
-  .loading-state { color: var(--p-mut); padding: 40px; text-align: center; }
-  .bulkbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 10px; }
-  .bulkbar[hidden] { display: none; }
-  .viewhost { min-height: 200px; }
+  table.pt td.att-c { white-space: normal; min-width: 170px; max-width: 260px; }
+  table.pt td.cb, table.pt th.cb { width: 24px; padding-right: 0; }
+  input.pcb { width: 15px; height: 15px; min-height: 0; accent-color: var(--text); cursor: pointer; vertical-align: middle; }
+  .site { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+  .site .nm { font-weight: 550; color: var(--text); }
+  .site .nm a { color: inherit; }
+  .site .dm { color: var(--mut); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .note { color: var(--mut); font-size: 12.5px; padding: 10px 18px; border-top: 1px solid var(--line); }
+  .note a { color: var(--link); }
+  .banner { display: flex; align-items: center; gap: 14px; padding: 14px 18px; margin-bottom: 14px; }
+  .banner p { margin: 2px 0 0; color: var(--mut); font-size: 13px; }
+  .banner svg.i { width: 20px; height: 20px; color: var(--text-2); }
+  .empty-state { text-align: center; padding: 64px 20px; }
+  .empty-state h2 { color: var(--text); font-size: 18px; margin: 8px 0 6px; }
+  .empty-state p { color: var(--mut); margin: 0 0 18px; }
+  .empty-state svg.i { width: 28px; height: 28px; color: var(--mut); }
+  .loading-state { color: var(--mut); padding: 40px; text-align: center; }
+  .bulkhost:empty { display: none; }
+  .bulkhost { padding: 10px 18px; border-bottom: 1px solid var(--line); }
+  .viewhost { padding: 14px 18px; min-height: 200px; }
+  .menu { position: relative; }
+  .menu-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(24,24,27,.10); }
+  .menu-pop.up { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; }
+  .menu-pop a, .menu-pop button, .menu-pop label { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 9px; border-radius: 7px; border: 0; background: none; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
+  .menu-pop a:hover, .menu-pop button:hover, .menu-pop label:hover { background: var(--surface-2); text-decoration: none; }
+  .menu-pop h5 { margin: 6px 9px 4px; font-size: 11.5px; color: var(--mut); font-weight: 500; }
+  .menu-pop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 2px; }
+  .menu-pop select { width: 100%; }
+  .iconbtn { background: none; border: 0; color: var(--mut); padding: 4px; border-radius: 6px; display: inline-grid; place-items: center; }
+  .iconbtn:hover { background: var(--surface-2); color: var(--text); }
+  select.stagesel { min-height: 32px; font-size: 13px; }
 
   /* add-site modal (kept flow: template picker + snippet) */
-  dialog.pdlg { width: min(640px, 94vw); padding: 0; border: 1px solid var(--p-line-2); border-radius: 14px; background: #101217; color: var(--p-text); box-shadow: 0 30px 80px rgba(0,0,0,.6); }
-  dialog.pdlg::backdrop { background: rgba(4,5,8,.66); backdrop-filter: blur(3px); }
-  .pdlg .dh { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--p-line); }
-  .pdlg .dh h3 { margin: 0; font-size: 15px; }
-  .pdlg .x { background: none; border: 0; color: var(--p-mut); font-size: 20px; line-height: 1; padding: 2px 8px; border-radius: 6px; }
-  .pdlg .x:hover { color: #fff; background: var(--p-panel-2); }
+  dialog.pdlg { width: min(640px, 94vw); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: 0 12px 40px rgba(24,24,27,.14); }
+  dialog.pdlg::backdrop { background: rgba(24,24,27,.28); }
+  .pdlg .dh { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .pdlg .dh h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .pdlg .x { background: none; border: 0; color: var(--mut); font-size: 20px; line-height: 1; padding: 2px 8px; border-radius: 6px; }
+  .pdlg .x:hover { color: var(--text); background: var(--surface-2); }
   form.create { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; padding: 16px 18px 18px; }
-  form.create label { font-size: 12.5px; color: var(--p-mut); display: block; }
-  form.create input, form.create select { width: 100%; margin-top: 4px; background: var(--p-bg); border: 1px solid var(--p-line-2); border-radius: 8px; padding: 7px 9px; color: var(--p-text); }
+  form.create label { font-size: 13px; color: var(--text-2); display: block; }
+  form.create input, form.create select { width: 100%; margin-top: 4px; }
   form.create .full { grid-column: span 2; }
-  form.create .hint { color: var(--p-mut); font-size: 11.5px; }
-  form.create .err { color: var(--p-red-text); font-size: 13px; margin: 0; min-height: 1em; }
-  .snippet { margin: 0 18px 18px; background: #0b0d11; border: 1px solid #22402e; border-radius: 10px; padding: 14px; }
-  .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; font-family: var(--mono); }
+  form.create .hint { color: var(--mut); font-size: 12px; }
+  form.create .err { color: var(--down); font-size: 13px; margin: 0; min-height: 1em; }
+  .snippet { margin: 0 18px 18px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; }
+  .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: var(--text); font-family: var(--mono); }
   .snippet .row { display: flex; gap: 8px; margin-top: 12px; }
-  @media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .pbars .r { grid-template-columns: 130px 1fr 70px 50px; } .pbars .r > :last-child { display: none; } }
   @media (max-width: 900px) {
-    .layout { grid-template-columns: 1fr; } aside.side { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--p-line); }
-    .funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); } .search { display: none; }
+    .app { grid-template-columns: 1fr; } aside.side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    nav.groups { display: none; } main.pf { padding: 18px 14px 30px; } .search { width: 100%; }
   }
   @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create .full { grid-column: span 1; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
 </head>
-<body class="premium">
+<body>
 <script src="/i18n.js"></script>
 <script src="/js/ui.js"></script>
 <script src="/js/cmdk.js"></script>
@@ -163,7 +165,6 @@
       <button type="button" class="p-btn primary" data-close data-i18n="Done">Done</button></div>
   </div>
 </dialog>
-
 <script type="module">
 import { html, render, useState, useEffect, useMemo, useRef, useCallback } from '/vendor/preact-htm.js';
 
@@ -172,8 +173,32 @@ const ui = window.pvuvUI;
 const { esc, fmt, fill } = ui;
 const t = (s) => I18N.t(s);
 const te = (s) => esc(t(s));
-const tk = (k, en) => I18N.tk(k, en);
-const DAY = 86400000;
+
+// ── line icons (16px, stroke) ────────────────────────────────────────────
+const ICON = {
+  overview: 'M4 19V9M10 19V5M16 19v-7M22 19H2',
+  alert: 'M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
+  globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5',
+  layers: 'M12 3l9 4.5-9 4.5L3 7.5zM3 12l9 4.5 9-4.5M3 16.5L12 21l9-4.5',
+  flask: 'M9 3h6M10 3v6L4 19a1 1 0 0 0 .9 1.5h14.2A1 1 0 0 0 20 19l-6-10V3',
+  dollar: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  plug: 'M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
+  key: 'M7.5 11a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM10.7 12.3L21 2M16 7l3 3M19 4l2 2',
+  gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  plus: 'M12 5v14M5 12h14',
+  home: 'M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
+  down: 'M6 9l6 6 6-6',
+  refresh: 'M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5',
+  eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  page: 'M4 4h16v16H4zM4 9h16M9 20V9',
+  spark: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z',
+  ivt: 'M19 5L5 19M6.5 4a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM17.5 15a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  code: 'M8 6l-6 6 6 6M16 6l6 6-6 6',
+};
+const Icon = ({ n }) => html`<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d=${ICON[n]} /></svg>`;
 
 // ── persistent UI state: URL first (shareable), localStorage second ─────
 const LS = { cols: 'pvuv.portfolio.cols', sort: 'pvuv.portfolio.sort', period: 'pvuv.portfolio.period', layout: 'pvuv.portfolio.layout' };
@@ -183,49 +208,56 @@ const qp = new URLSearchParams(location.search);
 const PERIODS = ['today', 'yesterday', '7d', '30d', '90d', 'this_week', 'last_week', 'this_month', 'last_month', 'this_year'];
 const PERIOD_EN = { today: 'Today', yesterday: 'Yesterday', '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', this_week: 'This week', last_week: 'Last week', this_month: 'This month', last_month: 'Last month', this_year: 'This year' };
 const QUICK = ['attention', 'new_week', 'no_google', 'ivt_high'];
+const TABS = ['overview', 'sites', 'lifecycle'];
+const LIFE_ORDER = ['growing', 'organic', 'crawled', 'awaiting_crawl', 'setup', 'declining'];
 
 // ── columns ─────────────────────────────────────────────────────────────
-// sort: value used when sorting (desc first for numbers); render: HTML string
 const extVal = (s, k) => (s.external ? s.external[k] : null);
 const COLS = [
-  { id: 'stage', label: 'Stage', sort: (s) => ui.STAGES.indexOf(s.stage), render: (s) => `<span title="${s.stage_since ? esc(t('since') + ' ' + fmt.date(s.stage_since)) : ''}">${ui.stageChip(s.stage)}</span>` },
-  { id: 'live', label: 'Live', num: true, sort: (s) => s.days_live, render: (s) => fmt.days(s.days_live) },
+  { id: 'stage', label: 'Stage', sort: (s) => ui.STAGES.indexOf(s.stage), render: (s) => ui.stageChip(s.stage, s.stage_since ? t('since') + ' ' + fmt.date(s.stage_since) : '') },
+  { id: 'live', label: 'Live', num: true, sort: (s) => s.days_live, render: (s) => `<span class="m">${esc(fmt.days(s.days_live))}</span>` },
   { id: 'uv', label: 'Visitors', num: true, sort: (s) => s.uv, render: (s) => fmt.num(s.uv) },
   { id: 'delta', label: 'Change', num: true, sort: (s) => s.delta_pct ?? -1e9, render: (s) => {
-    if (s.delta_pct == null) return `<span class="muted2">${s.days_live < 14 ? te('new') : '–'}</span>`;
-    const d = fmt.delta(s.delta_pct); return `<span class="${d.cls}">${esc(d.text)}</span>`;
+    if (s.delta_pct == null) return `<span class="m">${s.days_live < 14 ? te('new') : '–'}</span>`;
+    const r = Math.round(s.delta_pct);
+    return `<span class="${r >= 0 ? 'up' : 'down'}">${r > 0 ? '+' : ''}${r}%</span>`;
   } },
-  { id: 'trend', label: '14-day trend', render: (s) => ui.areaSpark(s.series, { neg: s.delta_pct != null && s.delta_pct < 0, w: 116, h: 26 }) },
+  { id: 'trend', label: 'Last 14 days', render: (s) => ui.sparkline(s.series, { neg: s.delta_pct != null && s.delta_pct < 0 }) },
   { id: 'crawl', label: 'Search crawl', render: (s) => ui.engineChips(s.crawl, { late: (s.attention || []).some((a) => a.code === 'crawl_overdue') }) },
   { id: 'organic', label: 'Organic search', num: true, sort: (s) => s.organic_uv, render: (s) => fmt.num(s.organic_uv) },
   { id: 'ai', label: 'AI assistants', num: true, sort: (s) => s.ai_uv, render: (s) => fmt.num(s.ai_uv) },
-  { id: 'ivt', label: 'Invalid traffic', num: true, sort: (s) => s.ivt_pct ?? -1, render: (s, c) => `<span class="${s.ivt_pct != null && s.ivt_pct > c.th.ivt_high_pct ? 'dn' : ''}">${s.ivt_pct == null ? '–' : fmt.pct(s.ivt_pct)}</span>` },
+  { id: 'ivt', label: 'Invalid traffic', num: true, sort: (s) => s.ivt_pct ?? -1, render: (s, c) => `<span class="${s.ivt_pct != null && s.ivt_pct > c.th.ivt_pct ? 'down' : ''}">${s.ivt_pct == null ? '–' : fmt.pct(s.ivt_pct)}</span>` },
   { id: 'health', label: 'Daily health', render: (s) => ui.healthBar(s.health) },
   { id: 'attention', label: 'Needs attention', cls: 'att-c', sort: (s) => (s.attention.length ? 10 - (ui.SEV_RANK[s.attention[0].severity] ?? 9) : 0), render: (s) => ui.attnChip(s.attention) },
   // more metrics (off by default)
   { id: 'pv', label: 'Pageviews', num: true, sort: (s) => s.pv, render: (s) => fmt.num(s.pv) },
   { id: 'uv_prev', label: 'Visitors (previous)', num: true, sort: (s) => s.uv_prev, render: (s) => fmt.num(s.uv_prev) },
+  { id: 'first_crawl', label: 'First crawl', num: true, sort: (s) => s.first_search_crawl_at || 0, render: (s) => (s.first_search_crawl_at ? fmt.date(s.first_search_crawl_at) : '–') },
   { id: 'created', label: 'Created', num: true, sort: (s) => s.created_at, render: (s) => fmt.date(s.created_at) },
   { id: 'adguard', label: 'Ad protection', sort: (s) => s.adguard_mode, render: (s) => esc(t(s.adguard_mode)) },
   { id: 'last_event', label: 'Last event', num: true, sort: (s) => s.last_event_at || 0, render: (s) => (s.last_event_at ? fmt.ago(s.last_event_at) : '–') },
   // ranking set (cross-site clean-traffic ranking, /api/ranking)
   { id: 'rank', label: 'Rank', num: true, set: 'ranking', sort: (s) => -(s._rank ?? 1e9), render: (s) => (s._rank ? '#' + s._rank : '–') },
   { id: 'ext_clean', label: 'External clean', num: true, set: 'ranking', sort: (s) => s._ext ?? -1, render: (s) => fmt.num(s._ext) },
-  { id: 'internal', label: 'Internal (mutual)', num: true, set: 'ranking', sort: (s) => s._int ?? -1, render: (s) => `<span class="muted2">${fmt.num(s._int)}</span>` },
+  { id: 'internal', label: 'Internal (mutual)', num: true, set: 'ranking', sort: (s) => s._int ?? -1, render: (s) => `<span class="m">${fmt.num(s._int)}</span>` },
   { id: 'clean_pv', label: 'Clean PV', num: true, set: 'ranking', sort: (s) => s._clean ?? -1, render: (s) => fmt.num(s._clean) },
   { id: 'human', label: 'Human', num: true, set: 'ranking', sort: (s) => s._human ?? -1, render: (s) => (s._human == null ? '–' : s._human + '%') },
   // external data (only offered when some site has it)
   { id: 'revenue', label: 'Revenue', num: true, ext: true, sort: (s) => extVal(s, 'revenue_usd') ?? -1, render: (s) => fmt.usd(extVal(s, 'revenue_usd')) },
   { id: 'rpm', label: 'RPM', num: true, ext: true, sort: (s) => extVal(s, 'rpm_usd') ?? -1, render: (s) => fmt.usd(extVal(s, 'rpm_usd')) },
-  { id: 'adsense', label: 'Ad network', ext: true, sort: (s) => s.external?.adsense?.status || '', render: (s) => (s.external?.adsense ? ui.chip(t(s.external.adsense.status), s.external.adsense.status === 'ready' || s.external.adsense.status === 'approved' ? 'green' : 'amber') : '–') },
+  { id: 'adsense', label: 'Ad network', ext: true, sort: (s) => s.external?.adsense?.status || '', render: (s) => (s.external?.adsense ? `<span class="stage"><i style="background:${['ready', 'approved', 'ok'].includes(s.external.adsense.status) ? 'var(--up)' : 'var(--warn)'}"></i>${te(s.external.adsense.status)}</span>` : '–') },
 ];
 const COL_BY = Object.fromEntries(COLS.map((c) => [c.id, c]));
 const PRESETS = {
-  // external columns (revenue …) are listed but only shown when some site has external data
-  overview: ['stage', 'live', 'uv', 'delta', 'trend', 'crawl', 'organic', 'ivt', 'revenue', 'rpm', 'adsense', 'health', 'attention'],
+  // external columns are listed but only shown when some site has external data
+  overview: ['stage', 'live', 'uv', 'delta', 'trend', 'crawl', 'organic', 'ivt', 'revenue', 'rpm', 'adsense', 'attention'],
+  crawl: ['stage', 'live', 'crawl', 'first_crawl', 'organic', 'ai', 'attention'],
+  quality: ['stage', 'uv', 'pv', 'ivt', 'health', 'adguard', 'attention'],
+  revenue: ['stage', 'uv', 'delta', 'revenue', 'rpm', 'adsense', 'attention'],
   ranking: ['rank', 'uv', 'ext_clean', 'internal', 'clean_pv', 'pv', 'human', 'ivt', 'trend'],
   growth: ['stage', 'uv', 'uv_prev', 'delta', 'trend', 'organic', 'ai', 'pv'],
 };
+const PRESET_EN = { overview: 'Overview', crawl: 'Indexing & crawlers', quality: 'Traffic quality', revenue: 'Revenue', ranking: 'Ranking · clean traffic', growth: 'Growth' };
 
 // ── data ─────────────────────────────────────────────────────────────────
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
@@ -235,10 +267,7 @@ async function fetchPortfolio(period, compare, fresh) {
   return r.json();
 }
 async function fetchRanking(period) {
-  try {
-    const r = await guard(await fetch(`/api/ranking?period=${encodeURIComponent(period)}`));
-    return r.ok ? ((await r.json()).sites || []) : [];
-  } catch { return []; }
+  try { const r = await guard(await fetch(`/api/ranking?period=${encodeURIComponent(period)}`)); return r.ok ? ((await r.json()).sites || []) : []; } catch { return []; }
 }
 
 const startOfWeek = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
@@ -247,20 +276,10 @@ const sevSort = (a, b) => {
   return sa - sb || b.uv - a.uv;
 };
 function quickMatch(id, s, th) {
-  if (id === 'attention') return s.status === 'active' && s.attention.length > 0;
-  if (id === 'new_week') return s.status === 'active' && s.created_at >= startOfWeek();
-  if (id === 'no_google') return s.status === 'active' && s.uv > 0 && !s.crawl.google;
-  if (id === 'ivt_high') return s.status === 'active' && s.ivt_pct != null && s.ivt_pct > th.ivt_high_pct;
-  return true;
-}
-function viewMatch(view, s) {
-  if (view === 'all') return s.status !== 'archived';
-  if (view === 'archived') return s.status === 'archived';
-  if (view === 'attention') return s.status === 'active' && s.attention.length > 0;
-  if (view === 'starred') return s.starred;
-  if (view.startsWith('stage:')) return s.stage === view.slice(6);
-  if (view.startsWith('tag:')) return s.status !== 'archived' && s.tags.includes(view.slice(4));
-  if (view.startsWith('cohort:')) return s.status !== 'archived' && s.cohort === view.slice(7);
+  if (id === 'attention') return s.attention.length > 0;
+  if (id === 'new_week') return s.created_at >= startOfWeek();
+  if (id === 'no_google') return s.uv > 0 && !s.crawl.google;
+  if (id === 'ivt_high') return s.ivt_pct != null && s.ivt_pct > th.ivt_pct;
   return true;
 }
 function textMatch(q, s) {
@@ -268,30 +287,41 @@ function textMatch(q, s) {
   q = q.toLowerCase();
   return s.name.toLowerCase().includes(q) || s.site_id.toLowerCase().includes(q) || s.domains.some((d) => d.toLowerCase().includes(q)) || s.tags.some((d) => d.toLowerCase().includes(q));
 }
+/** totals for a client-side subset (tag filter): sums of the per-site rows */
+function aggregate(list, compare) {
+  const sum = (k) => list.reduce((a, s) => a + (s[k] || 0), 0);
+  const pv = sum('pv'), pvp = sum('pv_prev');
+  const ivt = list.reduce((a, s) => a + (s.ivt_pct || 0) * s.pv / 100, 0);
+  return { uv: sum('uv'), uv_prev: compare ? sum('uv_prev') : null, pv, pv_prev: compare ? pvp : null, ivt_pct: pv ? Math.round((ivt / pv) * 1000) / 10 : null, ivt_pct_prev: null,
+    organic_uv: sum('organic_uv'), organic_uv_prev: null, ai_uv: sum('ai_uv'), ai_uv_prev: null };
+}
+const isoWeek = (day) => { const d = new Date(day + 'T00:00:00Z'); const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow); return d.toISOString().slice(0, 10); };
 
 // ── components ───────────────────────────────────────────────────────────
 const Raw = ({ h, tag = 'span', cls }) => html`<${tag} class=${cls} dangerouslySetInnerHTML=${{ __html: h }} />`;
-const STAGE_DOT = { setup: '#5d6676', awaiting_crawl: 'var(--p-amber)', crawled: 'var(--p-blue)', organic: 'var(--p-violet)', growing: 'var(--p-green)', declining: 'var(--p-red)', archived: '#3a3f4b' };
 
-function Kpi({ label, value, delta, series, neg }) {
-  const d = delta || { text: '', cls: '' };
-  const mini = useMemo(() => ui.areaSpark(series || [], { w: 300, h: 30, fluid: true, neg, label }), [series, neg, label]);
-  return html`<div class="k p-card"><div class="l">${label}</div><div class="n">${value}${d.text ? html`<small class=${d.cls}>${d.text}</small>` : null}</div>
-    <${Raw} cls="mini" tag="div" h=${mini} /></div>`;
+function Kpi({ icon, label, value, delta }) {
+  return html`<div class="p-card kpi"><div class="h"><${Icon} n=${icon} /><span>${label}</span>${delta?.text ? html`<span class=${'d ' + delta.cls}>${delta.text}</span>` : null}</div><div class="v">${value}</div></div>`;
 }
+const signed = (d, opts = {}) => {
+  if (d == null || !isFinite(d)) return null;
+  const r = Math.abs(d) >= 10 ? Math.round(d) : Math.round(d * 10) / 10;
+  const good = opts.invert ? r <= 0 : r >= 0;
+  return { text: (r > 0 ? '+' : '') + r + (opts.unit || '%'), cls: r === 0 ? '' : good ? 'up' : 'down' };
+};
 
-function Menu({ label, children, cls = 'p-btn', title }) {
+function Menu({ label, children, cls = 'p-btn', title, up }) {
   const [open, setOpen] = useState(false);
   const ref = useRef();
   useEffect(() => {
     if (!open) return;
     const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', off); document.addEventListener('keydown', esc);
-    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', esc); };
+    const key = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', off); document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', key); };
   }, [open]);
-  return html`<div class="menu" ref=${ref}><button class=${cls} type="button" title=${title} aria-haspopup="true" aria-expanded=${open} onClick=${() => setOpen(!open)}>${label}</button>
-    ${open ? html`<div class="menu-pop" onClick=${(e) => e.stopPropagation()}>${typeof children === 'function' ? children(() => setOpen(false)) : children}</div>` : null}</div>`;
+  return html`<div class="menu" ref=${ref}><button class=${cls} type="button" title=${title} aria-label=${title} aria-haspopup="true" aria-expanded=${open} onClick=${() => setOpen(!open)}>${label}</button>
+    ${open ? html`<div class=${'menu-pop' + (up ? ' up' : '')}>${typeof children === 'function' ? children(() => setOpen(false)) : children}</div>` : null}</div>`;
 }
 
 function App() {
@@ -300,7 +330,11 @@ function App() {
   const [compare, setCompare] = useState(qp.get('compare') !== 'none');
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
-  const [view, setView] = useState(qp.get('view') || 'all');
+  const [syncing, setSyncing] = useState(false);
+  const [tab, setTab] = useState(TABS.includes(qp.get('tab')) ? qp.get('tab') : 'overview');
+  const [view, setView] = useState(['attention', 'starred'].includes(qp.get('view')) ? qp.get('view') : 'all');
+  const [stage, setStage] = useState(qp.get('stage') || '');
+  const [tag, setTag] = useState(qp.get('tag') || '');
   const [quick, setQuick] = useState(qp.get('quick') || '');
   const [search, setSearch] = useState(qp.get('q') || '');
   const [sort, setSort] = useState(() => {
@@ -309,15 +343,17 @@ function App() {
   });
   const [cols, setCols] = useState(() => (qp.get('cols') ? qp.get('cols').split(',') : lsGet(LS.cols, PRESETS.overview)).filter((c) => COL_BY[c]));
   const [layout, setLayout] = useState(qp.get('layout') || lsGet(LS.layout, 'table'));
+  const [metric, setMetric] = useState('uv');
+  const [gran, setGran] = useState('day');
   const [selected, setSelected] = useState(() => new Set());
   const [focus, setFocus] = useState(-1);
   const [ranking, setRanking] = useState(null);
   const [brand, setBrand] = useState({ name: 'pvuv.ai' });
+  const [me, setMe] = useState(null);
   const [modules, setModules] = useState({});
-  const viewHost = useRef(); const bulkHost = useRef(); const bulkMounted = useRef(false);
+  const viewHost = useRef(); const bulkHost = useRef(); const bulkApi = useRef(null);
   const searchRef = useRef();
 
-  // language switch → re-render everything
   useEffect(() => { const f = () => setTick((x) => x + 1); document.addEventListener('pvuv:lang', f); return () => document.removeEventListener('pvuv:lang', f); }, []);
   // optional modules load with `defer` → re-check once the page has loaded
   useEffect(() => {
@@ -329,29 +365,34 @@ function App() {
     fetch('/api/home').then((r) => (r.ok ? r.json() : null)).then((b) => {
       if (!b) return;
       setBrand(b);
-      document.title = ((b.name || '').trim() || 'pvuv.ai') + ' — ' + t('Sites');
+      document.title = t('Portfolio overview') + ' — ' + (((b.name || '').trim()) || 'pvuv.ai');
       if (b.favicon) { let l = document.querySelector('link[rel="icon"]'); if (!l) { l = document.createElement('link'); l.rel = 'icon'; document.head.appendChild(l); } l.href = b.favicon; }
     }).catch(() => {});
+    fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
   }, []);
 
   const load = useCallback((fresh) => {
-    setErr('');
+    setErr(''); setSyncing(true);
     return fetchPortfolio(period, compare, fresh).then((d) => { setData(d); window.pvuvCmdk?.setSites(d.sites); window.pvuvPortfolio = d; })
-      .catch((e) => { if (e.message !== 'auth') setErr(e.message || 'failed'); });
+      .catch((e) => { if (e.message !== 'auth') setErr(e.message || 'failed'); })
+      .finally(() => setSyncing(false));
   }, [period, compare]);
   useEffect(() => { setData((d) => (d ? { ...d, _stale: true } : d)); load(false); }, [load]);
   // reload after a write by another module (drawer / bulk): `pvuv:changed`
   useEffect(() => { const f = () => load(true); document.addEventListener('pvuv:changed', f); return () => document.removeEventListener('pvuv:changed', f); }, [load]);
 
-  const needRanking = cols.some((c) => COL_BY[c]?.set === 'ranking') || sort.id && COL_BY[sort.id]?.set === 'ranking';
+  const needRanking = cols.some((c) => COL_BY[c]?.set === 'ranking') || COL_BY[sort.id]?.set === 'ranking';
   useEffect(() => { if (needRanking) fetchRanking(period).then(setRanking); }, [needRanking, period]);
 
   // URL + storage sync
   useEffect(() => {
     const p = new URLSearchParams();
+    if (tab !== 'overview') p.set('tab', tab);
     if (period !== '7d') p.set('period', period);
     if (!compare) p.set('compare', 'none');
     if (view !== 'all') p.set('view', view);
+    if (stage) p.set('stage', stage);
+    if (tag) p.set('tag', tag);
     if (quick) p.set('quick', quick);
     if (search) p.set('q', search);
     if (!(sort.id === 'uv' && sort.dir === 'desc')) p.set('sort', sort.id + ':' + sort.dir);
@@ -360,9 +401,9 @@ function App() {
     const qs = p.toString();
     history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
     lsSet(LS.period, period); lsSet(LS.sort, sort); lsSet(LS.cols, cols); lsSet(LS.layout, layout);
-  }, [period, compare, view, quick, search, sort, cols, layout]);
+  }, [tab, period, compare, view, stage, tag, quick, search, sort, cols, layout]);
 
-  const th = data?.thresholds || { ivt_high_pct: 20, growth_min_uv: 1000 };
+  const th = data?.thresholds || { ivt_pct: 20, growth_uv_7d: 1000 };
   const sites = useMemo(() => {
     if (!data) return [];
     if (!ranking) return data.sites;
@@ -372,48 +413,64 @@ function App() {
   const hasExternal = sites.some((s) => s.external);
   const visibleCols = cols.filter((c) => COL_BY[c] && (!COL_BY[c].ext || hasExternal));
 
+  // scope = tag filter over the active (or archived) sites; everything else narrows the table
+  const scope = useMemo(() => sites.filter((s) => (stage === 'archived' ? s.status === 'archived' : s.status !== 'archived')
+    && (!tag || s.tags.includes(tag) || s.cohort === tag)), [sites, stage, tag]);
   const rows = useMemo(() => {
-    let r = sites.filter((s) => viewMatch(view, s) && (!quick || quickMatch(quick, s, th)) && textMatch(search, s));
+    let r = scope.filter((s) => (!stage || stage === 'archived' || s.stage === stage)
+      && (view !== 'attention' || s.attention.length > 0) && (view !== 'starred' || s.starred)
+      && (!quick || quickMatch(quick, s, th)) && textMatch(search, s));
     const col = COL_BY[sort.id];
-    if ((view === 'attention' || quick === 'attention') && (!col || sort.id === 'uv' && sort.dir === 'desc')) r = r.slice().sort(sevSort);
-    else if (col?.sort) {
-      const dir = sort.dir === 'asc' ? 1 : -1;
-      r = r.slice().sort((a, b) => { const x = col.sort(a), y = col.sort(b); return (x < y ? -1 : x > y ? 1 : 0) * dir || b.uv - a.uv; });
-    } else if (sort.id === 'name') {
-      const dir = sort.dir === 'asc' ? 1 : -1;
-      r = r.slice().sort((a, b) => a.name.localeCompare(b.name) * dir);
-    }
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    if ((view === 'attention' || quick === 'attention') && sort.id === 'uv' && sort.dir === 'desc') r = r.slice().sort(sevSort);
+    else if (col?.sort) r = r.slice().sort((a, b) => { const x = col.sort(a), y = col.sort(b); return (x < y ? -1 : x > y ? 1 : 0) * dir || b.uv - a.uv; });
+    else if (sort.id === 'name') r = r.slice().sort((a, b) => a.name.localeCompare(b.name) * dir);
     return r;
-  }, [sites, view, quick, search, sort, th]);
+  }, [scope, stage, view, quick, search, sort, th]);
 
+  const selRef = useRef(selected); selRef.current = selected;
+  const rowsRef = useRef(rows); rowsRef.current = rows;
   const ctx = useMemo(() => ({
-    period, t, te, esc, fmt, ui, thresholds: th,
+    period, t, te, esc, fmt, ui, thresholds: th, apiBase: '',
     reload: () => load(true),
+    onChange: () => load(true),
+    onOpen: (s) => window.pvuvCmdk?.recordRecent(s.site_id),
     open: (s) => openSite(s),
     navigate: (s) => { window.pvuvCmdk?.recordRecent(s.site_id); location.href = '/site.html?id=' + encodeURIComponent(s.site_id); },
   }), [period, th, load]);
   function openSite(s) {
-    if (window.pvuvDrawer) window.pvuvDrawer.open(s, ctx);
-    else ctx.navigate(s);
+    if (window.pvuvDrawer) { window.pvuvCmdk?.recordRecent(s.site_id); window.pvuvDrawer.open(s, ctx); } else ctx.navigate(s);
   }
+
+  // bulk toolbar (management stream): mount once, refresh on selection change
+  // (re)mount whenever the host element changes — switching tabs re-creates it
+  const bulkEl = useRef(null);
+  useEffect(() => {
+    if (!modules.bulk || !bulkHost.current || bulkEl.current === bulkHost.current) return;
+    bulkEl.current = bulkHost.current;
+    bulkApi.current = window.pvuvBulk.mount(bulkHost.current, () => [...selRef.current], () => { setSelected(new Set()); load(true); }, { getSites: () => rowsRef.current }) || {};
+  });
+  useEffect(() => {
+    bulkApi.current?.refresh?.();
+    document.dispatchEvent(new CustomEvent('pvuv:selection', { detail: { ids: [...selected] } }));
+  }, [selected]);
 
   // cards / heatmap from the management stream
   useEffect(() => {
     if (layout === 'table' || !viewHost.current) return;
     const fn = window.pvuvViews?.[layout];
     if (fn) fn(viewHost.current, rows, ctx); else viewHost.current.innerHTML = `<p class="loading-state">${te('This view is not available yet.')}</p>`;
-  }, [layout, rows, ctx, modules]);
+  }, [layout, rows, ctx, modules, tab]);
 
-  // keyboard: j/k move, Enter opens, x selects, Esc clears
-  const rowsRef = useRef(rows); rowsRef.current = rows;
+  // keyboard: j/k move, Enter opens (Shift+Enter: full dashboard), x selects, Esc clears
   const focusRef = useRef(focus); focusRef.current = focus;
   useEffect(() => {
     const onKey = (e) => {
       const tag = document.activeElement?.tagName;
       if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || document.querySelector('dialog[open]') || document.querySelector('.cmdk:not([hidden])')) return;
       const n = rowsRef.current.length; if (!n) return;
-      if (e.key === 'j' || e.key === 'ArrowDown' && e.shiftKey === false && focusRef.current >= 0) { e.preventDefault(); setFocus((f) => Math.min(n - 1, f + 1)); }
-      else if (e.key === 'k' || e.key === 'ArrowUp' && focusRef.current >= 0) { e.preventDefault(); setFocus((f) => Math.max(0, f - 1)); }
+      if (e.key === 'j') { e.preventDefault(); setFocus((f) => Math.min(n - 1, f + 1)); }
+      else if (e.key === 'k') { e.preventDefault(); setFocus((f) => Math.max(0, f - 1)); }
       else if (e.key === 'Enter' && focusRef.current >= 0) { e.preventDefault(); const s = rowsRef.current[focusRef.current]; if (s) (e.shiftKey ? ctx.navigate(s) : openSite(s)); }
       else if (e.key === 'x' && focusRef.current >= 0) { e.preventDefault(); toggleSel(rowsRef.current[focusRef.current].site_id); }
       else if (e.key === 'Escape') { setSelected(new Set()); setFocus(-1); }
@@ -422,159 +479,228 @@ function App() {
     return () => document.removeEventListener('keydown', onKey);
   }, [ctx]);
   useEffect(() => { document.querySelector('tr.focus')?.scrollIntoView({ block: 'nearest' }); }, [focus]);
-  useEffect(() => { setFocus(-1); }, [view, quick, search]);
+  useEffect(() => { setFocus(-1); }, [view, quick, search, stage, tag, tab]);
 
   function toggleSel(id) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
-  const selRef = useRef(selected); selRef.current = selected;
-  function bulk() {
-    if (!window.pvuvBulk || !bulkHost.current) return;
-    bulkHost.current.hidden = false;
-    if (!bulkMounted.current) {
-      window.pvuvBulk.mount(bulkHost.current, () => [...selRef.current], () => { setSelected(new Set()); load(true); });
-      bulkMounted.current = true;
-    }
-  }
   function sortBy(id) { setSort((s) => (s.id === id ? { id, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { id, dir: COL_BY[id]?.num || id === 'attention' ? 'desc' : 'asc' })); }
-  // the attention queue always opens in its own order: severity, then visitors
-  function pickView(v) { setView(v); setQuick(''); if (v === 'attention') setSort({ id: 'uv', dir: 'desc' }); }
+  function go(next) {
+    // sidebar / tab navigation; the attention queue always opens in its own order
+    setTab(next.tab ?? 'sites'); setView(next.view ?? 'all'); setQuick(''); if (next.stage !== undefined) setStage(next.stage);
+    if (next.view === 'attention') setSort({ id: 'uv', dir: 'desc' });
+    if (next.preset) { setCols(PRESETS[next.preset]); setLayout('table'); }
+  }
 
-  // ── render ──
-  if (err && !data) return html`${Top()}<div class="loading-state">${t('failed')}: ${err} <button class="p-btn" onClick=${() => load(true)}>${t('Retry')}</button></div>`;
-  if (!data) return html`${Top()}<p class="loading-state">${t('loading…')}</p>`;
-
-  const counts = (() => {
-    const c = { all: 0, attention: 0, starred: 0, archived: 0, tags: new Map(), cohort: 0 };
-    const thisCohort = sites.find((s) => s.created_at >= startOfWeek())?.cohort;
+  // ── chrome ──
+  const counts = useMemo(() => {
+    const c = { all: 0, attention: 0, starred: 0, archived: 0, tags: new Map(), newWeek: 0 };
     for (const s of sites) {
       if (s.status === 'archived') { c.archived++; continue; }
       c.all++; if (s.attention.length) c.attention++; if (s.starred) c.starred++;
       for (const g of s.tags) c.tags.set(g, (c.tags.get(g) || 0) + 1);
-      if (thisCohort && s.cohort === thisCohort) c.cohort++;
     }
-    c.thisCohort = thisCohort;
     return c;
-  })();
-
-  function Top() {
-    const logo = brand.logo_light || brand.logo_dark;
-    return html`<div class="topbar">
-      <a class="brand" href="/sites.html" style="color:inherit">${logo ? html`<img class="logo" src=${logo} alt=${brand.name || 'pvuv.ai'} />` : (brand.name || 'pvuv.ai')}</a>
-      <label class="search"><input ref=${searchRef} type="search" value=${search} placeholder=${t('Search sites, domains, tags…')} aria-label=${t('Search sites, domains, tags…')}
-        onInput=${(e) => setSearch(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Escape') { setSearch(''); e.target.blur(); } else if (e.key === 'Enter' && rows[0]) openSite(rows[0]); }} />
-        <kbd title=${t('Jump to a site (⌘K or /)')} onClick=${(e) => { e.preventDefault(); window.pvuvCmdk?.open(); }}>⌘K</kbd></label>
-      <div class="sp"></div>
-      <select class="p-btn" aria-label=${t('Date range')} value=${period} onChange=${(e) => setPeriod(e.target.value)}>
-        ${PERIODS.map((p) => html`<option value=${p}>${t(PERIOD_EN[p])}</option>`)}</select>
-      <button class=${'p-btn' + (compare ? ' on' : '')} type="button" aria-pressed=${compare} onClick=${() => setCompare(!compare)}>${t('Compare: previous period')}</button>
-      <button class="p-btn" type="button" id="bulkBtn" disabled=${!modules.bulk} title=${modules.bulk ? (selected.size ? fill(t('{n} selected'), { n: selected.size }) : t('Select rows first')) : t('Bulk actions are not available yet.')} onClick=${bulk}>
-        ${t('Bulk actions')}${selected.size ? html` <span class="pchip accent">${selected.size}</span>` : null}</button>
-      <button class="p-btn primary" type="button" onClick=${openAdd}>＋ ${t('New site')}</button>
-      <a class="p-btn" href="/settings.html" title=${t('Settings')} aria-label=${t('Settings')}>⚙</a>
-      <${Menu} label="⋯" title=${t('More')}>
+  }, [sites]);
+  const logo = brand.logo_dark || brand.logo_light;
+  const user = (me && me.user) || 'admin';
+  const navOn = (k) => (k === 'overview' ? tab === 'overview' && view === 'all' : k === 'all' ? tab === 'sites' && view === 'all' && !stage : tab !== 'overview' && view === k);
+  const Side = html`<aside class="side">
+    <a class="logo" href="/sites.html">${logo ? html`<img src=${logo} alt=${brand.name || 'pvuv.ai'} />` : html`<span class="mark">pv</span>`}${logo ? null : (brand.name || 'pvuv.ai')}</a>
+    <div class="ws"><small>${t('Workspace')}</small><div><${Icon} n="home" /><span>${(brand.name || '').trim() || t('My sites')}</span></div></div>
+    <button class="p-btn primary cta" type="button" onClick=${openAdd}><${Icon} n="plus" />${t('New site')}</button>
+    <nav class="groups" aria-label=${t('Views')}>
+      <h5>${t('Sites')}</h5>
+      <a href="?" class=${navOn('overview') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ tab: 'overview' }); }}><${Icon} n="overview" />${t('Overview')}</a>
+      <a href="?view=attention&tab=sites" class=${navOn('attention') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ view: 'attention' }); }}><${Icon} n="alert" />${t('Needs attention')}<span class="n">${counts.attention}</span></a>
+      <a href="?view=starred&tab=sites" class=${navOn('starred') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ view: 'starred' }); }}><${Icon} n="star" />${t('Starred')}<span class="n">${counts.starred}</span></a>
+      <a href="?tab=sites" class=${navOn('all') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ stage: '' }); }}><${Icon} n="globe" />${t('All sites')}<span class="n">${counts.all}</span></a>
+      <h5>${t('Analysis')}</h5>
+      <a href="?tab=sites" onClick=${(e) => { e.preventDefault(); go({ preset: 'crawl' }); }}><${Icon} n="search" />${t('Indexing & crawlers')}</a>
+      <a href="?tab=sites" onClick=${(e) => { e.preventDefault(); go({ preset: 'quality' }); }}><${Icon} n="layers" />${t('Traffic quality')}</a>
+      <a class="dim" href="#" title=${t('Experiments are per site — open a site to see them.')} onClick=${(e) => { e.preventDefault(); window.pvuvCmdk?.open(); }}><${Icon} n="flask" />${t('Experiments')}</a>
+      <a href="?tab=sites" class=${hasExternal ? '' : 'dim'} title=${hasExternal ? '' : t('Connect an integration to see revenue.')} onClick=${(e) => { e.preventDefault(); if (hasExternal) go({ preset: 'revenue' }); else location.href = '/settings.html#integrations'; }}><${Icon} n="dollar" />${t('Revenue')}</a>
+      <h5>${t('Configure')}</h5>
+      <a href="/settings.html#integrations"><${Icon} n="plug" />${t('Integrations')}</a>
+      <a href="/settings.html#tokens"><${Icon} n="key" />${t('API tokens')}</a>
+      <a href="/settings.html"><${Icon} n="gear" />${t('Settings')}</a>
+    </nav>
+    <div class="me"><span class="av">${String(user).slice(0, 1).toUpperCase()}</span><div class="grow">${user}<small>${t('Self-hosted')}</small></div>
+      <${Menu} cls="iconbtn" label=${html`<${Icon} n="more" />`} title=${t('More')} up=${true}>
         <h5>${t('Language')}</h5>
-        <div style="padding:0 6px"><select class="p-btn" style="width:100%" value=${I18N.lang} onChange=${(e) => I18N.setLang(e.target.value)}>${I18N.langs.map((l) => html`<option value=${l.code}>${l.label}</option>`)}</select></div>
+        <div style="padding:0 6px"><select value=${I18N.lang} onChange=${(e) => I18N.setLang(e.target.value)}>${I18N.langs.map((l) => html`<option value=${l.code}>${l.label}</option>`)}</select></div>
         <hr />
         <a href="/health.html">${t('Self-check')}</a>
         <button type="button" onClick=${async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login.html'; }}>${t('Sign out')}</button>
       <//>
-    </div>`;
-  }
+    </div>
+  </aside>`;
 
-  const T = data.totals;
-  const ser = (k) => T.series.map((x) => ({ uv: x[k] ?? 0 }));
-  const dPct = (a, b) => (compare ? fmt.delta(fmt.change(a, b)) : null);
-  const ivtD = compare && T.ivt_pct != null && T.ivt_pct_prev != null ? fmt.delta(T.ivt_pct - T.ivt_pct_prev, { invert: true, unit: 'pt' }) : null;
-  const F = data.funnel;
-  const fpct = (n) => (F.total ? Math.round((n / F.total) * 100) : 0);
+  if (err && !data) return html`<div class="app">${Side}<main class="pf"><h1 class="title">${t('Portfolio overview')}</h1><p class="loading-state">${t('failed')}: ${err} <button class="p-btn" onClick=${() => load(true)}>${t('Retry')}</button></p></main></div>`;
+  if (!data) return html`<div class="app">${Side}<main class="pf"><h1 class="title">${t('Portfolio overview')}</h1><p class="loading-state">${t('loading…')}</p></main></div>`;
+
+  // ── overview numbers (server totals, or client sums under a tag filter) ──
+  const activeScope = scope.filter((s) => s.status === 'active');
+  const T = tag ? aggregate(activeScope, compare) : data.totals;
+  const dPct = (a, b) => (compare && b ? signed(fmt.change(a, b)) : null);
+  const ivtD = compare && T.ivt_pct != null && T.ivt_pct_prev != null ? signed(T.ivt_pct - T.ivt_pct_prev, { invert: true, unit: 'pt' }) : null;
+  const periodLabel = t(PERIOD_EN[period] || period);
   const allSetup = counts.all > 0 && sites.filter((s) => s.status === 'active').every((s) => s.stage === 'setup');
+  const syncedAt = (() => { try { return new Date(data.generated_at).toLocaleString(I18N.lang, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } })();
+  const topTags = [...counts.tags.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 4).map(([g]) => g);
+  if (tag && !topTags.includes(tag)) topTags.push(tag);
 
-  const quickCount = (id) => sites.filter((s) => quickMatch(id, s, th)).length;
+  const Toolbar = html`<div class="toolbar">
+    ${topTags.length ? html`<div class="seg" role="group" aria-label=${t('Tags')}>
+      <button type="button" class=${!tag ? 'on' : ''} aria-pressed=${!tag} onClick=${() => setTag('')}>${t('All')}</button>
+      ${topTags.map((g) => html`<button type="button" class=${tag === g ? 'on' : ''} aria-pressed=${tag === g} onClick=${() => setTag(tag === g ? '' : g)}>${g}</button>`)}</div>` : null}
+    <select class="p-btn" aria-label=${t('Date range')} value=${period} onChange=${(e) => setPeriod(e.target.value)}>
+      ${PERIODS.map((p) => html`<option value=${p}>${t(PERIOD_EN[p])}</option>`)}</select>
+    <div class="sp"></div>
+    <span class="sync">${fill(t('Synced {time}'), { time: syncedAt })}</span>
+    <button type="button" class="syncbtn" disabled=${syncing} onClick=${() => load(true)}><${Icon} n="refresh" />${t('Refresh')}</button>
+  </div>`;
+
+  // lifecycle progress bars: count / % of sites / share of visitors
+  const lifeTotal = activeScope.length || 1;
+  const uvTotal = activeScope.reduce((a, s) => a + s.uv, 0) || 0;
+  const Lifecycle = html`<section class="p-card sec"><h3>${t('Sites by lifecycle stage')}</h3><div class="pbars">
+    ${LIFE_ORDER.map((st) => {
+      const list = activeScope.filter((s) => s.stage === st);
+      const n = list.length, uv = list.reduce((a, s) => a + s.uv, 0);
+      const share = uvTotal ? uv / uvTotal : 0;
+      return html`<button type="button" class="r" title=${t('Show these sites')} onClick=${() => { setTab(tab === 'overview' ? 'sites' : tab); setStage(st); setView('all'); setQuick(''); }}>
+        <span class="lab"><i class="sdot" style=${'background:' + ui.STAGE_COLOR[st]}></i>${ui.stageLabel(st)}</span>
+        <div class="track"><b style=${'width:' + Math.max(n ? 1.5 : 0, Math.min(100, (n / lifeTotal) * 100)) + '%'}></b></div>
+        <span class="num">${fill(t(n === 1 ? '{n} site' : '{n} sites'), { n })}</span><span class="num m">${Math.round((n / lifeTotal) * 100)}%</span>
+        <span class="num m">${!uv ? '—' : share < 0.01 ? '<1%' : fill(t('{pct} of visitors'), { pct: Math.round(share * 100) + '%' })}</span></button>`;
+    })}</div></section>`;
+
+  // launch funnel (contract `funnel`), on the lifecycle tab
+  const F = tag ? {
+    total: activeScope.length, has_data: activeScope.filter((s) => s.stage !== 'setup').length, google_crawled: activeScope.filter((s) => s.crawl.google).length,
+    organic: activeScope.filter((s) => ['organic', 'growing', 'declining'].includes(s.stage) || s.organic_uv + s.ai_uv > 0).length,
+    weekly_1000: null,
+  } : data.funnel;
+  const Funnel = html`<section class="p-card sec"><h3>${t('Launch funnel')}</h3><div class="pbars">
+    ${[['total', 'Total sites'], ['has_data', 'Receiving data'], ['google_crawled', 'Crawled by Google'], ['organic', 'Organic traffic'], ['weekly_1000', 'Weekly visitors > {n}']].filter(([k]) => F[k] != null).map(([k, l]) => html`
+      <div class="r"><span class="lab">${fill(t(l), { n: fmt.num(th.growth_uv_7d) })}</span><div class="track"><b style=${'width:' + (F.total ? (F[k] / F.total) * 100 : 0) + '%'}></b></div>
+        <span class="num">${fmt.num(F[k])}</span><span class="num m">${F.total ? Math.round((F[k] / F.total) * 100) : 0}%</span><span></span></div>`)}</div></section>`;
+
+  // daily chart: metric × day/week; grey bars = sites launched that day
+  const chartPts = (() => {
+    let pts;
+    if (tag) {
+      // per-site series cover the last 14 days (visitors only)
+      const m = new Map();
+      for (const s of activeScope) for (const p of s.series) m.set(p.day, (m.get(p.day) || 0) + p.uv);
+      const launched = new Map();
+      for (const s of activeScope) { const d = new Date(s.created_at).toISOString().slice(0, 10); launched.set(d, (launched.get(d) || 0) + 1); }
+      pts = [...m.keys()].sort().map((day) => ({ day, uv: m.get(day), pv: null, ivt_pct: null, launched_per_day: launched.get(day) || 0 }));
+    } else pts = data.totals.series.map((x) => ({ ...x }));
+    if (gran === 'week') {
+      const w = new Map();
+      for (const p of pts) {
+        const k = isoWeek(p.day); const a = w.get(k) || { day: k, uv: 0, pv: 0, ivtn: 0, launched_per_day: 0 };
+        a.uv += p.uv || 0; a.pv += p.pv || 0; a.ivtn += ((p.ivt_pct || 0) * (p.pv || 0)) / 100; a.launched_per_day += p.launched_per_day || 0; w.set(k, a);
+      }
+      pts = [...w.values()].map((a) => ({ ...a, ivt_pct: a.pv ? (a.ivtn / a.pv) * 100 : null }));
+    }
+    const key = metric === 'pv' ? 'pv' : metric === 'ivt' ? 'ivt_pct' : 'uv';
+    return pts.map((p) => ({ label: p.day.slice(5), v: p[key] ?? 0, bar: p.launched_per_day || 0, barTitle: fill(t('{n} sites launched'), { n: p.launched_per_day || 0 }) }));
+  })();
+  const chartTitle = { uv: 'Daily visitors', pv: 'Daily pageviews', ivt: 'Daily invalid traffic share' }[metric];
+  const ticks = chartPts.length <= 10 ? chartPts : chartPts.filter((_, i) => i % Math.ceil(chartPts.length / 10) === 0);
+  const Chart = html`<section class="p-card sec">
+    <div class="chart-h"><h3>${t(gran === 'week' ? chartTitle.replace('Daily', 'Weekly') : chartTitle)}</h3>
+      <div class="seg" role="group" aria-label=${t('Metric')}>
+        ${[['uv', 'Visitors'], ['pv', 'Pageviews'], ['ivt', 'Invalid traffic']].map(([k, l]) => html`<button type="button" class=${metric === k ? 'on' : ''} aria-pressed=${metric === k} disabled=${tag && k !== 'uv'} onClick=${() => setMetric(k)}>${t(l)}</button>`)}</div>
+      <div class="seg" role="group" aria-label=${t('Interval')}>
+        ${[['day', 'By day'], ['week', 'By week']].map(([k, l]) => html`<button type="button" class=${gran === k ? 'on' : ''} aria-pressed=${gran === k} onClick=${() => setGran(k)}>${t(l)}</button>`)}</div></div>
+    <${Raw} tag="div" h=${ui.lineChart(chartPts, { h: 240, label: t(chartTitle), fmtY: metric === 'ivt' ? (v) => Math.round(v) + '%' : undefined, fmtV: metric === 'ivt' ? (v) => fmt.pct(v, 1) : undefined })} />
+    <div class="xaxis">${ticks.map((p) => html`<span>${p.label}</span>`)}</div>
+    <div class="legend">${tag ? t('Visitors of the filtered sites over the last 14 days. ') : ''}${t('Grey bars: sites launched that day.')}</div>
+  </section>`;
+
+  const quickCount = (id) => scope.filter((s) => quickMatch(id, s, th)).length;
   const QUICK_EN = { attention: 'Needs attention', new_week: 'Launched this week', no_google: 'Traffic, no Google crawl', ivt_high: 'Invalid traffic > {n}%' };
   const allChecked = rows.length > 0 && rows.every((s) => selected.has(s.site_id));
+  const TableCard = html`<section class="p-card tbl" aria-label=${t('Sites')}>
+    <div class="th"><h3>${view === 'attention' ? t('Needs attention') : view === 'starred' ? t('Starred') : t('Sites')}</h3>
+      <label class="search"><${Icon} n="search" /><input ref=${searchRef} type="search" value=${search} placeholder=${t('Search sites or domains')} aria-label=${t('Search sites or domains')}
+        onInput=${(e) => setSearch(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Escape') { setSearch(''); e.target.blur(); } else if (e.key === 'Enter' && rows[0]) openSite(rows[0]); }} />
+        <kbd class="k" title=${t('Jump to a site (⌘K or /)')} onClick=${(e) => { e.preventDefault(); window.pvuvCmdk?.open(); }}>⌘K</kbd></label>
+      <div class="seg" role="group" aria-label=${t('Quick filters')}>
+        <button type="button" class=${!quick ? 'on' : ''} aria-pressed=${!quick} onClick=${() => setQuick('')}>${t('All')}</button>
+        ${QUICK.map((id) => { const n = quickCount(id); return id !== 'attention' && id !== 'new_week' && !n && quick !== id ? null : html`<button type="button" class=${quick === id ? 'on' : ''} aria-pressed=${quick === id}
+          onClick=${() => { setQuick(quick === id ? '' : id); if (id === 'attention' && quick !== id) setSort({ id: 'uv', dir: 'desc' }); }}>${fill(t(QUICK_EN[id]), { n: th.ivt_pct })} <span class="n">${n}</span></button>`; })}</div>
+      <select class="stagesel" aria-label=${t('Stage')} value=${stage} onChange=${(e) => setStage(e.target.value)}>
+        <option value="">${t('All stages')}</option>${ui.STAGES.map((s) => html`<option value=${s}>${ui.stageLabel(s)}${s === 'archived' ? ` (${counts.archived})` : ''}</option>`)}</select>
+      ${layout === 'table' ? html`<${Menu} label=${html`${t('Columns')} <${Icon} n="down" />`}>${() => html`
+        <h5>${t('Column sets')}</h5>
+        ${Object.keys(PRESETS).filter((p) => p !== 'revenue' || hasExternal).map((p) => html`<button type="button" onClick=${() => { setCols(PRESETS[p]); if (p === 'ranking') setSort({ id: 'rank', dir: 'asc' }); }}>${t(PRESET_EN[p])}</button>`)}
+        <hr /><h5>${t('Columns')}</h5>
+        ${COLS.filter((c) => !c.ext || hasExternal).map((c) => html`<label><input type="checkbox" class="pcb" checked=${cols.includes(c.id)}
+          onChange=${(e) => setCols(e.target.checked ? COLS.map((x) => x.id).filter((x) => x === c.id || cols.includes(x)) : cols.filter((x) => x !== c.id))} /> ${t(c.label)}</label>`)}`}<//>` : null}
+      <div class="seg" role="group" aria-label=${t('Layout')}>
+        ${['table', 'cards', 'heatmap'].map((l) => html`<button type="button" class=${layout === l ? 'on' : ''} aria-pressed=${layout === l}
+          disabled=${l !== 'table' && !modules.views?.[l]} title=${l !== 'table' && !modules.views?.[l] ? t('This view is not available yet.') : ''}
+          onClick=${() => setLayout(l)}>${t({ table: 'Table', cards: 'Cards', heatmap: 'Heatmap' }[l])}</button>`)}</div>
+    </div>
+    <div class="bulkhost" ref=${bulkHost}></div>
+    ${layout !== 'table' && modules.views?.[layout] ? html`<div class="viewhost" ref=${viewHost}></div>` : html`
+    <div class="tscroll"><table class="pt">
+      <thead><tr>
+        <th class="cb"><input type="checkbox" class="pcb" aria-label=${t('Select all')} checked=${allChecked}
+          onChange=${(e) => setSelected(e.target.checked ? new Set(rows.map((s) => s.site_id)) : new Set())} /></th>
+        <th class=${'sortable' + (sort.id === 'name' ? ' sorted' : '')} onClick=${() => sortBy('name')}>${t('Site')}${sort.id === 'name' ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}</th>
+        ${visibleCols.map((id) => { const c = COL_BY[id]; return html`<th class=${[c.num ? 'num' : '', c.sort ? 'sortable' : '', sort.id === id ? 'sorted' : ''].join(' ')}
+          aria-sort=${sort.id === id ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+          onClick=${c.sort ? () => sortBy(id) : undefined}>${t(c.label)}${sort.id === id ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}</th>`; })}
+      </tr></thead>
+      <tbody>
+        ${rows.map((s, i) => html`<tr key=${s.site_id} class=${(i === focus ? 'focus ' : '') + (selected.has(s.site_id) ? 'sel' : '')} onClick=${() => { setFocus(i); openSite(s); }}>
+          <td class="cb" onClick=${(e) => e.stopPropagation()}><input type="checkbox" class="pcb" aria-label=${t('Select') + ' ' + s.name} checked=${selected.has(s.site_id)} onChange=${() => toggleSel(s.site_id)} /></td>
+          <td><div class="site"><${Raw} h=${ui.avatar(s.name)} /><div>
+            <div><span class="nm"><a href=${'/site.html?id=' + encodeURIComponent(s.site_id)} onClick=${(e) => { if (!e.metaKey && !e.ctrlKey) { e.preventDefault(); e.stopPropagation(); setFocus(i); openSite(s); } }}>${s.name}</a></span>
+              ${s.starred ? html` <span class="star" aria-label=${t('Starred')}>★</span>` : null}
+              ${s.tags.slice(0, 2).map((g) => html`<span class="ptag">${g}</span>`)}${s.tags.length > 2 ? html`<span class="ptag">+${s.tags.length - 2}</span>` : null}</div>
+            <div class="dm">${s.domains[0] || s.site_id}${s.domains.length > 1 ? ' +' + (s.domains.length - 1) : ''}</div></div></div></td>
+          ${visibleCols.map((id) => { const c = COL_BY[id]; return html`<td class=${(c.num ? 'num ' : '') + (c.cls || '')}><${Raw} h=${c.render(s, { th })} /></td>`; })}
+        </tr>`)}
+        ${rows.length === 0 ? html`<tr><td colspan=${visibleCols.length + 2} class="loading-state">${t('No sites match this view.')}</td></tr>` : null}
+      </tbody>
+    </table></div>`}
+    <div class="note">${fill(t(rows.length === 1 ? '{n} site' : '{n} sites'), { n: rows.length })}${selected.size ? ' · ' + fill(t('{n} selected'), { n: selected.size }) : ''} · ${t('j / k to move, Enter to open, x to select, / or ⌘K to jump to a site.')}</div>
+  </section>`;
 
-  return html`
-  ${Top()}
-  <div class="layout">
-    <aside class="side" aria-label=${t('Views')}>
-      <h4>${t('Views')}</h4>
-      <button class=${'v' + (view === 'all' ? ' on' : '')} onClick=${() => pickView('all')}><span>${t('All sites')}</span><b>${counts.all}</b></button>
-      <button class=${'v' + (view === 'attention' ? ' on' : '')} onClick=${() => pickView('attention')}><span><i class="dot" style="background:var(--p-red)"></i>${t('Needs attention')}</span><b>${counts.attention}</b></button>
-      <button class=${'v' + (view === 'starred' ? ' on' : '')} onClick=${() => pickView('starred')}><span><span class="star">★</span> ${t('Starred')}</span><b>${counts.starred}</b></button>
-      <h4>${t('Lifecycle')}</h4>
-      ${ui.STAGES.filter((s) => s !== 'archived').map((s) => html`<button class=${'v' + (view === 'stage:' + s ? ' on' : '')} onClick=${() => pickView('stage:' + s)}>
-        <span><i class="dot" style=${'background:' + STAGE_DOT[s]}></i>${ui.stageLabel(s, true)}</span><b>${data.stage_counts[s] || 0}</b></button>`)}
-      <h4>${t('Groups / tags')}</h4>
-      ${counts.thisCohort ? html`<button class=${'v' + (view === 'cohort:' + counts.thisCohort ? ' on' : '')} onClick=${() => pickView('cohort:' + counts.thisCohort)} title=${counts.thisCohort}><span>${t('Launch batch · this week')}</span><b>${counts.cohort}</b></button>` : null}
-      ${[...counts.tags.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([g, n]) => html`<button class=${'v' + (view === 'tag:' + g ? ' on' : '')} onClick=${() => pickView('tag:' + g)}><span>${g}</span><b>${n}</b></button>`)}
-      <button class=${'v' + (view === 'archived' ? ' on' : '')} onClick=${() => pickView('archived')}><span>${t('Archived')}</span><b>${counts.archived}</b></button>
-    </aside>
+  const title = tab === 'sites' && view === 'attention' ? t('Needs attention') : tab === 'sites' && view === 'starred' ? t('Starred') : t('Portfolio overview');
+  return html`<div class="app">${Side}
     <main class="pf" aria-busy=${data._stale ? 'true' : 'false'} style=${data._stale ? 'opacity:.6;transition:opacity .2s' : ''}>
+      <h1 class="title">${title}</h1>
       ${sites.length === 0 ? html`
         <div class="p-card empty-state">
-          <div style="font-size:34px">🛰️</div>
+          <${Icon} n="globe" />
           <h2>${t('No sites yet')}</h2>
           <p>${t('Add your first site to get its tracking snippet. Numbers appear here as soon as it receives a visit.')}</p>
-          <button class="p-btn primary" onClick=${openAdd}>＋ ${t('New site')}</button>
-          <p style="margin-top:14px;font-size:12px">${t('Just deployed?')} <a href="/health.html">${t('Run the self-check ↗')}</a></p>
+          <button class="p-btn primary" onClick=${openAdd}><${Icon} n="plus" />${t('New site')}</button>
+          <p style="margin-top:14px;font-size:13px">${t('Just deployed?')} <a href="/health.html">${t('Run the self-check ↗')}</a></p>
         </div>` : html`
-      ${allSetup ? html`<div class="p-card banner"><span class="ic">🧩</span><div><b>${fill(t('{n} sites are waiting for their first visit'), { n: counts.all })}</b>
-        <p>${t('Embed the snippet on each site (open a site for its snippet). Stages, trends and crawl signals fill in as data arrives.')}</p></div></div>` : null}
-      <section class="kpis" aria-label=${t('Totals')}>
-        <${Kpi} label=${t('Visitors')} value=${fmt.num(T.uv)} delta=${dPct(T.uv, T.uv_prev)} series=${ser('uv')} />
-        <${Kpi} label=${t('Pageviews')} value=${fmt.num(T.pv)} delta=${dPct(T.pv, T.pv_prev)} series=${ser('pv')} />
-        <${Kpi} label=${t('Invalid traffic share')} value=${fmt.pct(T.ivt_pct, 1)} delta=${ivtD} series=${ser('ivt_pct')} neg=${true} />
-        <${Kpi} label=${t('Organic search visitors')} value=${fmt.num(T.organic_uv)} delta=${dPct(T.organic_uv, T.organic_uv_prev)} series=${ser('organic_uv')} />
-        <${Kpi} label=${t('From AI assistants')} value=${fmt.num(T.ai_uv)} delta=${dPct(T.ai_uv, T.ai_uv_prev)} series=${ser('ai_uv')} />
-        <${Kpi} label=${t('Top 10% of sites share')} value=${fmt.share(T.top10_share)} series=${ser('uv')} />
-      </section>
-      <section class="funnel" aria-label=${t('Lifecycle funnel')}>
-        ${[['total', 'Total sites'], ['has_data', 'Receiving data'], ['google_crawled', 'Crawled by Google'], ['organic', 'Organic traffic'], ['weekly_1000', 'Weekly visitors > {n}']].map(([k, l]) => html`
-          <div class="fs p-card"><b>${fmt.num(F[k])}</b>${fill(t(l), { n: fmt.num(th.growth_min_uv) })}<div class="pb" style=${'width:' + fpct(F[k]) + '%'}></div></div>`)}
-      </section>
-      <div class="bar">
-        ${QUICK.map((id) => html`<button class=${'qchip' + (quick === id ? ' on' : '')} aria-pressed=${quick === id} onClick=${() => { setQuick(quick === id ? '' : id); if (id === 'attention' && quick !== id) setSort({ id: 'uv', dir: 'desc' }); }}>
-          ${fill(t(QUICK_EN[id]), { n: th.ivt_high_pct })}<b>${quickCount(id)}</b></button>`)}
-        <span class="sp"></span>
-        ${layout === 'table' ? html`<${Menu} label=${t('Columns') + ' ▾'}>${() => html`
-          <h5>${t('Column sets')}</h5>
-          ${Object.keys(PRESETS).map((p) => html`<button type="button" onClick=${() => { setCols(PRESETS[p]); if (p === 'ranking') setSort({ id: 'rank', dir: 'asc' }); }}>${t({ overview: 'Overview', ranking: 'Ranking · clean traffic', growth: 'Growth' }[p])}</button>`)}
-          <hr /><h5>${t('Columns')}</h5>
-          ${COLS.filter((c) => !c.ext || hasExternal).map((c) => html`<label><input type="checkbox" class="pcb" checked=${cols.includes(c.id)}
-            onChange=${(e) => setCols(e.target.checked ? COLS.map((x) => x.id).filter((x) => x === c.id || cols.includes(x)) : cols.filter((x) => x !== c.id))} /> ${t(c.label)}</label>`)}`}<//>` : null}
-        <div class="seg" role="group" aria-label=${t('Layout')}>
-          ${['table', 'cards', 'heatmap'].map((l) => html`<button type="button" class=${layout === l ? 'on' : ''} aria-pressed=${layout === l}
-            disabled=${l !== 'table' && !modules.views?.[l]} title=${l !== 'table' && !modules.views?.[l] ? t('This view is not available yet.') : ''}
-            onClick=${() => setLayout(l)}>${t({ table: 'Table', cards: 'Cards', heatmap: 'Heatmap' }[l])}</button>`)}
-        </div>
+      <div class="utabs" role="tablist">
+        ${TABS.map((k) => html`<button type="button" role="tab" aria-selected=${tab === k} class=${tab === k ? 'on' : ''} onClick=${() => { setTab(k); if (k === 'overview') setView('all'); }}>${t({ overview: 'Overview', sites: 'Sites', lifecycle: 'Lifecycle' }[k])}</button>`)}
       </div>
-      <div class="bulkbar p-card" ref=${bulkHost} hidden></div>
-      ${layout !== 'table' && modules.views?.[layout] ? html`<div class="viewhost" ref=${viewHost}></div>` : html`
-      <div class="tablewrap">
-        <table class="pt">
-          <thead><tr>
-            <th class="cb"><input type="checkbox" class="pcb" aria-label=${t('Select all')} checked=${allChecked}
-              onChange=${(e) => setSelected(e.target.checked ? new Set(rows.map((s) => s.site_id)) : new Set())} /></th>
-            <th class=${'sortable' + (sort.id === 'name' ? ' sorted' : '')} onClick=${() => sortBy('name')}>${t('Site')}${sort.id === 'name' ? (sort.dir === 'desc' ? ' ▾' : ' ▴') : ''}</th>
-            ${visibleCols.map((id) => { const c = COL_BY[id]; return html`<th class=${[c.num ? 'num' : '', c.sort ? 'sortable' : '', sort.id === id ? 'sorted' : ''].join(' ')}
-              aria-sort=${sort.id === id ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-              onClick=${c.sort ? () => sortBy(id) : undefined}>${t(c.label)}${sort.id === id ? (sort.dir === 'desc' ? ' ▾' : ' ▴') : ''}</th>`; })}
-          </tr></thead>
-          <tbody>
-            ${rows.map((s, i) => html`<tr key=${s.site_id} class=${(i === focus ? 'focus ' : '') + (selected.has(s.site_id) ? 'sel' : '')}
-              onClick=${() => { setFocus(i); openSite(s); }}>
-              <td class="cb" onClick=${(e) => e.stopPropagation()}><input type="checkbox" class="pcb" aria-label=${t('Select') + ' ' + s.name} checked=${selected.has(s.site_id)} onChange=${() => toggleSel(s.site_id)} /></td>
-              <td><div class="site"><${Raw} h=${ui.avatar(s.name, s.site_id)} /><div class="tx">
-                <div><span class="nm">${s.starred ? html`<span class="star" aria-label=${t('Starred')}>★</span>` : null}<a href=${'/site.html?id=' + encodeURIComponent(s.site_id)} style="color:inherit" onClick=${(e) => { if (!e.metaKey && !e.ctrlKey) { e.preventDefault(); e.stopPropagation(); setFocus(i); openSite(s); } }}>${s.name}</a></span>
-                  ${s.tags.slice(0, 2).map((g) => html`<span class="ptag">${g}</span>`)}${s.tags.length > 2 ? html`<span class="ptag">+${s.tags.length - 2}</span>` : null}</div>
-                <div class="dm">${s.domains[0] || s.site_id}${s.domains.length > 1 ? ' +' + (s.domains.length - 1) : ''}</div></div></div></td>
-              ${visibleCols.map((id) => { const c = COL_BY[id]; return html`<td class=${(c.num ? 'num ' : '') + (c.cls || '')}><${Raw} h=${c.render(s, { th })} /></td>`; })}
-            </tr>`)}
-            ${rows.length === 0 ? html`<tr><td colspan=${visibleCols.length + 2} class="loading-state">${t('No sites match this view.')}</td></tr>` : null}
-          </tbody>
-        </table>
-      </div>`}
-      <p class="note">${fill(t('{n} sites'), { n: rows.length })} · ${t('j / k to move, Enter to open, x to select, / or ⌘K to jump to a site.')}
-        ${' '}${fill(t('Updated {ago}.'), { ago: fmt.ago(data.generated_at) })} <a href="#" onClick=${(e) => { e.preventDefault(); load(true); }}>${t('Refresh')}</a></p>
+      ${Toolbar}
+      ${allSetup ? html`<div class="p-card banner"><${Icon} n="code" /><div><b>${fill(t('{n} sites are waiting for their first visit'), { n: counts.all })}</b>
+        <p>${t('Embed the snippet on each site (open a site for its snippet). Stages, trends and crawl signals fill in as data arrives.')}</p></div></div>` : null}
+      ${tab === 'overview' ? html`
+        <div class="caption">${fill(t(compare ? '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.' : '{n} sites, totals for {period}. Bots and crawlers excluded.'), { n: activeScope.length, period: periodLabel.toLowerCase() })}
+          ${' '}<button type="button" onClick=${() => setCompare(!compare)}>${t(compare ? 'Hide comparison' : 'Compare with previous period')}</button></div>
+        <section class="kpis" aria-label=${t('Totals')}>
+          <${Kpi} icon="eye" label=${t('Visitors')} value=${fmt.num(T.uv)} delta=${dPct(T.uv, T.uv_prev)} />
+          <${Kpi} icon="page" label=${t('Pageviews')} value=${fmt.compact(T.pv)} delta=${dPct(T.pv, T.pv_prev)} />
+          <${Kpi} icon="search" label=${t('Organic search')} value=${fmt.num(T.organic_uv)} delta=${dPct(T.organic_uv, T.organic_uv_prev)} />
+          <${Kpi} icon="spark" label=${t('From AI assistants')} value=${fmt.num(T.ai_uv)} delta=${dPct(T.ai_uv, T.ai_uv_prev)} />
+          <${Kpi} icon="ivt" label=${t('Invalid traffic')} value=${fmt.pct(T.ivt_pct, 1)} delta=${ivtD} />
+        </section>
+        ${Lifecycle}${Chart}${TableCard}` : tab === 'lifecycle' ? html`${Lifecycle}${Funnel}${TableCard}` : TableCard}
       `}
     </main>
   </div>`;
@@ -649,7 +775,9 @@ $('create').addEventListener('submit', async (e) => {
 });
 
 I18N.applyStatic();
-render(html`<${App} />`, document.getElementById('app'));
+const root = document.getElementById('app');
+root.textContent = '';
+render(html`<${App} />`, root);
 </script>
 </body>
 </html>

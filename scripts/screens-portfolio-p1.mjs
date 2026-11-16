@@ -75,14 +75,14 @@ function payload(sites) {
   const sorted = active.map((s) => s.uv).sort((a, b) => b - a);
   return {
     period: { token: '7d', start: dayOf(-6), end: dayOf(0) }, compare: 'previous', generated_at: NOW - 60e3,
-    thresholds: { growth_min_uv: 1000, growth_min_delta_pct: -10, decline_pct: 30, decline_min_uv: 100, crawl_overdue_days: 3, organic_overdue_days: 14, no_data_hours: 24, ivt_high_pct: 20, ivt_spike_pts: 10, ivt_min_pv: 50 },
+    thresholds: { growth_uv_7d: 1000, growth_min_delta_pct: -10, decline_pct: 30, ivt_pct: 20, decline_min_uv: 100, crawl_overdue_days: 3, organic_overdue_days: 14, no_data_hours: 24, ivt_spike_pts: 10, ivt_min_pv: 50 },
     totals: {
       uv, uv_prev: Math.round(uv / 1.12), pv: sum('pv'), pv_prev: Math.round(sum('pv') / 1.09), ivt_pct: uv ? 6.8 : null, ivt_pct_prev: uv ? 5.6 : null,
       organic_uv: sum('organic_uv'), organic_uv_prev: Math.round(sum('organic_uv') / 1.21), ai_uv: sum('ai_uv'), ai_uv_prev: Math.round(sum('ai_uv') / 1.64),
       top10_share: uv ? Math.round(sorted.slice(0, Math.max(1, Math.ceil(active.length / 10))).reduce((a, b) => a + b, 0) / uv * 1000) / 1000 : null,
       series: Array.from({ length: 7 }, (_, i) => {
         const f = uv ? 0.82 + i * 0.03 + (rnd() - 0.5) * 0.04 : 0;
-        return { day: dayOf(i - 6), uv: Math.round(uv / 7 * f), pv: Math.round(sum('pv') / 7 * f), ivt_pct: uv ? 5.5 + i * 0.25 : null, organic_uv: Math.round(sum('organic_uv') / 7 * (0.8 + i * 0.04)), ai_uv: Math.round(sum('ai_uv') / 7 * (0.6 + i * 0.08)) };
+        return { day: dayOf(i - 6), uv: Math.round(uv / 7 * f), pv: Math.round(sum('pv') / 7 * f), ivt_pct: uv ? 5.5 + i * 0.25 : null, organic_uv: Math.round(sum('organic_uv') / 7 * (0.8 + i * 0.04)), ai_uv: Math.round(sum('ai_uv') / 7 * (0.6 + i * 0.08)), launched_per_day: sites.filter((x) => new Date(x.created_at).toISOString().slice(0, 10) === dayOf(i - 6)).length };
       }),
     },
     funnel: {
@@ -101,7 +101,7 @@ const SCENARIOS = {
     site([n, n.toLowerCase().replace(' ', '') + '.example', ['batch-1'], 'setup', 0, 0, null, 0, 0, 0, null, [null, null, null, null], [], false], i))),
 };
 
-async function shoot(browser, name, scenario, { url = '/sites.html', after, height = 1150, lang = 'en' } = {}) {
+async function shoot(browser, name, scenario, { url = '/sites.html', after, height = 1000, lang = 'en', full = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 1600, height }, deviceScaleFactor: 2 });
   page.on('pageerror', (e) => console.error(`[${name}] pageerror`, e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/404|Failed to load resource/.test(m.text())) console.error(`[${name}] console`, m.text()); });
@@ -122,23 +122,24 @@ async function shoot(browser, name, scenario, { url = '/sites.html', after, heig
     return route.fulfill({ body: readFileSync(file), contentType: type });
   });
   await page.goto('http://console.test' + url);
-  await page.waitForSelector('.layout, .empty-state', { timeout: 10000 });
+  await page.waitForSelector('main.pf .kpis, main.pf .tbl, .empty-state', { timeout: 10000 });
   if (after) await after(page);
   await page.waitForTimeout(150);
-  await page.screenshot({ path: join(OUT, `p1-${name}.png`) });
+  await page.screenshot({ path: join(OUT, `p1-${name}.png`), fullPage: full });
   await page.close();
   console.log('wrote', `p1-${name}.png`);
 }
 
 const browser = await chromium.launch();
 try {
-  await shoot(browser, 'overview', 'default');
-  await shoot(browser, 'needs-attention', 'default', { url: '/sites.html?view=attention' });
-  await shoot(browser, 'empty', 'empty', { height: 800 });
-  await shoot(browser, 'new-user', 'newuser', { height: 900 });
-  await shoot(browser, 'overview-zh', 'default', { lang: 'zh' });
-  await shoot(browser, 'cmdk', 'default', { height: 900, after: async (p) => { await p.keyboard.press('/'); await p.keyboard.type('gm'); } });
-  await shoot(browser, 'add-site', 'default', { height: 900, after: async (p) => { await p.click('text=New site'); } });
+  await shoot(browser, 'overview', 'default', { full: true });
+  await shoot(browser, 'needs-attention', 'default', { url: '/sites.html?tab=sites&view=attention', full: true });
+  await shoot(browser, 'lifecycle', 'default', { url: '/sites.html?tab=lifecycle', full: true });
+  await shoot(browser, 'empty', 'empty', { height: 760 });
+  await shoot(browser, 'new-user', 'newuser', { full: true });
+  await shoot(browser, 'overview-zh', 'default', { lang: 'zh', full: true });
+  await shoot(browser, 'cmdk', 'default', { height: 860, after: async (p) => { await p.keyboard.press('/'); await p.keyboard.type('gem'); } });
+  await shoot(browser, 'add-site', 'default', { height: 860, after: async (p) => { await p.click('aside >> text=New site'); } });
 } finally {
   await browser.close();
 }
