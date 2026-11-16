@@ -1,0 +1,45 @@
+name: pr-check
+
+# Enforces docs/CONVENTIONS.md on every pull request: branch name, PR title,
+# typecheck and tests.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  conventions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          case "$BRANCH" in dependabot/*) echo "exempt: $BRANCH"; exit 0;; esac
+          if [ ${#BRANCH} -gt 50 ] || ! printf '%s' "$BRANCH" | grep -Eq '^(feat|fix|perf|refactor|docs|test|ci|build|chore|style|revert|release|hotfix)/[a-z0-9]+(-[a-z0-9]+)*$'; then
+            echo "::error::Branch '$BRANCH' must be <type>/<kebab-description> (≤ 50 chars), e.g. feat/portfolio-overview. See docs/CONVENTIONS.md"
+            exit 1
+          fi
+      - name: PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [ ${#TITLE} -gt 100 ] || ! printf '%s' "$TITLE" | grep -Eq '^(feat|fix|perf|refactor|docs|test|ci|build|chore|style|revert|release)(\([a-z0-9-]+\))?!?: .+'; then
+            echo "::error::PR title '$TITLE' must be a Conventional Commit header (≤ 100 chars), e.g. 'feat(console): portfolio overview'. See docs/CONVENTIONS.md"
+            exit 1
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

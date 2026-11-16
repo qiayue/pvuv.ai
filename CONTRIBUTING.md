@@ -55,19 +55,29 @@ with `npm run db:migrate:local`.
 - **No `<meta name="keywords">`** in any generated HTML page. Other meta tags are
   fine.
 
-## Pull requests
+## Branches, commits and pull requests
 
-- Branch from `main`; keep PRs focused (one logical change).
-- Describe *what* and *why*; link the related issue.
-- If you change the D1 schema, include a migration in `migrations/` and update
+Full rules (with examples): [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) ·
+中文版：[`docs/CONVENTIONS.zh-CN.md`](./docs/CONVENTIONS.zh-CN.md). The short
+version — CI (`.github/workflows/pr-check.yml`) enforces the first three:
+
+- **Branch name:** `<type>/<short-kebab-description>`, e.g.
+  `feat/portfolio-overview`, `fix/cron-daily-batch`. Types: `feat` `fix`
+  `perf` `refactor` `docs` `test` `ci` `build` `chore` `style` `revert`
+  `release` `hotfix`. Lowercase, digits and hyphens only, ≤ 50 characters,
+  no personal or tool names.
+- **PR title:** a Conventional Commit header — `type(scope): summary`, e.g.
+  `feat(console): portfolio overview for many sites`. It becomes the squash
+  commit message.
+- **Checks:** `npm run typecheck` and `npm test` must pass.
+- One logical change per PR; open it as a draft until it is ready; fill in
+  the PR template; link the related issue.
+- Schema changes ship a numbered migration in `migrations/` plus
   `shared/schema.sql` and the relevant `PROJECT_PLAN.md` section.
-- Match the existing code style. Before opening a PR, run `npm run typecheck`,
-  and `npm run build:sdk` if you touched `sdk/` or `shared/`.
-- Add a line under an `Unreleased` heading in [`CHANGELOG.md`](./CHANGELOG.md)
-  for any user-visible change.
-- Update docs (README / DEPLOY / docs/API.md / PROJECT_PLAN) when behavior or
-  interfaces change. If you
-  touch one language version of a doc, note the other so it can be kept in sync.
+- User-visible changes add a line under `## [Unreleased]` in
+  [`CHANGELOG.md`](./CHANGELOG.md) and update the affected docs
+  (README / DEPLOY / docs/API.md / PROJECT_PLAN, both languages).
+- UI changes: all 7 console languages and before/after screenshots.
 
 ## Translations & docs
 
