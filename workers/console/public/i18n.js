@@ -293,7 +293,7 @@
       'Add at least 2 steps with a value, then Run.': '至少填写 2 个步骤,再点「运行」。',
       'Suggested from your homepage and first goal — edit the steps freely; your edits are remembered.': '根据首页和第一个目标自动生成——步骤可随意修改,修改会被记住。',
       'ranking-help': '按外部清洗浏览量排名——已排除机器人与爬虫,自己站点之间的互访不计。', 'Clean PV': '干净PV',
-      'logo-help': 'Logo/favicon 可以填 URL,也可以是放在 <code>workers/console/public/</code> 下的文件。控制台页头(深色)使用浅色 Logo。',
+      'logo-help': 'Logo/favicon 可以填 URL,也可以是放在 <code>workers/console/public/</code> 下的文件。控制台侧栏(浅色)使用深色 Logo,没有时退回浅色 Logo。',
       'ai-help': ' — 用于在每个站点的仪表盘上生成一段文字总结。',
       'anom-pv-spike': '浏览量达到近期均值的 {x} 倍({from} → {to})',
       'anom-pv-drop': '浏览量跌至近期均值的 {pct}%({from} → {to})',
