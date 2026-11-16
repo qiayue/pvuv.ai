@@ -1,13 +1,15 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/svg+xml" href="/pvuv-icon.svg">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in — pvuv.ai</title>
+<title>Sign in — pvuv</title>
 <link rel="stylesheet" href="/console.css">
 <style>
   body { font-size: 15px; display: grid; place-items: center; min-height: 100vh; }
   .card { width: min(360px, 92vw); border-radius: var(--radius-lg); padding: 28px; }
+  .product-logo { width: min(240px, 100%); height: auto; background: #fff; border-radius: 8px; }
   h1 { margin: 0 0 4px; font-size: 20px; }
   p.sub { margin: 0 0 22px; color: var(--muted); font-size: 13px; }
   .oauth a { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; padding: 11px; border: 1px solid var(--border-2); border-radius: var(--radius-sm); color: inherit; font-weight: 600; transition: background .12s, border-color .12s; }
@@ -21,7 +23,8 @@
 <body>
 <script src="/i18n.js"></script>
 <div class="card">
-  <h1>pvuv.ai</h1>
+  <img class="product-logo" src="/pvuv-logo-v2.png" alt="pvuv">
+  <h1>pvuv</h1>
   <p class="sub" data-i18n="self-hosted analytics · sign in">self-hosted analytics · sign in</p>
   <div class="oauth" id="oauth"></div>
   <div class="err" id="err"></div>

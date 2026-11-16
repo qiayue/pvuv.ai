@@ -1,12 +1,14 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/svg+xml" href="/pvuv-icon.svg">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sites — pvuv.ai</title>
+<title>Sites — pvuv</title>
 <link rel="stylesheet" href="/console.css">
 <style>
   .brand img.logo { height: 28px; display: block; }
+  .brand img.logo.default-logo { background: #fff; border-radius: 4px; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .head h2 { margin: 0; }
   .toolbar { display: flex; align-items: center; gap: 8px; }
@@ -51,7 +53,7 @@
 <body>
 <script src="/i18n.js"></script>
 <header>
-  <span class="brand" id="brand">pvuv.ai</span>
+  <span class="brand" id="brand">pvuv</span>
   <div class="hdr-right">
     <select id="lang" aria-label="Language"></select>
     <a href="/health.html" id="selfcheckLink" class="btn" data-i18n="Self-check">Self-check</a>
@@ -132,7 +134,7 @@
   <section class="panel form" id="homePanel" hidden>
     <div class="phead"><h3 data-i18n="Site & branding">Site &amp; branding</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
     <form class="create" id="homeSettings">
-      <div><label><span data-i18n="Brand name (header + homepage)">Brand name (header + homepage)</span><input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
+      <div><label><span data-i18n="Brand name (header + homepage)">Brand name (header + homepage)</span><input id="hsName" maxlength="100" placeholder="pvuv"></label></div>
       <div><label><span data-i18n="Primary domain">Primary domain</span><input id="hsDomain" maxlength="120" placeholder="www.example.com"></label></div>
       <div class="full"><label><span data-i18n="Description">Description</span><input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
       <div><label><span data-i18n="Logo — light (for dark backgrounds)">Logo — light (for dark backgrounds)</span><input id="hsLogoLight" maxlength="500" placeholder="/logo-light.svg or https://…"></label></div>
@@ -413,10 +415,10 @@ document.getElementById('logout').addEventListener('click', async () => {
 // apply configured branding to the header, favicon and title (console is dark,
 // so the header uses the LIGHT logo; the dark logo is for light backgrounds).
 function applyBranding(b) {
-  const name = (b.name || '').trim() || 'pvuv.ai';
-  const logo = b.logo_light || b.logo_dark;
+  const name = (b.name || '').trim() || 'pvuv';
+  const logo = b.logo_light || b.logo_dark || '/pvuv-logo-v2.png';
   const brand = document.getElementById('brand');
-  brand.innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : esc(name);
+  brand.innerHTML = `<img class="logo${logo === '/pvuv-logo-v2.png' ? ' default-logo' : ''}" src="${esc(logo)}" alt="${esc(name)}">`;
   document.title = name + ' — Sites';
   if (b.favicon) {
     let link = document.querySelector('link[rel="icon"]');

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/svg+xml" href="/pvuv-icon.svg">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{name}}</title>
@@ -24,6 +25,7 @@
   body { font-size: 16px; line-height: 1.6; min-height: 100vh; display: grid; grid-template-rows: 1fr auto; }
   main { display: grid; place-items: center; padding: 40px 16px; margin: 0 auto; }
   .box { max-width: 480px; text-align: center; }
+  .product-logo { width: min(300px, 80vw); height: auto; background: #fff; border-radius: 8px; }
   h1 { font-size: 26px; margin: 0 0 10px; }
   p { color: var(--muted); margin: 0 0 26px; }
   a.btn.big { padding: 10px 26px; min-height: 42px; font-size: 15px; border-radius: var(--radius); }
@@ -34,13 +36,14 @@
 <body>
 <main>
   <div class="box">
+    <img class="product-logo" src="/pvuv-logo-v2.png" alt="pvuv">
     <h1>{{name}}</h1>
     <p>{{description}}</p>
     <a class="btn primary big" href="/login.html">Sign in</a>
   </div>
 </main>
 <footer>
-  Powered by <a href="https://pvuv.ai">pvuv.ai</a> ·
+  Powered by <a href="https://pvuv.ai">pvuv</a> ·
   <a href="https://github.com/qiayue/pvuv.ai">open source</a>
 </footer>
 </body>
