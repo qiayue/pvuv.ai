@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P2 harness — drawer · cards · heatmap · bulk</title>
+<!-- Standalone harness for the portfolio P2 modules, with mocked API data.
+     Served by shoot.mjs (it maps /console.css, /i18n.js, /js/* to
+     workers/console/public). Query: ?show=drawer|cards|heatmap|bulk&lang=zh -->
+<link rel="stylesheet" href="/console.css">
+<style>
+  body { background: radial-gradient(1200px 600px at 70% -200px, #1b1640 0%, #08090c 60%) fixed; margin: 0; color: #eceef3; }
+  .h-wrap { padding: 22px 26px; }
+  .h-title { font-size: 13px; color: #7d8390; margin: 0 0 14px; }
+  .h-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #1c1f26; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(180deg,#12141a,#0e1014); font-size: 13px; margin-top: 12px; }
+  .h-table th { text-align: left; font-weight: 500; color: #7d8390; background: #101217; padding: 9px 12px; }
+  .h-table td { padding: 9px 12px; border-top: 1px solid #15171d; }
+  .h-table tr.sel td { background: #15142a; }
+  .h-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<script src="/i18n.js"></script>
+<div class="h-wrap">
+  <p class="h-title" id="title"></p>
+  <div id="bulk"></div>
+  <div id="out"></div>
+</div>
+<script src="/js/drawer.js"></script>
+<script src="/js/views.js"></script>
+<script src="/js/bulk.js"></script>
+<script>
+// ── deterministic mock data in the portfolio contract shape (§3.1) ─────────
+let seed = 7;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const NAMES = ['Snake Rush','Gem Swap','Word Hunt','Tile Merge','Pixel Golf','Neon Run','Hex Puzzle','Color Sort','Car Drift','Bubble Pop',
+  'Star Jump','Block Blast','Maze Craft','Fruit Slice','Sky Hopper','Quiz Night','Recipe Box','Trail Notes','Moon Garden','Ping Pong Pro',
+  'Desert Dash','Card Duel','Ice Tower','Lava Leap','Cloud Farm','Brick Out','Paint Flow','Robo Race','Pixel Chef','Tiny Town'];
+const STAGES = ['growing','growing','declining','organic','declining','crawled','awaiting_crawl','awaiting_crawl','setup','organic',
+  'organic','growing','crawled','organic','declining','organic','organic','crawled','awaiting_crawl','organic',
+  'organic','growing','crawled','organic','setup','organic','growing','crawled','organic','awaiting_crawl'];
+const DAY = 86400e3, NOW = Date.UTC(2026, 10, 16, 10);
+const days = Array.from({ length: 14 }, (_, i) => new Date(NOW - (13 - i) * DAY).toISOString().slice(0, 10));
+const sites = NAMES.map((name, i) => {
+  const stage = STAGES[i];
+  const base = { growing: 1200, declining: 260, organic: 180, crawled: 30, awaiting_crawl: 8, setup: 0 }[stage] * (0.5 + rnd());
+  const trend = stage === 'declining' ? -0.045 : stage === 'growing' ? 0.03 : stage === 'awaiting_crawl' ? 0.25 : 0.04;
+  const live = stage === 'setup' ? 1 : stage === 'awaiting_crawl' ? 2 + (i % 5) : 9 + ((i * 37) % 180);
+  const series = days.map((d, j) => {
+    if (j < 14 - live) return { day: d, uv: null };
+    return { day: d, uv: stage === 'setup' ? 0 : Math.max(0, Math.round(base * Math.pow(1 + trend, j) * (0.82 + rnd() * 0.36))) };
+  });
+  const uv = series.slice(7).reduce((a, p) => a + (p.uv || 0), 0);
+  const uvPrev = series.slice(0, 7).reduce((a, p) => a + (p.uv || 0), 0);
+  const ivt = i === 4 ? 31.4 : i === 14 ? 24.2 : +(1.5 + rnd() * 6).toFixed(1);
+  const health = series.map((p) => p.uv == null ? 'none' : ivt > 20 ? (rnd() < .6 ? 'bad' : 'warn') : p.uv === 0 ? 'warn' : rnd() < .07 ? 'warn' : 'ok');
+  const attention = [];
+  if (i === 4) attention.push({ code: 'ivt_high', severity: 'critical', params: { ivt_pct: 31.4, adguard_mode: 'off' } });
+  if (i === 2) attention.push({ code: 'declining', severity: 'high', params: { delta_pct: -38 } });
+  if (i === 6) attention.push({ code: 'crawl_overdue', severity: 'high', params: { days_live: live } });
+  if (i === 8) attention.push({ code: 'no_data_24h', severity: 'high', params: {} });
+  const dom = name.toLowerCase().replace(/\s+/g, '') + ['.io', '.games', '.fun', '.app'][i % 4];
+  return {
+    site_id: 'S' + (100000 + i * 7919).toString(36).toUpperCase().padStart(7, 'x'), name, domains: [dom], status: 'active',
+    created_at: NOW - live * DAY, days_live: live, starred: i < 2, tags: i % 5 === 2 ? ['Content'] : ['Mini games'].concat(i % 3 === 0 ? ['AdSense'] : []),
+    adguard_mode: i === 4 ? 'off' : 'balanced', stage, stage_since: NOW - 20 * DAY,
+    uv, uv_prev: uvPrev, pv: Math.round(uv * 2.7), pv_prev: Math.round(uvPrev * 2.7),
+    delta_pct: live < 14 ? null : +((uv - uvPrev) / Math.max(1, uvPrev) * 100).toFixed(1),
+    series, organic_uv: Math.round(uv * (stage === 'crawled' || stage === 'awaiting_crawl' || stage === 'setup' ? 0.05 : 0.4)),
+    ai_uv: Math.round(uv * 0.02), ivt_pct: ivt, crawl: { google: null, bing: null, yandex: null, baidu: null },
+    health, attention, external: null,
+  };
+});
+// Pixel Golf, the drawer example
+Object.assign(sites[4], { uv: 1544, uv_prev: 1755, delta_pct: -12, organic_uv: 512, ai_uv: 37, days_live: 120, created_at: NOW - 120 * DAY });
+
+// ── mocked API (drawer / bulk endpoints) ─────────────────────────────────────
+const json = (d, s = 200) => Promise.resolve(new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json' } }));
+window.fetch = (url, init = {}) => {
+  const u = new URL(url, location.href), p = u.pathname;
+  if (/\/timeseries$/.test(p)) {
+    return json({ metric: 'uv', interval: 'day', points: Array.from({ length: 30 }, (_, j) => {
+      const day = new Date(NOW - (29 - j) * DAY).toISOString().slice(0, 10);
+      const v = Math.round(330 - j * 4.2 + Math.sin(j / 2) * 12);
+      const pv = Math.round(v * 2.6), inv = Math.round(pv * (0.08 + j * 0.0085));
+      return { label: day, value: v, pv: pv + inv, invalid: inv };
+    }) });
+  }
+  if (/\/crawlers$/.test(p)) {
+    const c = sites[4].created_at;
+    return json({ available: true, engines: [
+      { engine: 'google', label: 'Googlebot', kind: 'search', first_seen_at: c + 0.4 * DAY, last_seen_at: Date.now() - 2 * 3600e3, hits: 1204 },
+      { engine: 'bing', label: 'Bingbot', kind: 'search', first_seen_at: c + 2.2 * DAY, last_seen_at: Date.now() - 1800e3, hits: 312 },
+      { engine: 'yandex', label: 'YandexBot', kind: 'search', first_seen_at: c + 5.5 * DAY, last_seen_at: Date.now() - 30 * 3600e3, hits: 88 },
+      { engine: 'baidu', label: 'Baiduspider', kind: 'search', first_seen_at: c + 14.1 * DAY, last_seen_at: Date.now() - 3 * DAY, hits: 21 },
+    ] });
+  }
+  if (/\/experiments$/.test(p)) {
+    return json({ experiments: [{ experiment: 'home_title', visitors: 3120, exposures: 4410, first_seen: NOW - 9 * DAY, last_seen: Date.now() - 600e3,
+      variants: [{ variant: 'A', visitors: 1544 }, { variant: 'B', visitors: 1576 }] }] });
+  }
+  if (/\/labels$/.test(p)) { const b = JSON.parse(init.body); return json({ site_id: 'x', starred: !!b.starred, tags: b.tags || [], notes: null }); }
+  if (/\/sites\/bulk$/.test(p)) { const b = JSON.parse(init.body); return json({ ok: true, action: b.action, updated: b.site_ids.length, skipped: [] }); }
+  if (/\/adguard$/.test(p)) return json({ ok: true, adguard_mode: 'balanced' });
+  return json({ error: 'not mocked' }, 404);
+};
+
+// ── render the requested module ──────────────────────────────────────────────
+const q = new URLSearchParams(location.search);
+if (q.get('lang')) window.PVI18N.setLang(q.get('lang'));
+const t = (s) => window.PVI18N.t(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ctx = { period: '7d', t, te: (s) => esc(t(s)), esc, fmt: (n) => Number(n).toLocaleString('en-US'), ui: window.pvuvUi || null,
+  onChange: (s) => console.log('changed', s.site_id) };
+const show = q.get('show') || 'cards';
+document.getElementById('title').textContent = 'P2 harness · ' + show + ' · mocked data';
+const out = document.getElementById('out');
+if (show === 'cards') window.pvuvViews.cards(out, sites, ctx);
+if (show === 'heatmap') window.pvuvViews.heatmap(out, sites, ctx);
+if (show === 'drawer') { window.pvuvViews.cards(out, sites, ctx); window.pvuvDrawer.open(sites[4], ctx); }
+if (show === 'bulk') {
+  const sel = new Set([sites[0].site_id, sites[1].site_id, sites[4].site_id, sites[9].site_id]);
+  window.pvuvBulk.mount(document.getElementById('bulk'), () => [...sel], (r) => console.log('bulk', r), { getSites: () => sites });
+  out.innerHTML = `<table class="h-table"><thead><tr><th></th><th>${esc(t('Site'))}</th><th class="num">${esc(t('Clean visitors'))}</th><th class="num">IVT</th></tr></thead><tbody>`
+    + sites.slice(0, 10).map((s) => `<tr class="${sel.has(s.site_id) ? 'sel' : ''}"><td><input type="checkbox"${sel.has(s.site_id) ? ' checked' : ''}></td><td>${esc(s.name)}</td><td class="num">${s.uv.toLocaleString('en-US')}</td><td class="num">${s.ivt_pct}%</td></tr>`).join('')
+    + '</tbody></table>';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
+<style>
+  .brand img.logo { height: 28px; display: block; }
+  .p2-set .back { color: var(--p2-mut); font-size: 13px; text-decoration: none; }
+  .p2-set .back:hover { color: var(--p2-text); }
+  .p2-set code { font-family: var(--mono); }
+  .p2-mono { font-family: var(--mono); color: #c7cdd8; }
+</style>
+</head>
+<body class="p2-set">
+<script src="/i18n.js"></script>
+<header>
+  <span class="brand" id="brand">pvuv.ai</span>
+  <div class="hdr-right">
+    <a href="/sites.html" class="back">← <span data-i18n="All sites">All sites</span></a>
+    <select id="lang" aria-label="Language"></select>
+    <a href="/health.html" class="btn" data-i18n="Self-check">Self-check</a>
+    <button id="logout" class="btn" data-i18n="Sign out">Sign out</button>
+  </div>
+</header>
+<datalist id="tzlist"></datalist>
+<div class="p2-set-wrap">
+  <nav class="p2-set-nav" id="setnav" aria-label="Settings sections">
+    <h4 data-i18n="Instance">Instance</h4>
+    <a href="#general" data-sec="general" data-i18n="General">General</a>
+    <a href="#portfolio" data-sec="portfolio" data-i18n="Portfolio thresholds">Portfolio thresholds</a>
+    <h4 data-i18n="Access">Access</h4>
+    <a href="#tokens" data-sec="tokens" data-i18n="API tokens">API tokens</a>
+    <a href="#templates" data-sec="templates" data-i18n="Site templates">Site templates</a>
+    <h4 data-i18n="Data">Data</h4>
+    <a href="#botdir" data-sec="botdir" data-i18n="Crawler directory">Crawler directory</a>
+    <a href="#cfedge" data-sec="cfedge" data-i18n="Cloudflare edge requests">Cloudflare edge requests</a>
+    <a href="#storage" data-sec="storage" data-i18n="Storage & retention">Storage &amp; retention</a>
+    <h4 data-i18n="AI">AI</h4>
+    <a href="#ai" data-sec="ai" data-i18n="AI analysis reports">AI analysis reports</a>
+  </nav>
+
+  <main class="p2-set-main">
+    <h1 data-i18n="Settings">Settings</h1>
+
+    <!-- ── General: branding + default timezone ─────────────────────────── -->
+    <section class="p2-set-sec" id="sec-general" data-sec="general">
+      <h2 data-i18n="Site & branding">Site &amp; branding</h2>
+      <p class="help"><span data-i18n="logo-help">Logos/favicon can be URLs or files you place in <code>workers/console/public/</code>.
+        The console header (dark) uses the light logo.</span></p>
+      <form class="p2-form" id="homeSettings">
+        <div><label><span data-i18n="Brand name (header + homepage)">Brand name (header + homepage)</span><input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
+        <div><label><span data-i18n="Primary domain">Primary domain</span><input id="hsDomain" maxlength="120" placeholder="www.example.com"></label></div>
+        <div class="full"><label><span data-i18n="Description">Description</span><input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
+        <div><label><span data-i18n="Logo — light (for dark backgrounds)">Logo — light (for dark backgrounds)</span><input id="hsLogoLight" maxlength="500" placeholder="/logo-light.svg or https://…"></label></div>
+        <div><label><span data-i18n="Logo — dark (for light backgrounds)">Logo — dark (for light backgrounds)</span><input id="hsLogoDark" maxlength="500" placeholder="/logo-dark.svg or https://…"></label></div>
+        <div class="full"><label><span data-i18n="Favicon">Favicon</span><input id="hsFavicon" maxlength="500" placeholder="/favicon.ico or https://…"></label></div>
+        <p class="msg" id="hsMsg"></p>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Save">Save</button></div>
+      </form>
+      <form class="p2-form" id="tzSettings">
+        <div class="full"><label><span data-i18n="Default timezone for new sites">Default timezone for new sites</span>
+          <input id="tzDefault" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
+        <p class="msg" id="tzMsg"></p>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Save default timezone">Save default timezone</button></div>
+      </form>
+    </section>
+
+    <!-- ── Portfolio thresholds ─────────────────────────────────────────── -->
+    <section class="p2-set-sec" id="sec-portfolio" data-sec="portfolio" hidden>
+      <h2 data-i18n="Portfolio thresholds">Portfolio thresholds</h2>
+      <p class="help" data-i18n="thresholds-help">What the sites overview counts as stable growth, declining and high invalid traffic. Applies to every site of this instance; lifecycle stages and the “Needs attention” queue update on the next refresh (within 5 minutes).</p>
+      <form class="p2-form" id="thrSettings" style="grid-template-columns:1fr">
+        <div class="p2-thr">
+          <div class="card">
+            <div class="t"><span class="p2-chip s-growing" data-i18n="Stable growth">Stable growth</span></div>
+            <div class="d" data-i18n="thr-growth-help">A site is growing when it had at least this many clean visitors in the last 7 days and did not drop more than the allowed dip vs the 7 days before.</div>
+            <div class="row"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="Clean visitors in 7 days ≥">Clean visitors in 7 days ≥</span><input id="thrGrowthUv" type="number" min="1" step="1" required></label></div>
+            <div class="row" style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="7-day change ≥ (%)">7-day change ≥ (%)</span><input id="thrGrowthDelta" type="number" min="-100" max="1000" step="1" required></label></div>
+          </div>
+          <div class="card">
+            <div class="t"><span class="p2-chip s-declining" data-i18n="Declining">Declining</span></div>
+            <div class="d" data-i18n="thr-decline-help">A site is declining when its clean visitors over the last 28 days fell by more than this share vs the 28 days before. Takes precedence over growing.</div>
+            <div class="row"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="28-day drop > (%)">28-day drop &gt; (%)</span><input id="thrDecline" type="number" min="1" max="100" step="1" required></label></div>
+          </div>
+          <div class="card">
+            <div class="t"><span class="p2-chip s-declining" style="background:#2a1418" data-i18n="High invalid traffic">High invalid traffic</span></div>
+            <div class="d" data-i18n="thr-ivt-help">Raise an attention item when the invalid share (bots + suspect traffic) of a site is above this percentage. Critical while ad protection is off.</div>
+            <div class="row"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="Invalid traffic > (%)">Invalid traffic &gt; (%)</span><input id="thrIvt" type="number" min="1" max="100" step="0.5" required></label></div>
+          </div>
+        </div>
+        <p class="msg" id="thrMsg"></p>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Save thresholds">Save thresholds</button>
+          <button type="button" class="p2-btn" id="thrReset" data-i18n="Reset to defaults">Reset to defaults</button></div>
+      </form>
+    </section>
+
+    <!-- ── API tokens ───────────────────────────────────────────────────── -->
+    <section class="p2-set-sec" id="sec-tokens" data-sec="tokens" hidden>
+      <h2 data-i18n="API tokens">API tokens</h2>
+      <p class="help"><span data-i18n="token-help"> — credentials for the CLI, the MCP server (so your own chatbot can query this data) and other integrations. Read-only tokens can only query reports; read/write tokens (all sites only) can also create, update and archive sites and funnels — give those only to trusted services. Shown once at creation.</span></p>
+      <form class="p2-form" id="tokenSettings">
+        <div><label><span data-i18n="Token name">Token name</span><input id="tokName" maxlength="60" placeholder="My integration"></label></div>
+        <div><label><span data-i18n="Scope">Scope</span>
+          <select id="tokSite"><option value="" data-i18n="All my sites">All my sites</option></select></label></div>
+        <div><label><span data-i18n="Permission">Permission</span>
+          <select id="tokPermission"><option value="read" data-i18n="Read only">Read only</option><option value="write" data-i18n="Read &amp; manage sites">Read &amp; manage sites</option></select></label></div>
+        <p class="msg" id="tokMsg"></p>
+        <div class="p2-box ok" id="tokNew" hidden>
+          <div style="font-size:12px;color:#6fe0a3;margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
+          <code id="tokValue" class="p2-mono" style="word-break:break-all"></code>
+        </div>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Create token">Create token</button></div>
+        <div class="p2-list" id="tokList"></div>
+      </form>
+    </section>
+
+    <!-- ── Site templates ───────────────────────────────────────────────── -->
+    <section class="p2-set-sec" id="sec-templates" data-sec="templates" hidden>
+      <h2 data-i18n="Site templates">Site templates</h2>
+      <p class="help"><span data-i18n="templates-help"> — presets for sites created through the API (POST /v1/sites with "template"): timezone, engagement threshold, ad protection, AdSense client and default funnels. Empty fields fall back to the usual defaults; fields in the API request override the template.</span></p>
+      <form class="p2-form" id="tplSettings">
+        <input type="hidden" id="tplId">
+        <div><label><span data-i18n="Template name">Template name</span><input id="tplName" maxlength="60" placeholder="Game site"></label></div>
+        <div><label><span data-i18n="Timezone">Timezone</span>
+          <input id="tplTz" list="tzlist" autocomplete="off" placeholder="blank = your default timezone" data-i18n-ph="blank = your default timezone"></label></div>
+        <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
+          <select id="tplMode">
+            <option value="" data-i18n="Not set (use default)">Not set (use default)</option>
+            <option value="off" data-i18n="Off">Off</option>
+            <option value="balanced" data-i18n="Balanced — bots &amp; crawlers">Balanced — bots &amp; crawlers</option>
+            <option value="loose" data-i18n="Aggressive — everything not clean">Aggressive — everything not clean</option>
+            <option value="strict" data-i18n="Strictest — clean + interacted">Strictest — clean + interacted</option>
+          </select></label></div>
+        <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="tplAdclient" placeholder="ca-pub-1234567890123456"></label></div>
+        <div><label><span data-i18n="Engagement threshold (seconds)">Engagement threshold (seconds)</span>
+          <input id="tplEngaged" type="number" min="1" max="300" placeholder="15"></label></div>
+        <div class="full"><label><span data-i18n="Default funnels (JSON)">Default funnels (JSON)</span>
+          <textarea id="tplFunnels" rows="3" placeholder='[{"name":"Play","steps":[{"type":"page","value":"/"},{"type":"event","value":"play_start"}]}]'></textarea></label></div>
+        <p class="msg" id="tplMsg"></p>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Save template">Save template</button>
+          <button type="button" class="p2-btn" id="tplReset" data-i18n="New template">New template</button></div>
+        <div class="p2-list" id="tplList"></div>
+      </form>
+    </section>
+
+    <!-- ── Crawler directory ────────────────────────────────────────────── -->
+    <section class="p2-set-sec" id="sec-botdir" data-sec="botdir" hidden>
+      <h2 data-i18n="Crawler directory">Crawler directory</h2>
+      <p class="help"><span data-i18n="botdir-help"> — optional. Import a public bots-and-agents catalogue to label crawler traffic by kind (search / AI training / SEO / ads). Classification only: it never changes scoring, verdicts or ad protection.</span></p>
+      <form class="p2-form" id="botdirSettings">
+        <div class="p2-box" id="botdirState"></div>
+        <div class="full"><label><span data-i18n="Directory JSON file">Directory JSON file</span>
+          <input id="botdirFile" type="file" accept=".json,application/json"></label></div>
+        <div class="full"><label><span data-i18n="…or paste the JSON">…or paste the JSON</span>
+          <textarea id="botdirText" rows="4" placeholder='[{"name":"Googlebot","category":"Search"}, …]'></textarea></label></div>
+        <p class="msg" id="botdirMsg"></p>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Import directory">Import directory</button>
+          <button type="button" id="botdirClear" class="p2-btn danger" data-i18n="Remove">Remove</button></div>
+      </form>
+    </section>
+
+    <!-- ── Cloudflare edge requests ─────────────────────────────────────── -->
+    <section class="p2-set-sec" id="sec-cfedge" data-sec="cfedge" hidden>
+      <h2 data-i18n="Cloudflare edge requests">Cloudflare edge requests</h2>
+      <p class="help"><span data-i18n="cf-help"> — optional, advanced. The tracking script only sees visitors whose browser ran JavaScript. AI crawlers and scrapers fetch your HTML and leave, so they never appear. Cloudflare saw all of them: add a read-only API token and the daily job pulls those request counts, so your dashboard can show what the script missed. Leave it empty and nothing changes.</span></p>
+      <form class="p2-form" id="cfSettings">
+        <div class="p2-box">
+          <span data-i18n="cf-steps">In the Cloudflare dashboard: <b>My Profile → API Tokens → Create Token → Create Custom Token</b>. Give it exactly these two permissions, both read-only:</span>
+          <div class="p2-mono" style="margin:6px 0">Zone · Zone · Read<br>Zone · Analytics · Read</div>
+          <span data-i18n="cf-steps2">Under <i>Zone Resources</i> choose the zones your sites are on (or all zones in the account), then create the token and paste it below.</span>
+          <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:6px" data-i18n="Open Cloudflare API Tokens ↗">Open Cloudflare API Tokens ↗</a>
+        </div>
+        <div class="full"><label><span data-i18n="Cloudflare API token">Cloudflare API token</span> <span id="cfKeyState"></span>
+          <input id="cfToken" type="password" maxlength="200" autocomplete="off" placeholder="••••••••••••••••"></label></div>
+        <p class="msg" id="cfMsg"></p>
+        <div class="p2-list" id="cfState"></div>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Save & check">Save &amp; check</button>
+          <button type="button" class="p2-btn" id="cfTest" data-i18n="Re-check">Re-check</button>
+          <button type="button" class="p2-btn danger" id="cfClear" data-i18n="Remove">Remove</button></div>
+      </form>
+    </section>
+
+    <!-- ── Storage & retention ──────────────────────────────────────────── -->
+    <section class="p2-set-sec" id="sec-storage" data-sec="storage" hidden>
+      <h2 data-i18n="Storage & retention">Storage &amp; retention</h2>
+      <p class="help"><span data-i18n="storage-help"> — raw event rows are what fills the D1 database (roughly 0.8 KB each with indexes; a pageview produces several once behavior heartbeats are counted). Dashboards read from rollups that are kept forever; the windows below only decide how far back visitor journeys and the suspicious-visitor drill-down reach. Set them in <code>config.local.toml [retention]</code>, then redeploy the cron and console workers.</span></p>
+      <form class="p2-form" id="storageSettings" onsubmit="return false">
+        <div class="full" id="storageState"><p class="loading" data-i18n="loading…">loading…</p></div>
+        <div class="actions"><button type="button" class="p2-btn danger" id="storagePurge" data-i18n="Run purge now">Run purge now</button>
+          <button type="button" class="p2-btn" id="storageRefresh" data-i18n="Refresh">Refresh</button></div>
+        <p class="msg" id="storageMsg"></p>
+      </form>
+    </section>
+
+    <!-- ── AI analysis reports ──────────────────────────────────────────── -->
+    <section class="p2-set-sec" id="sec-ai" data-sec="ai" hidden>
+      <h2 data-i18n="AI analysis reports">AI analysis reports</h2>
+      <p class="help"><span data-i18n="ai-help"> — used on each site's dashboard to generate a written summary.</span></p>
+      <form class="p2-form" id="aiSettings">
+        <div><label><span data-i18n="Provider (API format)">Provider (API format)</span>
+          <select id="aiProvider">
+            <option value="openai" data-i18n="OpenAI-compatible">OpenAI-compatible</option>
+            <option value="anthropic">Anthropic</option>
+          </select></label></div>
+        <div><label><span data-i18n="Model name">Model name</span><input id="aiModel" maxlength="120" placeholder="model id"></label></div>
+        <div class="full"><label><span data-i18n="API base URL">API base URL</span> <span class="p2-mut" data-i18n="(optional — blank uses the provider default)">(optional — blank uses the provider default)</span>
+          <input id="aiBaseUrl" maxlength="300" placeholder="https://…"></label></div>
+        <div><label><span data-i18n="API key">API key</span> <span id="aiKeyState"></span>
+          <input id="aiKey" type="password" maxlength="300" autocomplete="off" placeholder="sk-…"></label></div>
+        <div><label><span data-i18n="Report language">Report language</span>
+          <select id="aiLang"><option value="en">English</option><option value="zh">中文</option></select></label></div>
+        <p class="msg" id="aiMsg"></p>
+        <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Save AI settings">Save AI settings</button></div>
+      </form>
+    </section>
+  </main>
+</div>
+<script>
+// Instance settings — moved out of the old sites.html ⚙ panel, one section per
+// nav entry (#hash routing). Same endpoints as before:
+//   /api/settings (branding) · /api/settings/timezone · /api/settings/portfolio
+//   /api/tokens · /api/templates · /api/settings/botdir · /api/settings/cfedge
+//   /api/storage(/purge) · /api/settings/ai
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const t = (s) => window.PVI18N.t(s);
+const te = (s) => esc(t(s));
+const $ = (id) => document.getElementById(id);
+async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
+function say(el, text, ok) { el.classList.toggle('ok', !!ok); el.textContent = text; }
+const postJson = (url, body, method = 'POST') => fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(guard);
+
+// --- section routing -----------------------------------------------------------
+const LOADERS = {
+  general: () => { loadHomeSettings(); loadUserTz(); },
+  portfolio: () => loadThresholds(),
+  tokens: () => loadTokens(),
+  templates: () => loadTemplates(),
+  botdir: () => loadBotdir(),
+  cfedge: () => loadCfSettings(),
+  storage: () => loadStorage(),
+  ai: () => loadAiSettings(),
+};
+const loaded = new Set();
+function show(sec, force) {
+  if (!LOADERS[sec]) sec = 'general';
+  document.querySelectorAll('.p2-set-sec').forEach((s) => { s.hidden = s.dataset.sec !== sec; });
+  document.querySelectorAll('#setnav a').forEach((a) => {
+    const on = a.dataset.sec === sec;
+    a.classList.toggle('on', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+  if (force || !loaded.has(sec)) { loaded.add(sec); LOADERS[sec](); }
+}
+window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+
+// --- branding ------------------------------------------------------------------
+function applyBranding(b) {
+  const name = (b.name || '').trim() || 'pvuv.ai';
+  const logo = b.logo_light || b.logo_dark;
+  $('brand').innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : esc(name);
+  document.title = t('Settings') + ' — ' + name;
+  if (b.favicon) {
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = b.favicon;
+  }
+}
+async function loadHomeSettings() {
+  const r = await fetch('/api/home');
+  if (!r.ok) return;
+  const b = await r.json();
+  applyBranding(b);
+  $('hsName').value = b.name || '';
+  $('hsDomain').value = b.primary_domain || '';
+  $('hsDesc').value = b.description || '';
+  $('hsLogoLight').value = b.logo_light || '';
+  $('hsLogoDark').value = b.logo_dark || '';
+  $('hsFavicon').value = b.favicon || '';
+}
+$('homeSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await postJson('/api/settings', {
+    name: $('hsName').value, primary_domain: $('hsDomain').value, description: $('hsDesc').value,
+    logo_light: $('hsLogoLight').value, logo_dark: $('hsLogoDark').value, favicon: $('hsFavicon').value,
+  });
+  say($('hsMsg'), r.ok ? t('saved') : t('save failed'), r.ok);
+  if (r.ok) loadHomeSettings();
+});
+
+// --- default timezone ------------------------------------------------------------
+const TZ_LIST = (() => {
+  try { return Intl.supportedValuesOf('timeZone'); } catch {
+    return ['UTC','Asia/Shanghai','Asia/Hong_Kong','Asia/Tokyo','Asia/Singapore','Asia/Kolkata',
+            'Europe/London','Europe/Paris','Europe/Berlin','America/New_York','America/Chicago',
+            'America/Los_Angeles','America/Sao_Paulo','Australia/Sydney'];
+  }
+})();
+const validTz = (z) => TZ_LIST.includes(z);
+async function loadUserTz() {
+  $('tzlist').innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"></option>`).join('');
+  let tz = 'UTC';
+  try { tz = (await (await guard(await fetch('/api/me'))).json()).timezone || 'UTC'; } catch { /* keep UTC */ }
+  $('tzDefault').value = validTz(tz) ? tz : 'UTC';
+}
+$('tzSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const tz = $('tzDefault').value.trim();
+  if (!validTz(tz)) { say($('tzMsg'), t('pick a valid timezone from the list')); return; }
+  const r = await postJson('/api/settings/timezone', { timezone: tz });
+  say($('tzMsg'), r.ok ? t('saved') : t('save failed'), r.ok);
+});
+
+// --- portfolio thresholds ---------------------------------------------------------
+let thrDefaults = null;
+function fillThr(d) {
+  $('thrGrowthUv').value = d.growth_uv_7d;
+  $('thrGrowthDelta').value = d.growth_min_delta_pct;
+  $('thrDecline').value = d.decline_pct;
+  $('thrIvt').value = d.ivt_pct;
+}
+async function loadThresholds() {
+  try {
+    const d = await (await guard(await fetch('/api/settings/portfolio'))).json();
+    thrDefaults = d.defaults || null;
+    fillThr(d);
+  } catch { say($('thrMsg'), t('failed')); }
+}
+async function saveThr(body) {
+  const r = await postJson('/api/settings/portfolio', body, 'PUT');
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { say($('thrMsg'), d.error || t('save failed')); return; }
+  fillThr(d);
+  say($('thrMsg'), t('saved'), true);
+}
+$('thrSettings').addEventListener('submit', (e) => {
+  e.preventDefault();
+  saveThr({
+    growth_uv_7d: Number($('thrGrowthUv').value), growth_min_delta_pct: Number($('thrGrowthDelta').value),
+    decline_pct: Number($('thrDecline').value), ivt_pct: Number($('thrIvt').value),
+  });
+});
+$('thrReset').addEventListener('click', () => { if (thrDefaults) saveThr(thrDefaults); });
+
+// --- API tokens (§10) — the plaintext exists only in the creation response --------
+const delBtn = (attr, id, label, danger = true) =>
+  `<button type="button" class="p2-btn sm${danger ? ' danger' : ''}" ${attr}="${esc(id)}">${te(label)}</button>`;
+async function loadTokens() {
+  const box = $('tokList');
+  const sel = $('tokSite');
+  while (sel.options.length > 1) sel.remove(1);
+  try {
+    const { sites } = await (await guard(await fetch('/api/sites'))).json();
+    for (const s of sites || []) {
+      const o = document.createElement('option');
+      o.value = s.site_id; o.textContent = s.name;
+      sel.appendChild(o);
+    }
+  } catch { /* scope picker stays at "All my sites" */ }
+  let d;
+  try { d = await (await guard(await fetch('/api/tokens'))).json(); } catch { box.textContent = ''; return; }
+  const live = (d.tokens || []).filter((x) => !x.revoked_at);
+  if (!live.length) { box.textContent = t('No tokens yet.'); return; }
+  box.innerHTML = '<table>' + live.map((x) => `<tr>
+      <td>${esc(x.name)}</td>
+      <td><code>${esc(x.prefix)}…</code></td>
+      <td>${x.site_id ? esc(x.site_id) : te('all sites')} · ${te(x.permission === 'write' ? 'Read/write' : x.permission === 'ingest' ? 'Ingest only (crawler reports)' : 'Read only')}</td>
+      <td>${x.last_used_at ? te('used') + ' ' + esc(new Date(x.last_used_at).toISOString().slice(0, 10)) : te('never used')}</td>
+      <td style="text-align:right">${delBtn('data-revoke', x.token_id, 'Revoke')}</td>
+    </tr>`).join('') + '</table>';
+  box.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('Revoke this token? Anything using it stops working immediately.'))) return;
+    await guard(await fetch('/api/tokens?id=' + encodeURIComponent(b.dataset.revoke), { method: 'DELETE' }));
+    loadTokens();
+  }));
+}
+$('tokenSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  say($('tokMsg'), '');
+  const r = await postJson('/api/tokens', {
+    name: $('tokName').value.trim(),
+    site_id: $('tokSite').value || undefined,
+    permission: $('tokPermission').value,
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { say($('tokMsg'), d.error ? t(d.error) : t('Could not create the token.')); return; }
+  $('tokValue').textContent = d.token;
+  $('tokNew').hidden = false;
+  $('tokName').value = '';
+  loadTokens();
+});
+
+// --- site templates (presets for POST /v1/sites {"template": …}) -------------------
+let tplCache = [];
+function fillTemplate(x) {
+  $('tplId').value = x ? x.template_id : '';
+  $('tplName').value = x ? x.name : '';
+  $('tplTz').value = (x && x.timezone) || '';
+  $('tplMode').value = (x && x.adguard_mode) || '';
+  $('tplAdclient').value = (x && x.adclient) || '';
+  $('tplEngaged').value = x && x.engaged_seconds != null ? x.engaged_seconds : '';
+  $('tplFunnels').value = x && x.funnels.length ? JSON.stringify(x.funnels, null, 1) : '';
+}
+async function loadTemplates() {
+  $('tzlist').innerHTML || ($('tzlist').innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"></option>`).join(''));
+  const box = $('tplList');
+  try { tplCache = ((await (await guard(await fetch('/api/templates'))).json()).templates) || []; } catch { box.textContent = ''; return; }
+  if (!tplCache.length) { box.textContent = t('No templates yet.'); return; }
+  box.innerHTML = '<table>' + tplCache.map((x) => `<tr>
+      <td>${esc(x.name)} <code class="p2-mut">${esc(x.template_id)}</code></td>
+      <td>${esc(x.timezone || '–')} · ${te(x.adguard_mode || 'off')}${x.adclient ? ' · ' + esc(x.adclient) : ''}</td>
+      <td>${x.funnels.length} ${te('default funnels')}</td>
+      <td style="text-align:right;white-space:nowrap">${delBtn('data-tpl-edit', x.template_id, 'Edit', false)} ${delBtn('data-tpl-del', x.template_id, 'Remove')}</td>
+    </tr>`).join('') + '</table>';
+  box.querySelectorAll('[data-tpl-edit]').forEach((b) => b.addEventListener('click', () =>
+    fillTemplate(tplCache.find((x) => x.template_id === b.dataset.tplEdit))));
+  box.querySelectorAll('[data-tpl-del]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('Remove this template? Sites already created from it are not affected.'))) return;
+    await guard(await fetch('/api/templates/' + encodeURIComponent(b.dataset.tplDel), { method: 'DELETE' }));
+    if ($('tplId').value === b.dataset.tplDel) fillTemplate(null);
+    loadTemplates();
+  }));
+}
+$('tplReset').addEventListener('click', () => { fillTemplate(null); say($('tplMsg'), ''); });
+$('tplSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  say($('tplMsg'), '');
+  const raw = $('tplFunnels').value.trim();
+  let funnels = [];
+  if (raw) { try { funnels = JSON.parse(raw); } catch { say($('tplMsg'), t('That is not valid JSON.')); return; } }
+  const id = $('tplId').value;
+  const r = await postJson('/api/templates' + (id ? '/' + encodeURIComponent(id) : ''), {
+    name: $('tplName').value.trim(), timezone: $('tplTz').value.trim(), adguard_mode: $('tplMode').value,
+    adclient: $('tplAdclient').value.trim(), engaged_seconds: $('tplEngaged').value.trim(), funnels,
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { say($('tplMsg'), d.error || t('save failed')); return; }
+  say($('tplMsg'), t('saved'), true);
+  $('tplId').value = d.template_id;
+  loadTemplates();
+});
+
+// --- crawler directory (§6.6) — classification only ---------------------------------
+async function loadBotdir() {
+  const box = $('botdirState');
+  try {
+    const d = await (await guard(await fetch('/api/settings/botdir'))).json();
+    if (!d.imported) { box.textContent = t('No directory imported — crawler traffic is not categorised.'); return; }
+    const cats = Object.entries(d.categories || {}).sort((a, b) => b[1] - a[1]);
+    box.innerHTML = `<b style="color:var(--p2-text)">${esc(String(d.count))}</b> ${te('bots imported')}`
+      + (d.skipped ? ` · ${esc(String(d.skipped))} ${te('skipped')}` : '')
+      + ` · ${te('updated')} ${esc(new Date(d.updated_at).toISOString().slice(0, 16).replace('T', ' '))}<br>`
+      + cats.map(([c, n]) => `${esc(c)} <span class="p2-mono">${esc(String(n))}</span>`).join(' · ');
+  } catch { box.textContent = ''; }
+}
+$('botdirSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('botdirMsg');
+  const file = $('botdirFile').files[0];
+  let text = $('botdirText').value.trim();
+  say(msg, '');
+  if (file) { try { text = await file.text(); } catch { say(msg, t('Could not read that file.')); return; } }
+  if (!text) { say(msg, t('Choose a file or paste the JSON first.')); return; }
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { say(msg, t('That is not valid JSON.')); return; }
+  const r = await postJson('/api/settings/botdir', parsed);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { say(msg, d.error ? t(d.error) : t('Import failed.')); return; }
+  say(msg, t('Imported {n} bots.').replace('{n}', d.count), true);
+  $('botdirText').value = ''; $('botdirFile').value = '';
+  loadBotdir();
+});
+$('botdirClear').addEventListener('click', async () => {
+  await guard(await fetch('/api/settings/botdir', { method: 'DELETE' }));
+  say($('botdirMsg'), t('Directory removed.'));
+  loadBotdir();
+});
+
+// --- Cloudflare edge requests (optional; the token is never returned) ---------------
+function renderCfState(d) {
+  const box = $('cfState');
+  $('cfKeyState').textContent = d.token_set ? t('(a token is saved — leave blank to keep it)') : t('(not set)');
+  if (!d.token_set) { box.textContent = t('Not configured — the dashboard shows only what the tracking script recorded.'); return; }
+  const s = d.status;
+  if (!s) { box.textContent = t('Saved. The first pull runs with tonight’s daily job.'); return; }
+  const when = esc(new Date(s.checked_at).toISOString().slice(0, 16).replace('T', ' '));
+  if (s.error) {
+    box.innerHTML = `<span style="color:#ff8a8a">${te('Last check failed')} · ${when}</span><br><span class="p2-mono">${esc(s.error)}</span>`;
+    return;
+  }
+  box.innerHTML = `${te('Last pull')} ${when} · <b>${esc(String(s.days_written ?? 0))}</b> ${esc(window.PVI18N.tk('site-days', 'site-days'))}`
+    + ` · ${esc(String(s.sites_matched ?? 0))} ${te('sites matched')} · ${esc(String(s.zones ?? 0))} ${te('zones visible')}`;
+}
+async function loadCfSettings() {
+  try { renderCfState(await (await guard(await fetch('/api/settings/cfedge'))).json()); } catch { /* leave as-is */ }
+}
+async function saveCf(token) {
+  const msg = $('cfMsg');
+  say(msg, t('checking…'));
+  const r = await postJson('/api/settings/cfedge', { token });
+  const d = await r.json().catch(() => ({}));
+  // Cloudflare's own message, verbatim — the fixes differ
+  if (!r.ok) { say(msg, d.error || t('Could not verify that token.')); return; }
+  const matched = (d.sites || []).filter((s) => s.zone);
+  say(msg, matched.length
+    ? t('Token works. Matched {n} site(s): ').replace('{n}', matched.length) + matched.map((s) => `${s.name} → ${s.zone}`).join(', ')
+    : t('Token works, but none of your sites are on a zone it can see. Check the token’s Zone Resources.'), true);
+  $('cfToken').value = '';
+  loadCfSettings();
+}
+$('cfSettings').addEventListener('submit', (e) => { e.preventDefault(); saveCf($('cfToken').value.trim()); });
+$('cfTest').addEventListener('click', () => saveCf(''));
+$('cfClear').addEventListener('click', async () => {
+  await guard(await fetch('/api/settings/cfedge', { method: 'DELETE' }));
+  say($('cfMsg'), t('Token removed.'));
+  loadCfSettings();
+});
+
+// --- storage & retention (§16) -------------------------------------------------------
+const mb = (x) => x >= 1024 ? (x / 1024).toFixed(2) + ' GB' : x.toFixed(1) + ' MB';
+async function loadStorage() {
+  const box = $('storageState');
+  box.innerHTML = `<p class="loading">${te('loading…')}</p>`;
+  let d;
+  try { d = await (await guard(await fetch('/api/storage'))).json(); } catch { box.innerHTML = `<p class="p2-mut">${te('failed')}</p>`; return; }
+  const r = d.retention || {};
+  const win = (v) => v ? `${v} ${t('days')}` : t('keep forever');
+  const rows = (d.partitions || []).slice().reverse().map((p) => `<tr><td>${esc(p.table.replace('events_', '').replace(/^(\d{4})(\d{2})$/, '$1-$2'))}</td>
+      <td class="num">${fmt(p.rows)}</td><td class="num p2-mut">${fmt(p.pulse_rows)}</td><td class="num p2-mut">${fmt(p.bot_rows)}</td><td class="num">≈ ${mb(p.est_mb)}</td></tr>`).join('');
+  box.innerHTML = `
+    <div class="p2-cards4">
+      <div><div class="v">≈ ${mb(d.est_total_mb)}</div><div class="k">${te('Estimated size')}</div><div class="h">${te('exact: wrangler d1 info')}</div></div>
+      <div><div class="v">${fmt(d.total_events)}</div><div class="k">${te('Raw event rows')}</div><div class="h">${(d.partitions || []).length} ${te('monthly partitions')}</div></div>
+      <div><div class="v">${fmt(d.sessions)}</div><div class="k">${te('Sessions')}</div><div class="h">${te('kept')} ${win(r.raw_events_days)}</div></div>
+      <div><div class="v">${fmt(d.profiles)}</div><div class="k">${te('Visitor profiles')}</div><div class="h">${te('idle limit')} ${win(r.profiles_idle_days)}</div></div>
+    </div>
+    <table class="p2-tbl"><thead><tr><th>${te('Month')}</th><th class="num">${te('Rows')}</th><th class="num">${te('heartbeats')}</th><th class="num">${te('bot / crawler')}</th><th class="num">${te('Est. size')}</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="5" class="p2-mut">${te('no data yet')}</td></tr>`}</tbody></table>
+    <p class="p2-mut" style="font-size:12px;margin:10px 0 0">${te('Windows:')} ${te('raw events')} <b>${win(r.raw_events_days)}</b> · ${te('heartbeats')} <b>${win(r.pulse_events_days)}</b> · ${te('bot / crawler')} <b>${win(r.bot_events_days)}</b> · ${te('idle profiles')} <b>${win(r.profiles_idle_days)}</b>. ${te('The daily job applies them at 03:30 UTC; whole months past the raw window are dropped at once, the rest is trimmed in batches.')}</p>`;
+}
+$('storageRefresh').addEventListener('click', loadStorage);
+$('storagePurge').addEventListener('click', async () => {
+  const msg = $('storageMsg'); const btn = $('storagePurge');
+  if (!confirm(t('Run the retention purge now? Raw rows outside the configured windows are deleted permanently; dashboards are unaffected.'))) return;
+  btn.disabled = true; say(msg, t('purging…'));
+  try {
+    const d = await (await guard(await fetch('/api/storage/purge', { method: 'POST' }))).json();
+    say(msg, `${t('Done:')} ${d.dropped_partitions.length} ${t('partitions dropped')}, ${fmt(d.pulse_rows_deleted)} ${t('heartbeats')}, ${fmt(d.bot_rows_deleted)} ${t('bot / crawler')}, ${fmt(d.sessions_deleted)} ${t('sessions')}, ${fmt(d.profiles_deleted)} ${t('profiles')}${d.more_pending ? ` — ${t('more remains; run again or let the nightly job continue')}` : ''}${d.errors && d.errors.length ? ` · ${d.errors.join(' | ')}` : ''}`, d.ok);
+    loadStorage();
+  } catch { say(msg, t('failed')); }
+  btn.disabled = false;
+});
+
+// --- AI analysis reports (§13) — the key is never returned ----------------------------
+async function loadAiSettings() {
+  const r = await fetch('/api/settings/ai');
+  if (!r.ok) return;
+  const a = await r.json();
+  $('aiProvider').value = a.provider || 'openai';
+  $('aiModel').value = a.model || '';
+  $('aiBaseUrl').value = a.base_url || '';
+  $('aiLang').value = a.lang || 'en';
+  $('aiKeyState').textContent = a.key_set ? t('(a key is saved — leave blank to keep it)') : t('(not set)');
+}
+$('aiSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await postJson('/api/settings/ai', {
+    provider: $('aiProvider').value, model: $('aiModel').value, base_url: $('aiBaseUrl').value,
+    lang: $('aiLang').value, api_key: $('aiKey').value,
+  });
+  const body = await r.json().catch(() => ({}));
+  say($('aiMsg'), r.ok ? t('saved') : (body.error || t('save failed')), r.ok);
+  if (r.ok) { $('aiKey').value = ''; loadAiSettings(); }
+});
+
+$('logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.href = '/login.html';
+});
+
+// language switcher: re-apply static labels and reload the open section's
+// dynamic text (key-state hints, tables)
+window.PVI18N.mountSelect($('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => {
+  window.PVI18N.applyStatic();
+  loaded.clear();
+  show(location.hash.slice(1) || 'general', true);
+});
+loadHomeSettings();
+show(location.hash.slice(1) || 'general');
+</script>
+</body>
+</html>
