@@ -171,11 +171,12 @@
     </form>
     <form class="create" id="tokenSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="API tokens">API tokens</strong>
-        <span style="font-size:12px;color:#8b93a1"> — Choose read-only for reports or read/write for integrations that create sites. Shown once at creation.</span></div>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="token-help"> — credentials for the CLI, the MCP server (so your own chatbot can query this data) and other integrations. Read-only tokens can only query reports; read/write tokens (all sites only) can also create, update and archive sites and funnels — give those only to trusted services. Shown once at creation.</span></div>
       <div><label><span data-i18n="Token name">Token name</span><input id="tokName" maxlength="60" placeholder="Claude Desktop"></label></div>
       <div><label><span data-i18n="Scope">Scope</span>
         <select id="tokSite"><option value="" data-i18n="All my sites">All my sites</option></select></label></div>
-      <div><label>权限 / Permission <select id="tokPermission"><option value="read">只读 / Read only</option><option value="write">读取和创建站点 / Read and create sites</option></select></label></div>
+      <div><label><span data-i18n="Permission">Permission</span>
+        <select id="tokPermission"><option value="read" data-i18n="Read only">Read only</option><option value="write" data-i18n="Read &amp; manage sites">Read &amp; manage sites</option></select></label></div>
       <p class="err" id="tokMsg"></p>
       <div class="full" id="tokNew" hidden style="background:#0c1117;border:1px solid #2b3a2e;border-radius:8px;padding:12px;margin-bottom:4px">
         <div style="font-size:12px;color:#9ece9e;margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
@@ -183,6 +184,31 @@
       </div>
       <div class="full" id="tokList" style="font-size:12px;color:#8b93a1"></div>
       <button type="submit" data-i18n="Create token">Create token</button>
+    </form>
+    <form class="create" id="tplSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
+      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Site templates">Site templates</strong>
+        <span style="font-size:12px;color:#8b93a1" data-i18n="templates-help"> — presets for sites created through the API (POST /v1/sites with "template"): timezone, engagement threshold, ad protection, AdSense client and default funnels. Empty fields fall back to the usual defaults; fields in the API request override the template.</span></div>
+      <input type="hidden" id="tplId">
+      <div><label><span data-i18n="Template name">Template name</span><input id="tplName" maxlength="60" placeholder="Game site"></label></div>
+      <div><label><span data-i18n="Timezone">Timezone</span>
+        <input id="tplTz" list="tzlist" autocomplete="off" placeholder="blank = your default timezone" data-i18n-ph="blank = your default timezone"></label></div>
+      <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
+        <select id="tplMode">
+          <option value="" data-i18n="Not set (use default)">Not set (use default)</option>
+          <option value="off" data-i18n="Off">Off</option>
+          <option value="balanced" data-i18n="Balanced — bots &amp; crawlers">Balanced — bots &amp; crawlers</option>
+          <option value="loose" data-i18n="Aggressive — everything not clean">Aggressive — everything not clean</option>
+          <option value="strict" data-i18n="Strictest — clean + interacted">Strictest — clean + interacted</option>
+        </select></label></div>
+      <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="tplAdclient" placeholder="ca-pub-1234567890123456"></label></div>
+      <div><label><span data-i18n="Engagement threshold (seconds)">Engagement threshold (seconds)</span>
+        <input id="tplEngaged" type="number" min="1" max="300" placeholder="15"></label></div>
+      <div class="full"><label><span data-i18n="Default funnels (JSON)">Default funnels (JSON)</span>
+        <textarea id="tplFunnels" rows="3" style="font:12px/1.4 var(--mono)" placeholder='[{"name":"Play","steps":[{"type":"page","value":"/"},{"type":"event","value":"play_start"}]}]'></textarea></label></div>
+      <p class="err" id="tplMsg"></p>
+      <div class="full" id="tplList" style="font-size:12px;color:#8b93a1"></div>
+      <div class="actions"><button type="submit" data-i18n="Save template">Save template</button>
+      <button type="button" id="tplReset" data-i18n="New template">New template</button></div>
     </form>
     <form class="create" id="botdirSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
       <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Crawler directory">Crawler directory</strong>
@@ -241,7 +267,7 @@ function togglePanel(id) {
   if (!opened.hidden) opened.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 document.getElementById('btnAdd').addEventListener('click', () => togglePanel('addPanel'));
-document.getElementById('btnSettings').addEventListener('click', () => { togglePanel('homePanel'); loadTokens(); loadStorage(); });
+document.getElementById('btnSettings').addEventListener('click', () => { togglePanel('homePanel'); loadTokens(); loadTemplates(); loadStorage(); });
 document.querySelectorAll('.panel .close').forEach((b) =>
   b.addEventListener('click', () => { document.getElementById(b.dataset.close).hidden = true; }));
 
@@ -269,7 +295,7 @@ async function loadSites() {
         <div class="stat"><div class="v">…</div><div class="k">${te('Visitors')}</div></div>
         <div class="stat"><div class="v">…</div><div class="k">${te('Sessions')}</div></div>
       </div>
-      <div class="foot"><span class="tag" title="${te('Timezone')}">🕒 ${esc(s.timezone || 'UTC')}</span><span class="tag" title="${te('Ad protection mode')}">🛡 ${te(s.adguard_mode || 'off')}</span><span class="spacer"></span><span class="tag good" id="hs-${esc(s.site_id)}"></span></div>
+      <div class="foot"><span class="tag" title="${te('Timezone')}">🕒 ${esc(s.timezone || 'UTC')}</span><span class="tag" title="${te('Ad protection mode')}">🛡 ${te(s.adguard_mode || 'off')}</span>${s.status && s.status !== 'active' ? `<span class="tag warn">${te('archived')}</span>` : ''}<span class="spacer"></span><span class="tag good" id="hs-${esc(s.site_id)}"></span></div>
     </a>`).join('') + '</div>';
 
   // ONE request for every card. This used to be one /overview per site, and
@@ -484,7 +510,7 @@ async function loadTokens() {
     + live.map((x) => `<tr style="border-top:1px solid #1e2530">
         <td style="padding:5px 0">${esc(x.name)}</td>
         <td style="color:#c7cdd8"><code>${esc(x.prefix)}…</code></td>
-        <td>${x.site_id ? esc(x.site_id) : te('all sites')} · ${esc(x.permission || 'read')}</td>
+        <td>${x.site_id ? esc(x.site_id) : te('all sites')} · ${te(x.permission === 'write' ? 'Read/write' : 'Read only')}</td>
         <td style="color:#8b93a1">${x.last_used_at ? te('used') + ' ' + esc(new Date(x.last_used_at).toISOString().slice(0, 10)) : te('never used')}</td>
         <td style="text-align:right"><button type="button" data-revoke="${esc(x.token_id)}"
           style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Revoke')}</button></td>
@@ -513,6 +539,68 @@ document.getElementById('tokenSettings').addEventListener('submit', async (e) =>
   document.getElementById('tokNew').hidden = false;
   document.getElementById('tokName').value = '';
   loadTokens();
+});
+
+// --- site templates (presets for POST /v1/sites {"template": …}) -------------
+// Blank fields are stored as "not set" so the creation-time default applies.
+let tplCache = [];
+function fillTemplate(x) {
+  document.getElementById('tplId').value = x ? x.template_id : '';
+  document.getElementById('tplName').value = x ? x.name : '';
+  document.getElementById('tplTz').value = (x && x.timezone) || '';
+  document.getElementById('tplMode').value = (x && x.adguard_mode) || '';
+  document.getElementById('tplAdclient').value = (x && x.adclient) || '';
+  document.getElementById('tplEngaged').value = x && x.engaged_seconds != null ? x.engaged_seconds : '';
+  document.getElementById('tplFunnels').value = x && x.funnels.length ? JSON.stringify(x.funnels, null, 1) : '';
+}
+async function loadTemplates() {
+  const box = document.getElementById('tplList');
+  try { tplCache = ((await (await guard(await fetch('/api/templates'))).json()).templates) || []; } catch { box.textContent = ''; return; }
+  if (!tplCache.length) { box.textContent = t('No templates yet.'); return; }
+  box.innerHTML = '<table style="width:100%;border-collapse:collapse;margin-top:4px">'
+    + tplCache.map((x) => `<tr style="border-top:1px solid #1e2530">
+        <td style="padding:5px 0">${esc(x.name)} <code style="color:#8b93a1">${esc(x.template_id)}</code></td>
+        <td>${esc(x.timezone || '–')} · ${te(x.adguard_mode || 'off')}${x.adclient ? ' · ' + esc(x.adclient) : ''}</td>
+        <td>${x.funnels.length} ${te('default funnels')}</td>
+        <td style="text-align:right;white-space:nowrap"><button type="button" data-tpl-edit="${esc(x.template_id)}"
+          style="background:none;border:1px solid var(--border-2);color:var(--text-2);border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Edit')}</button>
+          <button type="button" data-tpl-del="${esc(x.template_id)}"
+          style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Remove')}</button></td>
+      </tr>`).join('') + '</table>';
+  box.querySelectorAll('[data-tpl-edit]').forEach((b) => b.addEventListener('click', () =>
+    fillTemplate(tplCache.find((x) => x.template_id === b.dataset.tplEdit))));
+  box.querySelectorAll('[data-tpl-del]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('Remove this template? Sites already created from it are not affected.'))) return;
+    await guard(await fetch('/api/templates/' + encodeURIComponent(b.dataset.tplDel), { method: 'DELETE' }));
+    if (document.getElementById('tplId').value === b.dataset.tplDel) fillTemplate(null);
+    loadTemplates();
+  }));
+}
+document.getElementById('tplReset').addEventListener('click', () => { fillTemplate(null); document.getElementById('tplMsg').textContent = ''; });
+document.getElementById('tplSettings').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('tplMsg');
+  msg.style.color = ''; msg.textContent = '';
+  const raw = document.getElementById('tplFunnels').value.trim();
+  let funnels = [];
+  if (raw) { try { funnels = JSON.parse(raw); } catch { msg.textContent = t('That is not valid JSON.'); return; } }
+  const id = document.getElementById('tplId').value;
+  const r = await guard(await fetch('/api/templates' + (id ? '/' + encodeURIComponent(id) : ''), {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: document.getElementById('tplName').value.trim(),
+      timezone: document.getElementById('tplTz').value.trim(),
+      adguard_mode: document.getElementById('tplMode').value,
+      adclient: document.getElementById('tplAdclient').value.trim(),
+      engaged_seconds: document.getElementById('tplEngaged').value.trim(),
+      funnels,
+    }),
+  }));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { msg.textContent = d.error || t('save failed'); return; }
+  msg.style.color = '#6ee7a0'; msg.textContent = t('saved');
+  document.getElementById('tplId').value = d.template_id;
+  loadTemplates();
 });
 
 // --- storage & retention -----------------------------------------------------

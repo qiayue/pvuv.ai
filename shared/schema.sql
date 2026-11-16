@@ -57,7 +57,7 @@ CREATE TABLE sites (
   adclient        TEXT,                      -- ca-pub-xxx
   settings        TEXT,
   created_at      INTEGER NOT NULL,
-  status          TEXT DEFAULT 'active',
+  status          TEXT DEFAULT 'active',     -- active / archived (only active is ingested)
   timezone        TEXT DEFAULT 'UTC',        -- display/aggregation tz, IMMUTABLE (added by 0004)
   engaged_seconds INTEGER NOT NULL DEFAULT 15, -- GA4 engagement dwell threshold, set at creation (added by 0006)
   shadow_until    INTEGER,                   -- record-only until this instant, then enforce ads (added by 0008)
@@ -245,6 +245,22 @@ CREATE TABLE funnels (
   PRIMARY KEY (site_id, funnel_id)
 );
 CREATE INDEX idx_funnels_site ON funnels(site_id, updated_at);
+
+-- per-owner site templates (migration 0023) — presets applied by
+-- POST /v1/sites {"template": …}; NULL setting = use the creation default
+CREATE TABLE site_templates (
+  template_id     TEXT PRIMARY KEY,
+  owner_id        TEXT NOT NULL,
+  name            TEXT NOT NULL,             -- unique per owner, case-insensitive
+  timezone        TEXT,
+  engaged_seconds INTEGER,
+  adguard_mode    TEXT,
+  adclient        TEXT,
+  funnels         TEXT NOT NULL DEFAULT '[]', -- JSON [{name, steps}]
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_site_templates_owner_name ON site_templates(owner_id, name COLLATE NOCASE);
 
 CREATE TABLE ai_reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

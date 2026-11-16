@@ -202,7 +202,9 @@ async function main() {
       .replace(/ADMIN_EMAILS = "you@example\.com"/g, `ADMIN_EMAILS = "${admins}"`)
       // the console builds the embed snippet from this; it cannot infer the
       // ingest host once the two are not siblings
-      .replace(/INGEST_HOST = "in\.pvuv\.ai"/g, `INGEST_HOST = "${ingestHost}"`);
+      .replace(/INGEST_HOST = "in\.pvuv\.ai"/g, `INGEST_HOST = "${ingestHost}"`)
+      // the api worker's POST /v1/sites snippet loads f.js from the console
+      .replace(/CONSOLE_HOST = "pvuv\.ai"/g, `CONSOLE_HOST = "${consoleHost}"`);
     if (after === before) { skipped++; continue; }
     if (DRY) say(`  ${c.dim('~ would edit ' + rel)}`);
     else writeFileSync(file, after);

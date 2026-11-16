@@ -6,6 +6,49 @@ All notable changes to this project are documented here. The format follows
 breaking changes, always with a D1 migration and upgrade notes in
 [`DEPLOY.md`](https://github.com/qiayue/pvuv.ai/blob/main/DEPLOY.md)).
 
+## [Unreleased]
+
+### Site provisioning API
+- The API is no longer purely read-only: a console owner can issue an
+  all-sites **read/write** token ("Read & manage sites") for a trusted
+  integration, e.g. a launcher that brings a new site up every day. Read-only
+  remains the default. See [`docs/API.md`](./docs/API.md) §6.
+- `POST /v1/sites` — find-or-create by owner + domain (race-safe; retries never
+  duplicate). Accepts extra `domains`, a `template` (id or name) and explicit
+  `timezone` / `engaged_seconds` / `adguard_mode` / `adclient` overrides, and
+  returns a ready-to-paste embed `snippet` alongside `{created, site}`.
+- `PATCH /v1/sites/{id}` — rename, replace / add / remove domains (test
+  subdomain → production, www + apex), archive (`status: "archived"`, stops
+  ingest, keeps data) and restore. Ingest's cached site config is invalidated
+  on every change. A domain may belong to only one active site per owner.
+- `POST /v1/sites/{id}/funnels` is now find-or-create **by name**: an existing
+  funnel comes back with `created: false`, and differing steps are replaced
+  (`updated: true`). Step values are capped at 512 characters.
+- **Site templates** (migration `0023_site_templates.sql`): per-owner presets —
+  timezone, engagement threshold, ad-protection mode, AdSense client, default
+  funnels — managed in ⚙ settings → Site templates and listed by
+  `GET /v1/templates`.
+- Unknown write paths now return `404` (previously `401`), and wrong methods on
+  known paths `405`.
+
+### Changed
+- Console and API create sites through one shared helper (`shared/sites.ts`):
+  one domain normaliser (lowercase; scheme / port / path / trailing dot
+  stripped; Unicode → IDNA `xn--`; IP literals refused), one insert and KV
+  write-through. The API now accepts `https://…` URLs it used to reject; the
+  console form now drops entries that are not real hostnames (e.g. bare IPs or
+  `foo..com`) — `localhost` is still accepted.
+- Saving a funnel in the console now rejects empty or over-long (> 512 chars)
+  step values, the same rule the API applies.
+- The API-token form is fully translated again (permission picker and help text
+  in all 7 languages); archived sites are tagged in the site list.
+
+### Upgrade notes
+- Apply migrations `0022` and `0023` before deploying the api and console
+  workers.
+- `workers/api/wrangler.toml` has new `[vars]` `CONSOLE_HOST` and `INGEST_HOST`
+  (used for the returned snippet); set them to your hosts.
+
 ## [0.1.0] — 2026-11-03
 
 First open-source release: a self-hosted, Cloudflare Workers + D1 deployment of
