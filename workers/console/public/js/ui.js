@@ -200,11 +200,19 @@
     'attn.ivt_high': 'Invalid traffic {ivt_pct}%',
     'attn.ivt_high_off': 'Invalid traffic {ivt_pct}% while ad protection is off',
     'attn.ivt_spike': 'Invalid traffic jumped to {ivt_pct}% (was {prev_pct}%)',
+    // portfolio:p3 — external data (docs/INTEGRATIONS.md §4)
+    'attn.traffic_no_revenue': '{uv} clean visitors but no ad revenue',
+    'attn.adsense_needs_attention': 'AdSense needs attention ({domain})',
+    'attn.ads_txt_problem': 'ads.txt problem: {status}',
+    'attn.network_declined': 'Ads disabled by {network}',
+    'attn.external_stale': '{source} data not updated for {hours} h',
   };
   /** top attention item as coloured text (red for critical/high, amber for normal) */
   function attnChip(list) {
     if (!list || !list.length) return '';
-    var a = list.slice().sort(function (x, y) { return (SEV_RANK[x.severity] || 9) - (SEV_RANK[y.severity] || 9); })[0];
+    // critical ranks 0, so a falsy check would sort it last — test for presence
+    var rank = function (x) { return x.severity in SEV_RANK ? SEV_RANK[x.severity] : 9; };
+    var a = list.slice().sort(function (x, y) { return rank(x) - rank(y); })[0];
     var more = list.length > 1 ? ' <b>+' + (list.length - 1) + '</b>' : '';
     return '<span class="att ' + (a.severity === 'normal' ? 'w' : 'c') + '" title="' + esc(list.map(attnText).join('\n')) + '">' + esc(attnText(a)) + more + '</span>';
   }

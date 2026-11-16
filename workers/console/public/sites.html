@@ -206,6 +206,9 @@ let PRESETS_REF = {}, COL_BY_REF = {};
 
 // ── columns ─────────────────────────────────────────────────────────────
 const extVal = (s, k) => (s.external ? s.external[k] : null);
+/** external status (AdSense state / ads.txt / Adsterra) → dot + grey text (portfolio:p3) */
+const EXT_GOOD = ['ready', 'ok', 'active'], EXT_BAD = ['needs_attention', 'missing', 'mismatch'];
+const extStatus = (v) => (v ? `<span class="stage"><i style="background:${EXT_GOOD.includes(v) ? 'var(--up)' : EXT_BAD.includes(v) ? 'var(--down)' : 'var(--warn)'}"></i>${esc(window.PVI18N.tk('ext.state.' + v, v.replace(/_/g, ' ')))}</span>` : '–');
 const COLS = [
   { id: 'stage', label: 'Stage', sort: (s) => ui.STAGES.indexOf(s.stage), render: (s) => ui.stageChip(s.stage, s.stage_since ? t('since') + ' ' + fmt.date(s.stage_since) : '') },
   { id: 'live', label: 'Live', num: true, sort: (s) => s.days_live, render: (s) => `<span class="m">${esc(fmt.days(s.days_live))}</span>` },
@@ -238,7 +241,10 @@ const COLS = [
   // external data (only offered when some site has it)
   { id: 'revenue', label: 'Revenue', num: true, ext: true, sort: (s) => extVal(s, 'revenue_usd') ?? -1, render: (s) => fmt.usd(extVal(s, 'revenue_usd')) },
   { id: 'rpm', label: 'RPM', num: true, ext: true, sort: (s) => extVal(s, 'rpm_usd') ?? -1, render: (s) => fmt.usd(extVal(s, 'rpm_usd')) },
-  { id: 'adsense', label: 'Ad network', ext: true, sort: (s) => s.external?.adsense?.status || '', render: (s) => (s.external?.adsense ? `<span class="stage"><i style="background:${['ready', 'approved', 'ok'].includes(s.external.adsense.status) ? 'var(--up)' : 'var(--warn)'}"></i>${te(s.external.adsense.status)}</span>` : '–') },
+  { id: 'adsense', label: 'AdSense', ext: true, sort: (s) => s.external?.adsense?.status || '', render: (s) => extStatus(s.external?.adsense?.status) },
+  // portfolio:p3 — ads.txt check and Adsterra activity
+  { id: 'ads_txt', label: 'ads.txt', ext: true, sort: (s) => s.external?.adsense?.ads_txt || '', render: (s) => extStatus(s.external?.adsense?.ads_txt) },
+  { id: 'adsterra', label: 'Adsterra', ext: true, sort: (s) => s.external?.adsterra?.revenue_usd ?? -1, render: (s) => extStatus(s.external?.adsterra?.status) },
 ];
 const COL_BY = Object.fromEntries(COLS.map((c) => [c.id, c]));
 COL_BY_REF = COL_BY;
@@ -247,7 +253,7 @@ const PRESETS = {
   overview: ['stage', 'live', 'uv', 'delta', 'trend', 'crawl', 'organic', 'ivt', 'revenue', 'rpm', 'adsense', 'attention'],
   crawl: ['stage', 'live', 'crawl', 'first_crawl', 'organic', 'ai', 'attention'],
   quality: ['stage', 'uv', 'pv', 'ivt', 'health', 'adguard', 'attention'],
-  revenue: ['stage', 'uv', 'delta', 'revenue', 'rpm', 'adsense', 'attention'],
+  revenue: ['stage', 'uv', 'delta', 'revenue', 'rpm', 'adsense', 'ads_txt', 'adsterra', 'attention'],
   ranking: ['rank', 'uv', 'ext_clean', 'internal', 'clean_pv', 'pv', 'human', 'ivt', 'trend'],
   growth: ['stage', 'uv', 'uv_prev', 'delta', 'trend', 'organic', 'ai', 'pv'],
   // experiments are per site (the site preview / dashboard): the table just lists sites to open
