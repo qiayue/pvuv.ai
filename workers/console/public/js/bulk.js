@@ -27,6 +27,17 @@
     var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
     var ids = function () { try { return (getSelectedIds() || []).slice(); } catch (e) { return []; } };
     var busy = false;
+    // 16px line icons (no glyphs/emoji in UI chrome)
+    var IC = {
+      star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+      unstar: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/><path d="M4 4l16 16"/>',
+      tag: '<path d="M3.5 12.5V4.5h8l9 9-8 8z"/><path d="M8 8.5v.1"/>',
+      untag: '<path d="M3.5 12.5V4.5h8l9 9-8 8z"/><path d="M9.5 13.5l4-4"/>',
+      archive: '<path d="M4 5h16v4H4z"/><path d="M5.5 9v10h13V9M10 13h4"/>',
+      restore: '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"/><path d="M4 4v4.5h4.5"/>',
+      csv: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>',
+    };
+    var icon = function (n) { return '<svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true">' + IC[n] + '</svg>'; };
 
     function toast(msg, err) {
       var kit = window.__pvuvP2Kit;
@@ -41,10 +52,10 @@
       el.setAttribute('aria-label', t('Bulk actions'));
       el.innerHTML =
         '<span class="cnt" aria-live="polite"></span><span class="sep"></span>'
-        + btn('star', '★ ' + t('Star')) + btn('unstar', '☆ ' + t('Unstar'))
-        + btn('tag', '# ' + t('Tag…')) + btn('untag', t('Remove tag…'))
+        + btn('star', t('Star')) + btn('unstar', t('Unstar'))
+        + btn('tag', t('Tag…')) + btn('untag', t('Remove tag…'))
         + '<span class="sep"></span>'
-        + '<label class="p2-mut" style="display:inline-flex;align-items:center;gap:6px">' + esc(t('Ad protection')) + ' <select data-ag aria-label="' + esc(t('Ad protection')) + '">'
+        + '<label>' + esc(t('Ad protection')) + ' <select data-ag aria-label="' + esc(t('Ad protection')) + '">'
         + '<option value="">' + esc(t('Set…')) + '</option>'
         + '<option value="off">' + esc(t('Off')) + '</option>'
         + '<option value="balanced">' + esc(t('Balanced — bots & crawlers')) + '</option>'
@@ -53,7 +64,7 @@
         + '<span class="sep"></span>'
         + btn('archive', t('Archive'), 'danger') + btn('restore', t('Restore'))
         + '<span style="flex:1"></span>'
-        + btn('csv', '⇩ ' + t('Export CSV'));
+        + btn('csv', t('Export CSV'));
       el.querySelector('[data-ag]').addEventListener('change', function (e) {
         var v = e.target.value; e.target.value = '';
         if (!v) return;
@@ -62,7 +73,7 @@
       });
       refresh();
     }
-    function btn(act, label, cls) { return '<button type="button" class="p2-btn sm' + (cls ? ' ' + cls : '') + '" data-bulk="' + act + '">' + esc(label) + '</button>'; }
+    function btn(act, label, cls) { return '<button type="button" class="p2-btn sm' + (cls ? ' ' + cls : '') + '" data-bulk="' + act + '">' + icon(act) + esc(label) + '</button>'; }
 
     function refresh() {
       var n = ids().length;

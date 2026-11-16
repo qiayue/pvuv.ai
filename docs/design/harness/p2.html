@@ -9,14 +9,18 @@
      workers/console/public). Query: ?show=drawer|cards|heatmap|bulk&lang=zh -->
 <link rel="stylesheet" href="/console.css">
 <style>
-  body { background: radial-gradient(1200px 600px at 70% -200px, #1b1640 0%, #08090c 60%) fixed; margin: 0; color: #eceef3; }
-  .h-wrap { padding: 22px 26px; }
-  .h-title { font-size: 13px; color: #7d8390; margin: 0 0 14px; }
-  .h-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #1c1f26; border-radius: 12px; overflow: hidden;
-    background: linear-gradient(180deg,#12141a,#0e1014); font-size: 13px; margin-top: 12px; }
-  .h-table th { text-align: left; font-weight: 500; color: #7d8390; background: #101217; padding: 9px 12px; }
-  .h-table td { padding: 9px 12px; border-top: 1px solid #15171d; }
-  .h-table tr.sel td { background: #15142a; }
+  /* the contract's light tokens, as the overview stream's console.css will declare them */
+  :root { color-scheme: light; --bg:#f7f7f8; --surface:#fff; --line:#e7e7ea; --line-soft:#f0f0f2; --text:#18181b; --text-2:#52525b; --mut:#8a8a93;
+    --accent:#3b82f6; --accent-soft:#eaf1fe; --track:#ececef; --cta:#5bc477; --cta-text:#0b2e17;
+    --up:#16a34a; --down:#dc2626; --warn:#d97706; --radius:12px; --radius-sm:8px; }
+  body { background: var(--bg); margin: 0; color: var(--text); font: 14px/1.45 Inter, -apple-system, "PingFang SC", sans-serif; }
+  .h-wrap { padding: 26px 32px; }
+  .h-title { font-size: 13px; color: var(--mut); margin: 0 0 14px; }
+  .h-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    background: #fff; font-size: 13.5px; margin-top: 12px; }
+  .h-table th { text-align: left; font-weight: 500; color: var(--mut); padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .h-table td { padding: 11px 14px; border-bottom: 1px solid var(--line-soft); }
+  .h-table tr.sel td { background: #f5f8fe; }
   .h-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 </style>
 </head>

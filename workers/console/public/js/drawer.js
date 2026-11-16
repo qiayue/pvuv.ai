@@ -30,39 +30,48 @@
     function fill(s, p) { return String(s).replace(/\{(\w+)\}/g, function (m, k) { return p && p[k] != null ? p[k] : m; }); }
     function num(n) { return n == null || isNaN(n) ? '–' : Number(n).toLocaleString('en-US'); }
     function pct(n, d) { return n == null || isNaN(n) ? '–' : Number(n).toFixed(d == null ? 1 : d) + '%'; }
-    var COLORS = ['#7c6cff', '#22b07d', '#e0663f', '#2f8cf0', '#d64f8a', '#c9a227', '#11a3a3', '#8a5cf6', '#5e6ad2'];
-    function hash(s) { var h = 0; s = String(s || ''); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
+    /** neutral bordered initial tile (contract: no coloured avatars) */
     function avatar(site, cls) {
       var name = (site && (site.name || (site.domains || [])[0])) || '?';
       var ch = Array.from(String(name).trim())[0] || '?';
-      return '<span class="p2-av' + (cls ? ' ' + cls : '') + '" style="background:' + COLORS[hash(site && site.site_id || name) % COLORS.length] + '" aria-hidden="true">' + esc(ch.toUpperCase()) + '</span>';
+      return '<span class="p2-av' + (cls ? ' ' + cls : '') + '" aria-hidden="true">' + esc(ch.toUpperCase()) + '</span>';
     }
     var STAGE = { setup: 'Awaiting install', awaiting_crawl: 'Awaiting crawl', crawled: 'Crawled', organic: 'Organic traffic', growing: 'Stable growth', declining: 'Declining', archived: 'Archived' };
     function stageChip(ctx, stage) {
       if (!stage) return '';
-      return '<span class="p2-chip s-' + esc(stage) + '">' + esc(tr(ctx, STAGE[stage] || stage)) + '</span>';
+      return '<span class="p2-stage s-' + esc(stage) + '"><i></i>' + esc(tr(ctx, STAGE[stage] || stage)) + '</span>';
     }
     function delta(d) {
       if (d == null || isNaN(d)) return '';
       var up = d >= 0;
-      return '<small class="' + (up ? 'p2-up' : 'p2-dn') + '">' + (up ? '▲ ' : '▼ ') + Math.abs(d).toFixed(Math.abs(d) < 10 ? 1 : 0).replace(/\.0$/, '') + '%</small>';
+      return '<small class="' + (up ? 'p2-up' : 'p2-dn') + '">' + (up ? '+' : '−') + Math.abs(d).toFixed(Math.abs(d) < 10 ? 1 : 0).replace(/\.0$/, '') + '%</small>';
     }
-    var gid = 0;
-    /** gradient area sparkline; values may contain null (drawn as 0) */
-    function area(vals, o) {
+    /** thin 1.5px line sparkline, no fill; red when the period's change is negative */
+    function spark(vals, o) {
       o = o || {};
-      var w = o.w || 300, h = o.h || 44, c = o.color || '#9a8cff';
+      var w = o.w || 300, h = o.h || 36;
       var v = (vals || []).map(function (x) { return x == null || isNaN(x) ? 0 : Number(x); });
       if (v.length < 2) v = [0, 0].concat(v).slice(-2);
       var max = o.max != null ? o.max : Math.max.apply(null, v.concat([1]));
-      var pts = v.map(function (x, i) { return [(i / (v.length - 1) * w), (h - 2 - (max ? x / max : 0) * (h - 6))]; });
-      var line = pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
-      var id = 'p2g' + (++gid);
+      var line = v.map(function (x, i) { return (i / (v.length - 1) * w).toFixed(1) + ',' + (h - 2 - (max ? x / max : 0) * (h - 5)).toFixed(1); }).join(' ');
       return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="' + esc(o.label || '') + '">'
-        + '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + c + '" stop-opacity=".42"/><stop offset="1" stop-color="' + c + '" stop-opacity="0"/></linearGradient></defs>'
-        + '<polygon fill="url(#' + id + ')" points="0,' + h + ' ' + line + ' ' + w + ',' + h + '"/>'
-        + '<polyline fill="none" stroke="' + c + '" stroke-width="1.6" vector-effect="non-scaling-stroke" points="' + line + '"/></svg>';
+        + '<polyline fill="none" stroke="' + (o.neg ? 'var(--p2-down)' : 'var(--p2-accent)') + '" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" points="' + line + '"/></svg>';
     }
+    var ICONS = {
+      x: '<path d="M6 6l12 12M18 6L6 18"/>',
+      star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+      alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.2v.1"/>',
+      tag: '<path d="M3.5 12.5V4.5h8l9 9-8 8z"/><path d="M8 8.5v.1"/>',
+      archive: '<path d="M4 5h16v4H4z"/><path d="M5.5 9v10h13V9M10 13h4"/>',
+      restore: '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"/><path d="M4 4v4.5h4.5"/>',
+      download: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>',
+      shield: '<path d="M12 3.5l7 3v5.5c0 4.2-3 7.4-7 8.5-4-1.1-7-4.3-7-8.5V6.5z"/>',
+      arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+      eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+      search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+      spark: '<path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/>',
+    };
+    function icon(n) { return '<svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[n] || '') + '</svg>'; }
     function toast(msg, isErr) {
       var el = document.createElement('div');
       el.className = 'p2-toast' + (isErr ? ' err' : '');
@@ -84,7 +93,7 @@
         });
       });
     }
-    return { tr: tr, tk: tk, esc: esc, fill: fill, num: num, pct: pct, avatar: avatar, stageChip: stageChip, delta: delta, area: area, toast: toast, api: api, STAGE: STAGE };
+    return { tr: tr, tk: tk, esc: esc, fill: fill, num: num, pct: pct, avatar: avatar, stageChip: stageChip, delta: delta, spark: spark, icon: icon, toast: toast, api: api, STAGE: STAGE };
   }
   var K = window.__pvuvP2Kit || (window.__pvuvP2Kit = makeKit());
 
@@ -173,28 +182,28 @@
     }).join('');
     var att = sortedAttention(s).map(function (a, i) {
       var f = fixes(ctx, a, s);
-      return '<div class="p2-callout ' + esc(a.severity || 'normal') + '" role="alert"><div class="msg"><span aria-hidden="true">' + (a.severity === 'normal' ? 'ℹ' : '⚠') + '</span><span>' + esc(attnText(ctx, a, s)) + '</span></div>'
+      return '<div class="p2-callout ' + esc(a.severity || 'normal') + '" role="alert"><div class="msg">' + K.icon('alert') + '<span>' + esc(attnText(ctx, a, s)) + '</span></div>'
         + (f.length ? '<div class="acts">' + f.map(function (x, j) {
           return x.href
-            ? '<a class="p2-btn sm' + (x.primary ? ' primary' : '') + '" href="' + esc(x.href) + '">' + esc(x.label) + '</a>'
-            : '<button type="button" class="p2-btn sm' + (x.primary ? ' primary' : '') + '" data-fix="' + esc(x.run) + '" data-i="' + i + '-' + j + '">' + esc(x.label) + '</button>';
+            ? '<a class="p2-btn sm' + (x.primary ? ' strong' : '') + '" href="' + esc(x.href) + '">' + esc(x.label) + '</a>'
+            : '<button type="button" class="p2-btn sm' + (x.primary ? ' strong' : '') + '" data-fix="' + esc(x.run) + '" data-i="' + i + '-' + j + '">' + esc(x.label) + '</button>';
         }).join('') + '</div>' : '') + '</div>';
     }).join('');
     var archived = s.status === 'archived';
     root.innerHTML =
       '<div class="p2-dr-head">' + K.avatar(s, 'lg')
-      + '<div style="min-width:0;flex:1"><h2 id="p2-dr-title">' + (s.starred ? '<span class="p2-star" aria-label="' + esc(t('Starred')) + '">★</span>' : '') + esc(s.name || s.site_id) + ' ' + K.stageChip(ctx, archived ? 'archived' : s.stage) + '</h2>'
+      + '<div style="min-width:0;flex:1"><h2 id="p2-dr-title">' + esc(s.name || s.site_id) + (s.starred ? ' <span class="p2-star" aria-label="' + esc(t('Starred')) + '">★</span>' : '') + ' ' + K.stageChip(ctx, archived ? 'archived' : s.stage) + '</h2>'
       + '<div class="sub">' + esc(domain) + (s.days_live != null ? ' · ' + esc(K.fill(t('live {n} days'), { n: s.days_live })) : '') + '</div></div>'
-      + '<button type="button" class="p2-x" data-close aria-label="' + esc(t('Close')) + '">×</button></div>'
+      + '<button type="button" class="p2-x" data-close aria-label="' + esc(t('Close')) + '">' + K.icon('x') + '</button></div>'
       + '<div class="p2-dr-body">'
       + att
       + '<div class="p2-kpis">'
-      + kpi(t('Clean visitors'), K.num(s.uv), K.delta(s.delta_pct))
-      + kpi(t('Organic search'), K.num(s.organic_uv), '')
-      + kpi(t('From AI assistants'), K.num(s.ai_uv), '')
+      + kpi('eye', t('Clean visitors'), K.num(s.uv), K.delta(s.delta_pct))
+      + kpi('search', t('Organic search'), K.num(s.organic_uv), '')
+      + kpi('spark', t('From AI assistants'), K.num(s.ai_uv), '')
       + '</div>'
       + '<section class="p2-sec"><h3>' + esc(t('Clean visitors vs invalid traffic · 30 days')) + '</h3>'
-      + '<div class="p2-legend"><span><i style="background:#8b7cff"></i>' + esc(t('Clean visitors')) + '</span><span><i style="background:#ff7a85"></i>' + esc(t('Invalid traffic share')) + '</span></div>'
+      + '<div class="p2-legend"><span><i style="background:var(--p2-accent)"></i>' + esc(t('Clean visitors')) + '</span><span><i style="background:var(--p2-down)"></i>' + esc(t('Invalid traffic share')) + '</span></div>'
       + '<div class="p2-chart" id="p2-dr-chart"><div class="p2-skel" style="height:150px"></div></div></section>'
       + '<section class="p2-sec"><h3>' + esc(t('Search-engine crawls')) + ' <span class="p2-mut">' + esc(t('last 7 days')) + '</span></h3><div id="p2-dr-crawl"><div class="p2-skel"></div></div></section>'
       + '<section class="p2-sec"><h3>' + esc(t('Experiments')) + '</h3><div id="p2-dr-exp"><div class="p2-skel"></div></div></section>'
@@ -202,12 +211,12 @@
       + '<input type="text" id="p2-dr-tag" maxlength="32" placeholder="' + esc(t('Add tag…')) + '" aria-label="' + esc(t('Add tag')) + '"></div></section>'
       + '</div>'
       + '<div class="p2-dr-foot">'
-      + '<a class="p2-btn primary" href="/site.html?id=' + encodeURIComponent(s.site_id) + '">' + esc(t('Open full report')) + ' ↵</a>'
-      + '<button type="button" class="p2-btn" data-act="star" aria-pressed="' + (s.starred ? 'true' : 'false') + '">' + (s.starred ? '★ ' + esc(t('Starred')) : '☆ ' + esc(t('Star'))) + '</button>'
-      + '<button type="button" class="p2-btn' + (archived ? '' : ' danger') + '" data-act="' + (archived ? 'restore' : 'archive') + '">' + esc(t(archived ? 'Restore' : 'Archive')) + '</button>'
+      + '<a class="p2-btn primary" href="/site.html?id=' + encodeURIComponent(s.site_id) + '">' + esc(t('Open full report')) + K.icon('arrow') + '</a>'
+      + '<button type="button" class="p2-btn" data-act="star" aria-pressed="' + (s.starred ? 'true' : 'false') + '">' + K.icon('star') + esc(t(s.starred ? 'Starred' : 'Star')) + '</button>'
+      + '<button type="button" class="p2-btn' + (archived ? '' : ' danger') + '" data-act="' + (archived ? 'restore' : 'archive') + '">' + K.icon(archived ? 'restore' : 'archive') + esc(t(archived ? 'Restore' : 'Archive')) + '</button>'
       + '</div>';
   }
-  function kpi(l, n, d) { return '<div class="p2-kpi"><div class="l">' + K.esc(l) + '</div><div class="n">' + n + d + '</div></div>'; }
+  function kpi(ic, l, n, d) { return '<div class="p2-kpi"><div class="l">' + K.icon(ic) + K.esc(l) + d + '</div><div class="n">' + n + '</div></div>'; }
 
   // ── async sections ────────────────────────────────────────────────────────
   function loadDetails(my) {
@@ -249,18 +258,18 @@
     });
     var grid = [0, .5, 1].map(function (f) {
       var yy = (6 + ih - f * ih).toFixed(1);
-      return '<line x1="0" x2="' + (W - padR) + '" y1="' + yy + '" y2="' + yy + '" stroke="#1c1f26" stroke-dasharray="2 3"/>'
-        + '<text x="' + (W - padR + 4) + '" y="' + (Number(yy) + 3) + '" fill="#5f6672" font-size="9">' + (f * 100) + '%</text>';
+      return '<line x1="0" x2="' + (W - padR) + '" y1="' + yy + '" y2="' + yy + '" stroke="#ececef" stroke-dasharray="2 3"/>'
+        + '<text x="' + (W - padR + 4) + '" y="' + (Number(yy) + 3) + '" fill="#8a8a93" font-size="9">' + (f * 100) + '%</text>';
     }).join('');
-    var lbl = function (i) { return '<text x="' + x(i).toFixed(1) + '" y="' + (H - 4) + '" fill="#5f6672" font-size="9" text-anchor="' + (i === 0 ? 'start' : i === uv.length - 1 ? 'end' : 'middle') + '">' + K.esc(/^\d{4}-/.test(days[i]) ? days[i].slice(5) : days[i]) + '</text>'; };
+    var lbl = function (i) { return '<text x="' + x(i).toFixed(1) + '" y="' + (H - 4) + '" fill="#8a8a93" font-size="9" text-anchor="' + (i === 0 ? 'start' : i === uv.length - 1 ? 'end' : 'middle') + '">' + K.esc(/^\d{4}-/.test(days[i]) ? days[i].slice(5) : days[i]) + '</text>'; };
     el.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + K.esc(K.tr(ctx, 'Clean visitors vs invalid traffic · 30 days')) + '">'
-      + '<defs><linearGradient id="p2drg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b7cff" stop-opacity=".4"/><stop offset="1" stop-color="#8b7cff" stop-opacity="0"/></linearGradient></defs>'
+      + '<defs><linearGradient id="p2drg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b82f6" stop-opacity=".1"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs>'
       + grid
       + '<polygon fill="url(#p2drg)" points="0,' + (6 + ih) + ' ' + line + ' ' + x(uv.length - 1).toFixed(1) + ',' + (6 + ih) + '"/>'
-      + '<polyline fill="none" stroke="#9a8cff" stroke-width="1.8" points="' + line + '"/>'
-      + (ivtPath ? '<path d="' + ivtPath + '" fill="none" stroke="#ff7a85" stroke-width="1.8"/>' : '')
+      + '<polyline fill="none" stroke="#3b82f6" stroke-width="1.6" points="' + line + '"/>'
+      + (ivtPath ? '<path d="' + ivtPath + '" fill="none" stroke="#dc2626" stroke-width="1.5"/>' : '')
       + lbl(0) + lbl(Math.floor((uv.length - 1) / 2)) + lbl(uv.length - 1)
-      + '<text x="2" y="14" fill="#7d8390" font-size="10">' + K.esc(K.num(max)) + '</text>'
+      + '<text x="2" y="14" fill="#8a8a93" font-size="10">' + K.esc(K.num(max)) + '</text>'
       + '</svg>';
   }
 

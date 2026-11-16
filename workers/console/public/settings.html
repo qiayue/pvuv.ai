@@ -6,43 +6,49 @@
 <title>Settings — pvuv.ai</title>
 <link rel="stylesheet" href="/console.css">
 <style>
-  .brand img.logo { height: 28px; display: block; }
-  .p2-set .back { color: var(--p2-mut); font-size: 13px; text-decoration: none; }
-  .p2-set .back:hover { color: var(--p2-text); }
-  .p2-set code { font-family: var(--mono); }
-  .p2-mono { font-family: var(--mono); color: #c7cdd8; }
+  /* contract light tokens (docs/design/portfolio-ui.md §1), declared here so
+   * the page renders correctly whatever console.css's :root holds */
+  body.p2-set {
+    --bg:#f7f7f8; --surface:#fff; --line:#e7e7ea; --line-soft:#f0f0f2;
+    --text:#18181b; --text-2:#52525b; --mut:#8a8a93;
+    --accent:#3b82f6; --accent-soft:#eaf1fe; --track:#ececef;
+    --cta:#5bc477; --cta-text:#0b2e17;
+    --up:#16a34a; --down:#dc2626; --warn:#d97706;
+    --radius:12px; --radius-sm:8px;
+  }
 </style>
 </head>
 <body class="p2-set">
 <script src="/i18n.js"></script>
-<header>
-  <span class="brand" id="brand">pvuv.ai</span>
-  <div class="hdr-right">
-    <a href="/sites.html" class="back">← <span data-i18n="All sites">All sites</span></a>
-    <select id="lang" aria-label="Language"></select>
-    <a href="/health.html" class="btn" data-i18n="Self-check">Self-check</a>
-    <button id="logout" class="btn" data-i18n="Sign out">Sign out</button>
-  </div>
-</header>
 <datalist id="tzlist"></datalist>
-<div class="p2-set-wrap">
-  <nav class="p2-set-nav" id="setnav" aria-label="Settings sections">
-    <h4 data-i18n="Instance">Instance</h4>
-    <a href="#general" data-sec="general" data-i18n="General">General</a>
-    <a href="#portfolio" data-sec="portfolio" data-i18n="Portfolio thresholds">Portfolio thresholds</a>
-    <h4 data-i18n="Access">Access</h4>
-    <a href="#tokens" data-sec="tokens" data-i18n="API tokens">API tokens</a>
-    <a href="#templates" data-sec="templates" data-i18n="Site templates">Site templates</a>
-    <h4 data-i18n="Data">Data</h4>
-    <a href="#botdir" data-sec="botdir" data-i18n="Crawler directory">Crawler directory</a>
-    <a href="#cfedge" data-sec="cfedge" data-i18n="Cloudflare edge requests">Cloudflare edge requests</a>
-    <a href="#storage" data-sec="storage" data-i18n="Storage & retention">Storage &amp; retention</a>
-    <h4 data-i18n="AI">AI</h4>
-    <a href="#ai" data-sec="ai" data-i18n="AI analysis reports">AI analysis reports</a>
-  </nav>
+<div class="p2-set-app">
+  <aside class="p2-set-side">
+    <div class="p2-set-logo" id="brand"><span class="mark">pv</span>pvuv</div>
+    <nav class="p2-set-nav" id="setnav" aria-label="Settings sections">
+      <a href="/sites.html" class="back"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg><span data-i18n="All sites">All sites</span></a>
+      <h5 data-i18n="Instance">Instance</h5>
+      <a href="#general" data-sec="general"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg><span data-i18n="General">General</span></a>
+      <a href="#portfolio" data-sec="portfolio"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span data-i18n="Portfolio thresholds">Portfolio thresholds</span></a>
+      <h5 data-i18n="Access">Access</h5>
+      <a href="#tokens" data-sec="tokens"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg><span data-i18n="API tokens">API tokens</span></a>
+      <a href="#templates" data-sec="templates"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 9v11"/></svg><span data-i18n="Site templates">Site templates</span></a>
+      <h5 data-i18n="Data">Data</h5>
+      <a href="#botdir" data-sec="botdir"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span data-i18n="Crawler directory">Crawler directory</span></a>
+      <a href="#cfedge" data-sec="cfedge"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .5-8 6 6 0 0 0-11.6 1.5A3.3 3.3 0 0 0 7 18z"/></svg><span data-i18n="Cloudflare edge requests">Cloudflare edge requests</span></a>
+      <a href="#storage" data-sec="storage"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg><span data-i18n="Storage & retention">Storage &amp; retention</span></a>
+      <h5 data-i18n="AI">AI</h5>
+      <a href="#ai" data-sec="ai"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/></svg><span data-i18n="AI analysis reports">AI analysis reports</span></a>
+    </nav>
+    <div class="p2-set-foot">
+      <select id="lang" aria-label="Language"></select>
+      <a href="/health.html" class="p2-btn sm" data-i18n="Self-check">Self-check</a>
+      <button id="logout" type="button" class="p2-btn sm" data-i18n="Sign out">Sign out</button>
+    </div>
+  </aside>
 
   <main class="p2-set-main">
     <h1 data-i18n="Settings">Settings</h1>
+    <p class="lead" data-i18n="settings-lead">Instance-wide settings: access, data sources and the thresholds the sites overview uses.</p>
 
     <!-- ── General: branding + default timezone ─────────────────────────── -->
     <section class="p2-set-sec" id="sec-general" data-sec="general">
@@ -74,20 +80,20 @@
       <form class="p2-form" id="thrSettings" style="grid-template-columns:1fr">
         <div class="p2-thr">
           <div class="card">
-            <div class="t"><span class="p2-chip s-growing" data-i18n="Stable growth">Stable growth</span></div>
+            <div class="t"><span class="p2-stage s-growing"><i></i><span data-i18n="Stable growth">Stable growth</span></span></div>
             <div class="d" data-i18n="thr-growth-help">A site is growing when it had at least this many clean visitors in the last 7 days and did not drop more than the allowed dip vs the 7 days before.</div>
-            <div class="row"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="Clean visitors in 7 days ≥">Clean visitors in 7 days ≥</span><input id="thrGrowthUv" type="number" min="1" step="1" required></label></div>
-            <div class="row" style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="7-day change ≥ (%)">7-day change ≥ (%)</span><input id="thrGrowthDelta" type="number" min="-100" max="1000" step="1" required></label></div>
+            <div class="row"><label><span style="flex:1" data-i18n="Clean visitors in 7 days ≥">Clean visitors in 7 days ≥</span><input id="thrGrowthUv" type="number" min="1" step="1" required></label></div>
+            <div class="row" style="margin-top:8px"><label><span style="flex:1" data-i18n="7-day change ≥ (%)">7-day change ≥ (%)</span><input id="thrGrowthDelta" type="number" min="-100" max="1000" step="1" required></label></div>
           </div>
           <div class="card">
-            <div class="t"><span class="p2-chip s-declining" data-i18n="Declining">Declining</span></div>
+            <div class="t"><span class="p2-stage s-declining"><i></i><span data-i18n="Declining">Declining</span></span></div>
             <div class="d" data-i18n="thr-decline-help">A site is declining when its clean visitors over the last 28 days fell by more than this share vs the 28 days before. Takes precedence over growing.</div>
-            <div class="row"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="28-day drop > (%)">28-day drop &gt; (%)</span><input id="thrDecline" type="number" min="1" max="100" step="1" required></label></div>
+            <div class="row"><label><span style="flex:1" data-i18n="28-day drop > (%)">28-day drop &gt; (%)</span><input id="thrDecline" type="number" min="1" max="100" step="1" required></label></div>
           </div>
           <div class="card">
-            <div class="t"><span class="p2-chip s-declining" style="background:#2a1418" data-i18n="High invalid traffic">High invalid traffic</span></div>
+            <div class="t"><span class="p2-stage s-declining"><i style="background:var(--p2-warn)"></i><span data-i18n="High invalid traffic">High invalid traffic</span></span></div>
             <div class="d" data-i18n="thr-ivt-help">Raise an attention item when the invalid share (bots + suspect traffic) of a site is above this percentage. Critical while ad protection is off.</div>
-            <div class="row"><label style="display:flex;align-items:center;gap:8px;width:100%"><span style="flex:1" data-i18n="Invalid traffic > (%)">Invalid traffic &gt; (%)</span><input id="thrIvt" type="number" min="1" max="100" step="0.5" required></label></div>
+            <div class="row"><label><span style="flex:1" data-i18n="Invalid traffic > (%)">Invalid traffic &gt; (%)</span><input id="thrIvt" type="number" min="1" max="100" step="0.5" required></label></div>
           </div>
         </div>
         <p class="msg" id="thrMsg"></p>
@@ -108,7 +114,7 @@
           <select id="tokPermission"><option value="read" data-i18n="Read only">Read only</option><option value="write" data-i18n="Read &amp; manage sites">Read &amp; manage sites</option></select></label></div>
         <p class="msg" id="tokMsg"></p>
         <div class="p2-box ok" id="tokNew" hidden>
-          <div style="font-size:12px;color:#6fe0a3;margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
+          <div style="font-size:12.5px;color:var(--p2-up);margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
           <code id="tokValue" class="p2-mono" style="word-break:break-all"></code>
         </div>
         <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Create token">Create token</button></div>
@@ -247,7 +253,7 @@ const loaded = new Set();
 function show(sec, force) {
   if (!LOADERS[sec]) sec = 'general';
   document.querySelectorAll('.p2-set-sec').forEach((s) => { s.hidden = s.dataset.sec !== sec; });
-  document.querySelectorAll('#setnav a').forEach((a) => {
+  document.querySelectorAll('#setnav a[data-sec]').forEach((a) => {
     const on = a.dataset.sec === sec;
     a.classList.toggle('on', on);
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
@@ -260,7 +266,7 @@ window.addEventListener('hashchange', () => show(location.hash.slice(1)));
 function applyBranding(b) {
   const name = (b.name || '').trim() || 'pvuv.ai';
   const logo = b.logo_light || b.logo_dark;
-  $('brand').innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : esc(name);
+  $('brand').innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : `<span class="mark">${esc(Array.from(name)[0].toLowerCase())}</span>${esc(name)}`;
   document.title = t('Settings') + ' — ' + name;
   if (b.favicon) {
     let link = document.querySelector('link[rel="icon"]');
@@ -449,7 +455,7 @@ async function loadBotdir() {
     const d = await (await guard(await fetch('/api/settings/botdir'))).json();
     if (!d.imported) { box.textContent = t('No directory imported — crawler traffic is not categorised.'); return; }
     const cats = Object.entries(d.categories || {}).sort((a, b) => b[1] - a[1]);
-    box.innerHTML = `<b style="color:var(--p2-text)">${esc(String(d.count))}</b> ${te('bots imported')}`
+    box.innerHTML = `<b>${esc(String(d.count))}</b> ${te('bots imported')}`
       + (d.skipped ? ` · ${esc(String(d.skipped))} ${te('skipped')}` : '')
       + ` · ${te('updated')} ${esc(new Date(d.updated_at).toISOString().slice(0, 16).replace('T', ' '))}<br>`
       + cats.map(([c, n]) => `${esc(c)} <span class="p2-mono">${esc(String(n))}</span>`).join(' · ');
@@ -487,7 +493,7 @@ function renderCfState(d) {
   if (!s) { box.textContent = t('Saved. The first pull runs with tonight’s daily job.'); return; }
   const when = esc(new Date(s.checked_at).toISOString().slice(0, 16).replace('T', ' '));
   if (s.error) {
-    box.innerHTML = `<span style="color:#ff8a8a">${te('Last check failed')} · ${when}</span><br><span class="p2-mono">${esc(s.error)}</span>`;
+    box.innerHTML = `<span style="color:var(--p2-down)">${te('Last check failed')} · ${when}</span><br><span class="p2-mono">${esc(s.error)}</span>`;
     return;
   }
   box.innerHTML = `${te('Last pull')} ${when} · <b>${esc(String(s.days_written ?? 0))}</b> ${esc(window.PVI18N.tk('site-days', 'site-days'))}`
