@@ -132,6 +132,10 @@ export interface EventRow {
   /** crawler category from the owner-imported bot directory (§6.6) — purely
    *  descriptive, never feeds scoring or the ad-guard decision */
   bot_category: string | null;
+  /** crawler engine id from the built-in matcher (shared/crawlers.ts), e.g.
+   *  'googlebot' — the crawler/indexing metric only (migration 0024). NULL for
+   *  non-crawler traffic; never feeds scoring, verdicts or PV/UV. */
+  crawler_engine: string | null;
   /** Core Web Vitals (first behavior carrier of the initial load; NULL elsewhere) */
   lcp_ms: number | null;
   cls: number | null;
@@ -170,7 +174,7 @@ export const EVENT_COLUMNS = [
   'bot_score', 'verdict', 'bot_flags', 'score_stage', 'bot_category',
   'lcp_ms', 'cls', 'inp_ms', 'fcp_ms', 'ttfb_ms',
   'err_count', 'rage_count', 'dead_count',
-  'tls_fp', 'tcp_rtt', 'http_protocol',
+  'tls_fp', 'tcp_rtt', 'http_protocol', 'crawler_engine',
   'ts', 'created_at',
 ] as const satisfies readonly (keyof EventRow)[];
 
@@ -262,6 +266,9 @@ export const EVENT_LATE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = 
   { name: 'http_protocol', ddl: 'TEXT' },
   // pointer/keyboard interaction, split out of had_interaction — migration 0021
   { name: 'had_pointer', ddl: 'INTEGER' },
+  // crawler engine for the crawler/indexing metric — migration 0024 (which,
+  // deliberately, does not ALTER any partition itself: this list does it)
+  { name: 'crawler_engine', ddl: 'TEXT' },
 ];
 
 /** Minimal structural shape of what this helper needs from D1, so shared/ does
@@ -322,6 +329,7 @@ export function eventsTableDDL(suffix: string): string[] {
       lcp_ms INTEGER, cls REAL, inp_ms INTEGER, fcp_ms INTEGER, ttfb_ms INTEGER,
       err_count INTEGER, rage_count INTEGER, dead_count INTEGER,
       tls_fp TEXT, tcp_rtt INTEGER, http_protocol TEXT,
+      crawler_engine TEXT,
       ts INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`,

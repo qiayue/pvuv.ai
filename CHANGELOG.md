@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 breaking changes, always with a D1 migration and upgrade notes in
 [`DEPLOY.md`](https://github.com/qiayue/pvuv.ai/blob/main/DEPLOY.md)).
 
+## [Unreleased]
+
+### Added
+- Crawler / indexing signals, a separate metric for newly launched sites: has
+  Googlebot (Bing, Yandex, Baidu, Applebot, …) come yet, how often, and which
+  pages. A built-in engine matcher (`shared/crawlers.ts`) classifies crawlers
+  into engines and kinds (`search` / `ai` / `ads` / `seo` / `other`;
+  AdsBot-Google and Mediapartners-Google are `ads`), preferring the imported bot
+  directory's category when there is one. Durable per-engine first/last-seen
+  milestones and a daily per-engine rollup are filled by the hourly rollup
+  (beacon) and the daily Cloudflare edge pull (non-JS crawlers, optional), with
+  a one-time backfill. New `GET /v1/sites/{id}/crawlers`, console "Crawlers"
+  tab, MCP `get_crawlers`, CLI `pvuv crawlers`, and `first_search_crawl_at` on
+  every `/v1/sites` item. Never feeds PV/UV, scoring, verdicts or ad protection.
+- Migration `0024_crawler_milestones.sql`. Event partitions gain a
+  `crawler_engine` column through the existing automatic partition repair.
+  Order-independent: before the migration lands the crawler step logs and
+  skips, and the endpoint answers `available: false`.
+
 ## [0.1.0] — 2026-11-03
 
 First open-source release: a self-hosted, Cloudflare Workers + D1 deployment of

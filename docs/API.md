@@ -50,7 +50,7 @@ that is signed in to the console can call it directly for that owner's sites.
 
 | Endpoint | Returns | Parameters |
 |---|---|---|
-| `GET /v1/sites` | sites this token can read (`site_id`, `name`, `domains`, `timezone`, `created_at`) — **call first**, ids are not guessable | — |
+| `GET /v1/sites` | sites this token can read (`site_id`, `name`, `domains`, `timezone`, `created_at`, `first_search_crawl_at`) — **call first**, ids are not guessable | — |
 | `GET /v1/sites/summary` | per-site totals for every site in scope, in one pass (`uv_approx: true` when visitors are summed per day) | `period` |
 | `GET /v1/sites/{id}/overview` | pageviews, visitors, sessions, both bounce rates, dwell, visit duration, verdict split, conversions, revenue | `period` `filters` |
 | `GET /v1/sites/{id}/realtime` | `{window_minutes, online, pageviews, minutes[]}` for the last 30 min; bot/crawler traffic excluded; always live (ignores `period`) | — |
@@ -62,6 +62,7 @@ that is signed in to the console can call it directly for that owner's sites.
 | `GET /v1/sites/{id}/alerts` | rule checks, their ratios and thresholds (`stats`, `thresholds`, `muted`) | `period` `filters` |
 | `GET /v1/sites/{id}/adguard` | per-tier block/false-positive estimates, block reasons | `period` |
 | `GET /v1/sites/{id}/edge` | Cloudflare edge requests vs reported pageviews — the traffic that never ran JS | `period` |
+| `GET /v1/sites/{id}/crawlers` | crawler / indexing signals per engine (first/last seen, hits, daily series) + top crawled pages — a separate metric, see below | `period` `limit` (top pages, default 20, max 100) |
 | `GET /v1/sites/{id}/traffic` | individual suspicious visitors with their evidence | `period` `verdict` `min_score` `limit` (default 50, max 1000) `filters` |
 | `GET /v1/sites/{id}/anomalies` | the 40 most recent pending baseline anomaly reports (`day`, `dimension`, `baseline`, `actual`, `deviation`, `kind`, `message`, `top_sig`, `unit`); ignores `period` | — |
 | `GET /v1/sites/{id}/funnels` | saved funnels: `{funnels:[{funnel_id, name, steps, created_at, updated_at}]}` | — |
@@ -114,6 +115,71 @@ edge counts are still accumulating and are deliberately excluded, so `days` can
 be shorter than the requested `period`. See
 [DEPLOY.md → Cloudflare edge requests](../DEPLOY.md#cloudflare-edge-requests-optional-advanced).
 
+### Crawler / indexing signals
+
+`GET /v1/sites/{id}/crawlers` answers the first question for a newly launched
+site: has Googlebot (Bing, …) come yet, how often, and which pages. It is a
+**separate metric** — nothing in it counts toward PV/UV, scoring, verdicts or
+ad protection, and it reads only its own tables.
+
+```json
+{
+  "site_id": "3exbuw7w",
+  "period": { "start": "2026-10-18", "end": "2026-11-16" },
+  "available": true,
+  "first_search_crawl_at": 1762905600000,
+  "sources": {
+    "beacon": { "available": true, "note": "…JS-rendering crawlers only…" },
+    "edge":   { "available": false, "note": "…no Cloudflare API token…" }
+  },
+  "engines": [
+    {
+      "engine": "googlebot", "label": "Googlebot", "kind": "search",
+      "first_seen_at": 1762905600000, "first_source": "beacon", "first_path": "/",
+      "last_seen_at": 1763251200000,
+      "hits": 42, "beacon_hits": 42, "edge_hits": 0, "pages": 17,
+      "days": [ { "day": "2026-11-12", "beacon": 5, "edge": 0 } ]
+    }
+  ],
+  "top_pages": {
+    "source": "beacon", "note": "Beacon data only: …",
+    "pages": [ { "path": "/", "hits": 9, "engines": { "googlebot": 7, "bingbot": 2 } } ]
+  }
+}
+```
+
+- `engine` — a built-in id: `googlebot`, `bingbot`, `yandex`, `baidu`,
+  `applebot`, `duckduckgo`, `sogou`, `so360`, `shenma`, `petal`, `yahoo`,
+  `naver`, `seznam`, `google_adsbot` / `google_adsense` / `bing_ads` (kind
+  `ads`), AI crawlers (`openai`, `anthropic`, `perplexity`, `bytespider`,
+  `commoncrawl`, `meta_ai`, `amazonbot`, …), SEO tools (`ahrefs`, `semrush`, …),
+  `social`, `google_inspection` (Search Console's URL inspection — not counted
+  as a search crawl). A crawler the list does not know is `other_<kind>`.
+- `kind` — `search` `ai` `ads` `seo` `other`. When a bot directory is imported
+  (console → settings) its category decides the kind; the built-in list is the
+  fallback. Google's and Bing's ads crawlers are always `ads`.
+- `first_seen_at` / `last_seen_at` are **all-time** and durable — they survive
+  raw-event retention. Every engine ever seen is listed, even with no hits in
+  `period`. An edge-sourced time is day-granular (start of that local day).
+- `hits` counts are in `period`. Both sources can see the same fetch (a crawler
+  that runs JavaScript also made an HTML request), so `hits` is the larger of
+  `beacon` and `edge` per day, summed — not their sum.
+- `first_search_crawl_at` — earliest `first_seen_at` of any `search`-kind
+  engine; `null` until one has come. The same field is on every `/v1/sites`
+  item, so a launch overview can show "days since launch → first crawl".
+- `sources.beacon` is always available but only sees crawlers that execute the
+  tracking script (Googlebot does; many crawlers do not). `sources.edge` is
+  available only when the deployer configured the optional Cloudflare token and
+  the site's zone is visible to it; it adds non-JS crawlers from Cloudflare's
+  top user agents per completed day, with no paths. User agents are as
+  declared, in both sources — not verified.
+- `top_pages` is beacon data only.
+- `available: false` means the deployment has not applied migration 0024 yet.
+
+Data is written by the cron worker: the hourly rollup (beacon, today and
+yesterday), the daily edge pull (edge), and a one-time backfill from data
+already present when 0024 is first deployed.
+
 ---
 
 ## 3. MCP server (chatbot access)
@@ -143,10 +209,10 @@ Add to your client's MCP config (Claude Desktop shown):
 
 Tools: `list_sites`, `get_overview`, `get_realtime`, `get_timeseries`,
 `get_breakdown`, `get_traffic_quality`, `get_alerts`, `get_ad_protection`,
-`get_edge_requests`, `get_suspicious_visitors`.
+`get_edge_requests`, `get_crawlers`, `get_suspicious_visitors`.
 
 They map onto `/v1/sites`, `overview`, `realtime`, `timeseries`, `breakdown`,
-`quality`, `alerts`, `adguard`, `edge` and `traffic`. Notes:
+`quality`, `alerts`, `adguard`, `edge`, `crawlers` and `traffic`. Notes:
 
 - `period` defaults to `7d` (the REST API defaults to `30d`) and is limited to
   the named list (`24h` … `this_year`, with `7d` `30d` `90d` as rolling windows).
@@ -178,7 +244,8 @@ Output is a readable table; `--json` prints the raw API response for piping into
 `jq` or a script. `node cli/pvuv.mjs help` lists everything.
 
 Commands: `sites` `overview` `realtime` `timeseries` `breakdown` `quality`
-`alerts` `adguard` `edge` `traffic`. Flags: `--period` (default `7d`),
+`alerts` `adguard` `edge` `crawlers` `traffic`. Flags: `--period` (default `7d`;
+`30d` for `crawlers`),
 `--metric`, `--interval`, `--dim` (required for `breakdown`), `--limit`,
 `--min-score` (`traffic`, default 30), `--json`. There are no commands for
 `anomalies`, funnels, visitors, `vitals` or `ctit`, and no `--filters` flag —

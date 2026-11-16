@@ -292,6 +292,15 @@
 
   </section>
 
+  <section class="sec" data-sec="indexing" hidden>
+  <h2 data-i18n="Crawlers &amp; indexing">Crawlers &amp; indexing</h2>
+  <p class="sec-desc" data-i18n="Has a search engine found this site yet, how often does it come back, and which pages did it fetch? A separate metric: crawler visits are never counted as visitors and never change scoring or ad protection.">Has a search engine found this site yet, how often does it come back, and which pages did it fetch? A separate metric: crawler visits are never counted as visitors and never change scoring or ad protection.</p>
+  <div class="panel" id="indexing"></div>
+  <div class="sec-head"><h2 data-i18n="Top crawled pages">Top crawled pages</h2></div>
+  <div class="panel" id="indexingPages"></div>
+
+  </section>
+
   <section class="sec" data-sec="adguard" hidden>
   <h2 data-i18n="Ad protection">Ad protection</h2>
   <div class="panel" id="adguard"></div>
@@ -985,6 +994,79 @@ async function loadEdge() {
     + '</div>';
 }
 
+// Crawler / indexing signals (migration 0024) — a SEPARATE metric: per engine
+// first/last seen (all-time, durable) and hits in the range, plus the pages
+// crawlers fetched. Nothing here is a visitor; it answers "has Google found
+// this new site yet". Edge data (non-JS crawlers) appears only when the
+// deployer configured a Cloudflare token — the panel says which it has.
+const CRAWL_KIND = { search: 'Search engine', ai: 'AI', ads: 'Ads', seo: 'SEO tool', other: 'Other' };
+const CRAWL_DAY_MS = 86400000;
+function crawlSpark(days, start, end) {
+  // one bar per day of the range, zero-filled, so a gap reads as "did not come"
+  const by = new Map((days || []).map((d) => [d.day, Math.max(d.beacon || 0, d.edge || 0)]));
+  const vals = [];
+  for (let ts = Date.parse(start + 'T00:00:00Z'), last = Date.parse(end + 'T00:00:00Z'); ts <= last && vals.length < 400; ts += CRAWL_DAY_MS) {
+    vals.push(by.get(new Date(ts).toISOString().slice(0, 10)) || 0);
+  }
+  if (!vals.length) return '';
+  const w = 120, h = 20, bw = w / vals.length, max = Math.max(...vals, 1);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">`
+    + vals.map((v, i) => {
+      if (!v) return '';
+      const bh = Math.max(2, v * h / max);
+      return `<rect x="${(i * bw).toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${Math.max(1, bw - 0.5).toFixed(1)}" height="${bh.toFixed(1)}" fill="#60a5fa"/>`;
+    }).join('')
+    + '</svg>';
+}
+async function loadIndexing() {
+  const el = document.getElementById('indexing');
+  const pagesEl = document.getElementById('indexingPages');
+  const d = await get('crawlers');
+  if (d.available === false) {
+    el.innerHTML = `<p class="muted">${te('Not available yet: database migration 0024 has not been applied.')}</p>`;
+    pagesEl.innerHTML = '';
+    return;
+  }
+  const when = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace('T', ' ') : '–');
+  const me = allSites.find((x) => x.site_id === site);
+  const added = me && me.created_at ? me.created_at : null;
+  const daysSince = (from, to) => Math.max(0, Math.floor((to - from) / CRAWL_DAY_MS));
+  let head = `<b>${te('First search-engine crawl')}:</b> `;
+  if (d.first_search_crawl_at) {
+    head += `${esc(when(d.first_search_crawl_at))} UTC`
+      + (added ? ` <span class="muted">· ${esc(t('{n} days after the site was added').replace('{n}', daysSince(added, d.first_search_crawl_at)))}</span>` : '');
+  } else {
+    head += esc(t('No search engine has crawled this site yet — added {n} days ago.').replace('{n}', added ? daysSince(added, Date.now()) : '?'));
+  }
+  const srcNote = d.sources && d.sources.edge && d.sources.edge.available
+    ? te('Sources: tracking script + Cloudflare edge (crawlers that do not run JavaScript included).')
+    : te('Sources: tracking script only — crawlers that do not run JavaScript are not counted. Adding a Cloudflare API token in settings fills that gap.');
+  const engines = d.engines || [];
+  el.innerHTML = `<p style="margin:0 0 6px">${head}</p>`
+    + `<p class="muted" style="margin:0 0 10px;font-size:12px">${srcNote} ${te('Hits are in the selected range; first and last seen are all-time.')}</p>`
+    + (engines.length
+      ? `<table><tr><th>${te('Engine')}</th><th>${te('Kind')}</th><th>${te('First seen')}</th><th>${te('Last seen')}</th><th class="num">${te('Hits')}</th><th class="num">${te('Pages')}</th><th>${te('Daily')}</th></tr>`
+        + engines.map((e) => `<tr><td>${esc(e.label)}</td>`
+          + `<td><span class="badge b-crawler">${te(CRAWL_KIND[e.kind] || e.kind)}</span></td>`
+          + `<td class="nowrap"${e.first_source === 'edge' ? ` title="${esc(t('seen first at the Cloudflare edge (day precision)'))}"` : ''}>${esc(when(e.first_seen_at))}${e.first_source === 'edge' ? ' <span class="muted">☁</span>' : ''}</td>`
+          + `<td class="nowrap">${esc(when(e.last_seen_at))}</td>`
+          + `<td class="num" title="${esc(`beacon ${e.beacon_hits} / edge ${e.edge_hits}`)}">${fmt(e.hits)}</td>`
+          + `<td class="num">${e.pages ? fmt(e.pages) : '–'}</td>`
+          + `<td>${crawlSpark(e.days, d.period.start, d.period.end)}</td></tr>`).join('')
+        + '</table>'
+      : `<p class="muted">${te('No crawler has been seen yet.')}</p>`);
+  const pages = (d.top_pages && d.top_pages.pages) || [];
+  const label = new Map(engines.map((e) => [e.engine, e.label]));
+  pagesEl.innerHTML = `<p class="muted" style="margin:0 0 10px;font-size:12px">${te('Tracking-script data only: pages fetched by crawlers that ran JavaScript.')}</p>`
+    + (pages.length
+      ? `<table><tr><th>${te('Path')}</th><th class="num">${te('Hits')}</th><th>${te('Engine')}</th></tr>`
+        + pages.map((p) => `<tr><td style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.path)}">${esc(p.path)}</td>`
+          + `<td class="num">${fmt(p.hits)}</td>`
+          + `<td class="muted">${esc(Object.entries(p.engines).sort((a, b) => b[1] - a[1]).map(([k]) => label.get(k) || k).join(', '))}</td></tr>`).join('')
+        + '</table>'
+      : `<p class="muted">${te('no data yet')}</p>`);
+}
+
 // friendly names for the categories the public directories use; unknown keys
 // fall through to the raw value so a new category is never hidden
 const CRAWLER_CAT = {
@@ -1328,6 +1410,7 @@ const SECTION_LOADERS = {
   goals:      async () => { await loadGoals(); document.getElementById('goalsEmpty').hidden = !document.getElementById('goalsSection').hidden; },
   funnel:     async () => { await funnelsReady; runFunnel(); },
   quality:    () => Promise.all([loadQuality(), loadCrawlers(), loadEdge()]),
+  indexing:   () => loadIndexing(),
   adguard:    () => loadAdguard(),
   suspicious: async () => {
     // aggregated by VISITOR (one row per suspicious visitor, not per event):
@@ -1337,7 +1420,7 @@ const SECTION_LOADERS = {
   },
   ai:         () => loadAiReport(),
 };
-const SECTION_ORDER = ['overview', 'sources', 'audience', 'campaigns', 'funnel', 'goals', 'vitals', 'quality', 'adguard', 'suspicious', 'ai'];
+const SECTION_ORDER = ['overview', 'sources', 'audience', 'campaigns', 'funnel', 'goals', 'vitals', 'quality', 'indexing', 'adguard', 'suspicious', 'ai'];
 
 let activeSec = 'overview';
 // bumped whenever the period or the filters change, so every section reloads
@@ -1989,7 +2072,7 @@ renderFunnelSteps();
 // ── section nav: one pill per visible section; the active pill follows the
 // scroll position. Hidden sections (no goals / no vitals yet) are skipped, so
 // the nav always reflects what the page actually shows.
-const SEC_LABEL = { overview: 'Overview', trend: 'Trend', sources: 'Sources', audience: 'Audience', vitals: 'Web Vitals', campaigns: 'Campaigns', goals: 'Goals', funnel: 'Funnel', quality: 'Traffic quality', adguard: 'Ad protection', suspicious: 'Suspicious', ai: 'AI report' };
+const SEC_LABEL = { overview: 'Overview', trend: 'Trend', sources: 'Sources', audience: 'Audience', vitals: 'Web Vitals', campaigns: 'Campaigns', goals: 'Goals', funnel: 'Funnel', quality: 'Traffic quality', indexing: 'Crawlers', adguard: 'Ad protection', suspicious: 'Suspicious', ai: 'AI report' };
 // The nav is a TAB BAR now, not a scroll-spy: every entry is always listed
 // (a stable set is easier to navigate than one that grows as data loads), and
 // clicking one swaps the visible section and loads it if it has not been

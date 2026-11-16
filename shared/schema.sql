@@ -104,6 +104,7 @@ CREATE TABLE events_202607 (
   err_count INTEGER, rage_count INTEGER, dead_count INTEGER,
   -- transport fingerprint: JA4-inspired own-implementation hash + RTT + protocol (0018)
   tls_fp TEXT, tcp_rtt INTEGER, http_protocol TEXT,
+  crawler_engine TEXT,           -- built-in crawler engine id, e.g. 'googlebot' (0024); crawler metric only
   ts INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
@@ -220,6 +221,43 @@ CREATE TABLE rollup_edge_agent_daily (
   PRIMARY KEY (site_id, day, user_agent)
 );
 CREATE INDEX idx_edge_agent_site_day ON rollup_edge_agent_daily(site_id, day, requests);
+
+-- Crawler / indexing signals (added by 0024_crawler_milestones.sql). A SEPARATE
+-- metric: nothing here feeds PV/UV, scoring, verdicts or ad-guard decisions.
+-- Durable per site x engine milestones (survive raw-event retention) ...
+CREATE TABLE crawler_milestones (
+  site_id       TEXT NOT NULL,
+  engine        TEXT NOT NULL,          -- shared/crawlers.ts id: googlebot, bingbot, other_search, ...
+  kind          TEXT NOT NULL,          -- search / ai / ads / seo / other
+  first_seen_at INTEGER NOT NULL,       -- ms; edge-sourced = start of that local day
+  last_seen_at  INTEGER NOT NULL,
+  first_source  TEXT,                   -- beacon | edge
+  first_path    TEXT,                   -- first page crawled (beacon only)
+  updated_at    INTEGER,
+  PRIMARY KEY (site_id, engine)
+);
+CREATE INDEX idx_crawler_ms_kind ON crawler_milestones(site_id, kind, first_seen_at);
+-- ... a daily per-engine rollup, one row per source ...
+CREATE TABLE rollup_crawler_daily (
+  site_id  TEXT NOT NULL,
+  day      TEXT NOT NULL,               -- YYYY-MM-DD in the site's timezone
+  engine   TEXT NOT NULL,
+  source   TEXT NOT NULL,               -- beacon (JS-rendering crawlers) | edge (Cloudflare HTML requests)
+  kind     TEXT NOT NULL,
+  hits     INTEGER DEFAULT 0,
+  pages    INTEGER,                     -- distinct paths (beacon only; NULL for edge)
+  first_ts INTEGER, last_ts INTEGER,
+  PRIMARY KEY (site_id, day, engine, source)
+);
+-- ... and the pages crawlers fetched (beacon only, top paths per engine-day)
+CREATE TABLE rollup_crawler_page_daily (
+  site_id TEXT NOT NULL,
+  day     TEXT NOT NULL,
+  engine  TEXT NOT NULL,
+  path    TEXT NOT NULL,
+  hits    INTEGER DEFAULT 0,
+  PRIMARY KEY (site_id, day, engine, path)
+);
 
 -- clusters / anomalies / AI (M2+, created in M1 as placeholders)
 CREATE TABLE cluster_flags (
