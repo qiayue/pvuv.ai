@@ -130,7 +130,7 @@ let partitionCache: { names: string[]; at: number } | null = null;
 const PARTITION_TTL_MS = 60_000;
 
 /** Existing events_YYYYMM tables overlapping a UTC [startTs, endTs) span. */
-async function eventTables(db: D1Database, startTs: number, endTs: number): Promise<string[]> {
+export async function eventTables(db: D1Database, startTs: number, endTs: number): Promise<string[]> {
   const now = Date.now();
   const fresh = partitionCache
     && now - partitionCache.at < PARTITION_TTL_MS
@@ -151,7 +151,7 @@ async function eventTables(db: D1Database, startTs: number, endTs: number): Prom
 /** A UNION-ALL over month partitions scoped to one site + UTC span, so a
  *  COUNT(DISTINCT …) runs ONCE across all months (exact, no cross-month
  *  double-count) without streaming rows into the isolate. */
-function unionOver(tables: string[], cols: string, siteId: string, startTs: number, endTs: number, extra = '', extraBinds: unknown[] = []):
+export function unionOver(tables: string[], cols: string, siteId: string, startTs: number, endTs: number, extra = '', extraBinds: unknown[] = []):
   { sql: string; binds: unknown[] } {
   const parts = tables.map((t) => `SELECT ${cols} FROM ${t} WHERE site_id = ? AND ts >= ? AND ts < ?${extra ? ` AND ${extra}` : ''}`);
   return { sql: parts.join(' UNION ALL '), binds: tables.flatMap(() => [siteId, startTs, endTs, ...extraBinds]) };
@@ -485,6 +485,44 @@ export async function overview(db: D1Database, siteId: string, period: Period, f
   };
 }
 
+/** The period immediately before `period`, of the same length and covering the
+ *  same ELAPSED part: when `period` runs into the future (a window ending
+ *  today), the previous one stops at the same point, so a partial today is
+ *  compared with an equally partial day, not a full one. */
+export function previousPeriod(period: Period): Period {
+  const len = period.endTs - period.startTs;
+  const startTs = period.startTs - len;
+  const endTs = Math.min(period.endTs, Math.max(period.now, period.startTs + 1)) - len;
+  const s = localYMD(startTs, period.tz);
+  const e = localYMD(endTs - 1, period.tz);
+  return { ...period, start: dayStr(s.y, s.m0, s.d), end: dayStr(e.y, e.m0, e.d), startTs, endTs };
+}
+
+/** overview + `compare=previous`: the previous period's values and the change
+ *  (absolute and relative; relative is null when the previous value is 0). */
+export async function overviewCompare(db: D1Database, siteId: string, period: Period, filters: Filter[], compare: string | null) {
+  const cur = await overview(db, siteId, period, filters);
+  if (!compare) return cur;
+  if (compare !== 'previous') throw new ApiError(400, `unknown compare: ${compare} (previous)`);
+  const prevPeriod = previousPeriod(period);
+  const prev = await overview(db, siteId, prevPeriod, filters);
+  const delta: Record<string, { abs: number; pct: number | null }> = {};
+  for (const [k, v] of Object.entries(cur)) {
+    const p = (prev as Record<string, unknown>)[k];
+    if (typeof v !== 'number' || typeof p !== 'number') continue;
+    delta[k] = { abs: Math.round((v - p) * 10_000) / 10_000, pct: p ? Math.round(((v - p) / p) * 10_000) / 10_000 : null };
+  }
+  return {
+    ...cur,
+    compare: {
+      mode: 'previous',
+      period: { start: prevPeriod.start, end: prevPeriod.end, start_ts: prevPeriod.startTs, end_ts: prevPeriod.endTs },
+      values: prev,
+      delta,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // GET /sites/:id/realtime — visitors active in the last N minutes (live)
 // ---------------------------------------------------------------------------
@@ -492,6 +530,8 @@ export async function overview(db: D1Database, siteId: string, period: Period, f
 /** Distinct human visitors + pageviews in the last `windowMin` minutes, with a
  *  per-minute pageview sparkline. Always live (independent of the period). */
 export async function realtime(db: D1Database, siteId: string, now: number, windowMin = 30) {
+  // `window` query param: whole minutes, clamped to 5–60 (default 30)
+  windowMin = Math.min(Math.max(Number.isFinite(windowMin) ? Math.round(windowMin) : 30, 5), 60);
   const startTs = now - windowMin * 60_000;
   const empty = { window_minutes: windowMin, online: 0, pageviews: 0, minutes: new Array(windowMin).fill(0) };
   const tables = await eventTables(db, startTs, now + 1);
@@ -997,6 +1037,28 @@ export async function breakdown(db: D1Database, siteId: string, dim: string, per
     return { dim, rows: rows.results };
   }
 
+  // release: the snippet's data-release (e.g. "v12"), stored by f.js in the
+  // pageview's props — which build of the site a pageview saw.
+  // not_found (alias 404): pageviews of pages that marked themselves as a 404
+  // page (<meta name="pvuv:404">), by requested path — the broken-link list.
+  if (dim === 'release' || dim === 'not_found' || dim === '404') {
+    const tables = await eventTables(db, period.startTs, period.endTs);
+    if (tables.length === 0) return { dim, rows: [] };
+    const nf = dim !== 'release';
+    const col = nf ? 'path' : "CAST(json_extract(props, '$.release') AS TEXT)";
+    const cond = nf ? "json_extract(props, '$.not_found') = 1" : "json_extract(props, '$.release') IS NOT NULL";
+    const u = unionOver(tables, `${col} AS k, visitor_id, verdict, ref_domain, ts`, siteId, period.startTs, period.endTs,
+      `event = 'pageview' AND props IS NOT NULL AND json_valid(props) AND ${cond}${ef.sql ? ` AND ${ef.sql}` : ''}`, ef.binds);
+    const rows = await db.prepare(`
+      SELECT k AS key, COUNT(*) AS pv, COUNT(DISTINCT visitor_id) AS uv,
+             COALESCE(SUM(CASE WHEN verdict NOT IN ('bot','crawler') THEN 1 ELSE 0 END), 0) AS pv_clean,
+             MIN(ts) AS first_seen, MAX(ts) AS last_seen${nf ? `,
+             SUBSTR(GROUP_CONCAT(DISTINCT ref_domain), 1, 200) AS ref_domains` : ''}
+      FROM (${u.sql}) GROUP BY k ORDER BY pv DESC LIMIT ?
+    `).bind(...u.binds, limit).all();
+    return { dim, rows: rows.results };
+  }
+
   // goals: custom (non-lifecycle) event names — fires, visitors, revenue
   if (dim === 'goal') {
     const tables = await eventTables(db, period.startTs, period.endTs);
@@ -1248,9 +1310,9 @@ const firstBy = (expr: string, cond?: string) =>
 const stepMatch = (s: FunnelStep) => (s.type === 'page' ? "event = 'pageview' AND path = ?" : 'event = ?');
 
 /** "Reached step k" — every step up to k matched, in non-decreasing time. */
-function reachedSQL(k: number): string {
+function reachedSQL(k: number, ordered = true): string {
   const c = ['t0 IS NOT NULL'];
-  for (let j = 1; j <= k; j++) c.push(`t${j} IS NOT NULL`, `t${j} >= t${j - 1}`);
+  for (let j = 1; j <= k; j++) c.push(`t${j} IS NOT NULL`, ...(ordered ? [`t${j} >= t${j - 1}`] : []));
   return c.join(' AND ');
 }
 
@@ -1266,7 +1328,7 @@ function reachedSQL(k: number): string {
  */
 function funnelCte(
   steps: FunnelStep[], tables: string[], siteId: string, period: Period,
-  filters: Filter[], segDim?: string,
+  filters: Filter[], segDim?: string, mode: FunnelMode = 'ordered',
 ): { sql: string; binds: unknown[] } {
   const ef = evFilter(filters);
   const where = ef.sql ? `verdict NOT IN ('bot','crawler') AND ${ef.sql}` : "verdict NOT IN ('bot','crawler')";
@@ -1286,7 +1348,7 @@ function funnelCte(
   if (segDim) cols.push(`${firstBy(FUNNEL_SEG[segDim])} AS seg`);
 
   const ladder = steps.map((_, i) => i).reverse()
-    .map((k) => `WHEN ${reachedSQL(k)} THEN ${k}`).join(' ');
+    .map((k) => `WHEN ${reachedSQL(k, mode === 'ordered')} THEN ${k}`).join(' ');
 
   return {
     binds,
@@ -1294,6 +1356,27 @@ function funnelCte(
       per AS (SELECT visitor_id, ${cols.join(', ')} FROM ev GROUP BY visitor_id),
       reach AS (SELECT *, CASE ${ladder} ELSE -1 END AS last_step FROM per)`,
   };
+}
+
+/**
+ * How a visitor "reaches" step k:
+ *   ordered   (default; aliases closed/strict/sequential) — steps 0..k all
+ *             happened, first occurrences in non-decreasing time order;
+ *   unordered (alias any_order) — steps 0..k all happened, in any order;
+ *   open      — each step counted on its own: visitors who did step k at all,
+ *             whether or not they did the earlier steps (entry at any step).
+ * Friction (who dropped where) follows the unordered ladder in open mode.
+ */
+export type FunnelMode = 'ordered' | 'unordered' | 'open';
+const FUNNEL_MODES: Record<string, FunnelMode> = {
+  ordered: 'ordered', closed: 'ordered', strict: 'ordered', sequential: 'ordered',
+  unordered: 'unordered', any_order: 'unordered', open: 'open',
+};
+export function parseFunnelMode(raw: string | null | undefined): FunnelMode {
+  if (raw == null || raw === '') return 'ordered';
+  const m = Object.prototype.hasOwnProperty.call(FUNNEL_MODES, raw.toLowerCase()) ? FUNNEL_MODES[raw.toLowerCase()] : null;
+  if (!m) throw new ApiError(400, `unknown funnel mode: ${raw} (ordered | unordered | open)`);
+  return m;
 }
 
 export interface FunnelFriction {
@@ -1328,8 +1411,9 @@ export interface FunnelFriction {
  */
 export async function funnel(
   db: D1Database, siteId: string, period: Period, steps: FunnelStep[],
-  filters: Filter[] = [], opts: { breakdown?: string | null } = {},
+  filters: Filter[] = [], opts: { breakdown?: string | null; mode?: string | null } = {},
 ) {
+  const mode = parseFunnelMode(opts.mode);
   const clean = steps
     .filter((s) => s && (s.type === 'page' || s.type === 'event') && typeof s.value === 'string' && s.value)
     .slice(0, 8);
@@ -1338,22 +1422,26 @@ export async function funnel(
 
   const empty = {
     steps: clean.map((s) => ({ ...s, visitors: 0, dropped: 0, median_gap_ms: null, friction: null })),
-    breakdown: null, clean_only: true,
+    breakdown: null, clean_only: true, mode,
   };
   const tables = await eventTables(db, period.startTs, period.endTs);
   if (tables.length === 0) return empty;
 
   const N = clean.length;
-  const cte = funnelCte(clean, tables, siteId, period, filters);
+  const cte = funnelCte(clean, tables, siteId, period, filters, undefined, mode);
+  const reachedAt = (i: number) => (mode === 'open' ? `t${i} IS NOT NULL` : `last_step >= ${i}`);
 
   // ── counts per step + median gap from the previous step, in one pass.
   // NTILE(2) splits each step's gaps in half; the max of the lower half is the
   // median (same trick vitals() uses for p75, and it needs no window funcs D1
   // lacks).
-  const cnt = clean.map((_, i) => `SELECT ${i} AS i, SUM(last_step >= ${i}) AS c FROM reach`).join(' UNION ALL ');
+  const cnt = clean.map((_, i) => `SELECT ${i} AS i, SUM(${reachedAt(i)}) AS c FROM reach`).join(' UNION ALL ');
   const gaps = clean.slice(1).map((_, k) => {
     const i = k + 1;
-    return `SELECT ${i} AS i, t${i} - t${i - 1} AS gp FROM reach WHERE last_step >= ${i}`;
+    return mode === 'ordered'
+      ? `SELECT ${i} AS i, t${i} - t${i - 1} AS gp FROM reach WHERE last_step >= ${i}`
+      // other modes: only visitors who did both steps, in this order
+      : `SELECT ${i} AS i, t${i} - t${i - 1} AS gp FROM reach WHERE t${i} IS NOT NULL AND t${i - 1} IS NOT NULL AND t${i} >= t${i - 1}`;
   }).join(' UNION ALL ');
   const ladderRows = await db.prepare(`${cte.sql},
     cnt AS (${cnt}),
@@ -1421,11 +1509,12 @@ export async function funnel(
   // ── optional per-segment ladder
   let breakdown: { dim: string; rows: Array<{ key: string; counts: number[]; conv: number }> } | null = null;
   if (segDim) {
-    const segCte = funnelCte(clean, tables, siteId, period, filters, segDim);
-    const sums = clean.map((_, i) => `SUM(last_step >= ${i}) AS c${i}`).join(', ');
+    const segCte = funnelCte(clean, tables, siteId, period, filters, segDim, mode);
+    const sums = clean.map((_, i) => `SUM(${reachedAt(i)}) AS c${i}`).join(', ');
+    const anyStep = mode === 'open' ? `(${clean.map((_, i) => `t${i} IS NOT NULL`).join(' OR ')})` : 'last_step >= 0';
     const rows = await db.prepare(`${segCte.sql}
       SELECT COALESCE(NULLIF(seg, ''), '(unknown)') AS key, ${sums}
-      FROM reach WHERE last_step >= 0 GROUP BY key ORDER BY c0 DESC LIMIT 12
+      FROM reach WHERE ${anyStep} GROUP BY key ORDER BY c0 DESC LIMIT 12
     `).bind(...segCte.binds).all<Record<string, string | number>>();
     breakdown = {
       dim: segDim,
@@ -1436,7 +1525,7 @@ export async function funnel(
     };
   }
 
-  return { steps: stepsOut, breakdown, clean_only: true };
+  return { steps: stepsOut, breakdown, clean_only: true, mode };
 }
 
 /**

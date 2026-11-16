@@ -63,8 +63,8 @@ that is signed in to the console can call it directly for that owner's sites.
 | `GET /v1/sites` | sites this token can read (`site_id`, `name`, `domains`, `timezone`, `created_at`, `first_search_crawl_at`) — **call first**, ids are not guessable | — |
 | `GET /v1/templates` | the owner's site templates (see [§6](#6-site-provisioning-readwrite-tokens)) | — |
 | `GET /v1/sites/summary` | per-site totals for every site in scope, in one pass (`uv_approx: true` when visitors are summed per day) | `period` |
-| `GET /v1/sites/{id}/overview` | pageviews, visitors, sessions, both bounce rates, dwell, visit duration, verdict split, conversions, revenue | `period` `filters` |
-| `GET /v1/sites/{id}/realtime` | `{window_minutes, online, pageviews, minutes[]}` for the last 30 min; bot/crawler traffic excluded; always live (ignores `period`) | — |
+| `GET /v1/sites/{id}/overview` | pageviews, visitors, sessions, both bounce rates, dwell, visit duration, verdict split, conversions, revenue; with `compare=previous` also `compare: {mode, period, values, delta}` | `period` `filters` `compare` |
+| `GET /v1/sites/{id}/realtime` | `{window_minutes, online, pageviews, minutes[]}` for the last `window` minutes (default 30, clamped 5–60); bot/crawler traffic excluded; always live (ignores `period`) | `window` |
 | `GET /v1/sites/{id}/timeseries` | `{metric, interval, points[]}`; each point carries `label`, `value`, `status` (`complete`/`partial`/`future`), `pv` and `invalid` | `period` `metric` `interval` `filters` |
 | `GET /v1/sites/{id}/breakdown` | `{dim, rows[]}` — top values for one dimension | `period` `dim` `limit` (default 20, max 1000) `key` `filters` |
 | `GET /v1/sites/{id}/quality` | verdict totals + which detection signals fired | `period` `filters` |
@@ -77,8 +77,12 @@ that is signed in to the console can call it directly for that owner's sites.
 | `GET /v1/sites/{id}/traffic` | individual suspicious visitors with their evidence | `period` `verdict` `min_score` `limit` (default 50, max 1000) `filters` |
 | `GET /v1/sites/{id}/anomalies` | the 40 most recent pending baseline anomaly reports (`day`, `dimension`, `baseline`, `actual`, `deviation`, `kind`, `message`, `top_sig`, `unit`); ignores `period` | — |
 | `GET /v1/sites/{id}/funnels` | saved funnels: `{funnels:[{funnel_id, name, steps, created_at, updated_at}]}` | — |
-| `GET /v1/sites/{id}/funnel` | conversion funnel | `steps` or `funnel_id`, `breakdown`, `period` `filters` |
+| `GET /v1/sites/{id}/funnel` | conversion funnel (`steps[]`, `breakdown`, `mode`, `clean_only`) | `steps` or `funnel_id`, `breakdown`, `mode`, `period` `filters` |
 | `GET /v1/sites/{id}/funnel_dropoff` | the visitors who reached step `step` but not the next one | `steps` or `funnel_id`, `step` (default 0), `limit` (default 50), `period` `filters` |
+| `GET /v1/sites/{id}/experiment` | A/B readout for one experiment: per-variant visitors, conversions, rate, `p_best` + a `decision` — see [Experiments](#experiments) | `experiment` `goal` (both required) `window_hours` `baseline` `min_exposures` `split` `period` (default `90d`) |
+| `GET /v1/sites/{id}/experiments` | experiments seen in `exposure` events, with variants, exposure visitors and first/last seen | `period` |
+| `GET /v1/sites/{id}/event_inventory` | every custom event name with count, visitors, first/last seen and observed prop keys — what can be used as a goal | `period` |
+| `GET /v1/sites/{id}/ai_referrals` | clean visits that arrived from AI assistants (ChatGPT, Perplexity, Claude, Gemini, Copilot, DeepSeek, Kimi, Doubao, …): totals, per assistant, daily series, top landing pages | `period` `assistant` `limit` (landing pages, default 10, max 100) |
 | `GET /v1/sites/{id}/visitors` | visitor list | `period` `path` `verdict` `limit` (default 50) |
 | `GET /v1/sites/{id}/visitors/{vid}/profile` | one visitor's journey | `period` |
 | `GET /v1/ranking` | cross-site clean-traffic ranking — **legacy `API_TOKEN` only**, see §5 | `period` (resolved in UTC) `limit` (default 100) |
@@ -97,8 +101,12 @@ that is signed in to the console can call it directly for that owner's sites.
 - `dim` — `page` `entry_page` `exit_page` `source` `channel` `referrer`
   `country` `region` `city` `browser` `os` `device` `size` `utm_campaign`
   `utm_medium` `utm_term` `utm_content` `ft_source` `ft_medium` `ft_campaign`
-  `goal` `bot_category`. Default `page`. (`utm_source` is not a dimension — use
-  `source`.)
+  `goal` `bot_category` `release` `not_found` (alias `404`). Default `page`.
+  (`utm_source` is not a dimension — use `source`.) `release` groups pageviews
+  by the snippet's `data-release` attribute; `not_found` lists the paths of
+  pageviews whose page carried `<meta name="pvuv:404">` (pv, uv, `pv_clean`,
+  first/last seen, `ref_domains`) — the broken-link list. Both only see
+  pageviews recorded by an f.js that has these features.
 - `key` — with `dim=referrer`, the source whose referring URLs to list
   (`(direct)` for none).
 - `filters` — JSON array of `{dim, value}` (AND-ed, at most 8). Filterable dims:
@@ -110,6 +118,18 @@ that is signed in to the console can call it directly for that owner's sites.
   `[{"type":"page","value":"/pricing"},{"type":"event","value":"signup"}]`.
   `funnel_id` (from `/funnels`) uses a saved funnel instead.
 - `breakdown` (funnel) — `source` `country` `device` `browser` `os`.
+- `mode` (funnel) — how a visitor reaches step k: `ordered` (default; aliases
+  `closed` `strict` `sequential`) — steps 0..k all happened and their first
+  occurrences are in time order; `unordered` (alias `any_order`) — steps 0..k
+  all happened, in any order; `open` — each step is counted on its own
+  (visitors who did that step at all; entry at any step). `median_gap_ms` in
+  the non-ordered modes only uses visitors who did the two steps in order.
+  The response echoes `mode`. `funnel_dropoff` is always `ordered`.
+- `compare` (overview) — `previous`: the period of the same length right
+  before, cut at the same elapsed point when the period runs into the future
+  (a `7d` window at 10:00 is compared with the 7 days before it up to 10:00).
+  `delta.<metric> = {abs, pct}`; `pct` is `null` when the previous value is 0.
+- `window` (realtime) — minutes, 5–60, default 30.
 - `verdict` — `clean` `suspect` `bot` `crawler`.
 - `min_score` — minimum bot score 0–100 (no default on the API).
 - `path` (visitors) — a page path; a trailing `*` matches a prefix (`/pay*`).
@@ -125,6 +145,117 @@ totals rather than an error. It also covers **completed days only** — today's
 edge counts are still accumulating and are deliberately excluded, so `days` can
 be shorter than the requested `period`. See
 [DEPLOY.md → Cloudflare edge requests](../DEPLOY.md#cloudflare-edge-requests-optional-advanced).
+
+### Experiments
+
+Experiments are measured from ordinary custom events. When a page shows a
+visitor a variant it sends
+
+```js
+pvuv('event', 'exposure', { experiment: 'headline', variant: 'bold' })
+```
+
+(at most once per visitor / experiment / variant / day is enough), and the goal
+is any other custom event (`play_start`, `signup`, …; `event_inventory` lists
+them).
+
+```
+GET /v1/sites/{id}/experiment?experiment=headline&goal=play_start&window_hours=48&baseline=baseline&min_exposures=100&split=adaptive
+```
+
+```json
+{
+  "experiment": "headline", "goal": "play_start",
+  "period": { "start": "2026-08-19", "end": "2026-11-16" },
+  "window_hours": 48, "baseline": "baseline", "min_exposures": 100, "split": "adaptive",
+  "variants": [
+    { "variant": "baseline", "visitors": 152, "conversions": 30, "rate": 0.1974,
+      "p_best": 0.0001, "p_beat_baseline": null, "lift": null, "multi_variant_visitors": 1 },
+    { "variant": "bold", "visitors": 151, "conversions": 60, "rate": 0.3974,
+      "p_best": 0.9999, "p_beat_baseline": 0.9999, "lift": 1.0132, "multi_variant_visitors": 0 }
+  ],
+  "visitors_multi_variant": 1,
+  "decision": { "status": "winner", "winner": "bold", "losers": ["baseline"], "reason": "…" },
+  "method": "…", "clean_only": true
+}
+```
+
+- **visitors** — distinct clean (non-bot, non-crawler) visitors with an
+  `exposure` for this experiment in `period` (default `90d`). Each visitor is
+  attributed to the variant of their **first** exposure; visitors who were
+  exposed to more than one variant are counted in `multi_variant_visitors`
+  (per variant of first exposure) and `visitors_multi_variant` (total).
+- **conversions** — of those visitors, the ones who fired `goal` (clean) between
+  their first exposure and `window_hours` (default 48, 1–720) after it. A goal
+  fired before the first exposure does not count.
+- **p_best** — probability that the variant has the highest true conversion
+  rate: 10,000 Monte Carlo draws from independent `Beta(1 + conversions,
+  1 + visitors − conversions)` posteriors (uniform prior). The PRNG is seeded
+  from `experiment` + `goal`, so the same data always returns the same numbers.
+  `p_beat_baseline` is P(variant's rate > baseline's) and `lift` is
+  rate / baseline rate − 1, both only when `baseline` is given.
+- **decision** — `insufficient` when fewer than two variants exist or any
+  variant (a named `baseline` with no exposures included) has fewer than
+  `min_exposures` (default 100) visitors; then `losers` is empty. Otherwise
+  `winner` when one variant has `p_best ≥ win_threshold` (default `0.99`, accepted range 0.5–0.999), else `running`; `losers` =
+  every variant with `p_best < 0.01` (the baseline is not exempt — a client
+  that must keep a control running can skip it). `split` is echoed only:
+  pvuv.ai never changes traffic, the caller does.
+- At most 20 variants (by visitors) are reported.
+
+`GET /v1/sites/{id}/experiments?period=30d` lists what exposure events have
+been seen: `{experiments: [{experiment, visitors, exposures, first_seen,
+last_seen, variants: [{variant, visitors, exposures, first_seen, last_seen}]}]}`
+(clean traffic, newest first, at most 100).
+
+### Event inventory
+
+`GET /v1/sites/{id}/event_inventory?period=30d` →
+`{events: [{event, count, visitors, first_seen, last_seen, with_props,
+props: [{key, type, seen, examples[]}]}], reserved: [...], prop_sample_per_event}`.
+Every custom event name (lifecycle events in `reserved` — `pageview`,
+`page_leave`, `page_pulse`, `outbound_click`, `identify`, `form_start`,
+`form_submit` — are excluded), clean traffic only, at most 200 names. Prop
+keys come from a sample of the newest 200 events with props per name; `seen`
+is the count within that sample and `examples` up to 5 scalar values.
+
+### AI referrals
+
+`GET /v1/sites/{id}/ai_referrals?period=30d&assistant=chatgpt` →
+
+```json
+{
+  "period": { "start": "2026-10-18", "end": "2026-11-16" }, "assistant": null,
+  "totals": { "sessions": 3, "visitors": 3, "pageviews": 5 },
+  "assistants": [ { "assistant": "chatgpt", "label": "ChatGPT", "sessions": 2, "visitors": 2,
+                    "pageviews": 3, "sources": ["chatgpt.com"], "bounce_rate": 0.5 } ],
+  "daily": [ { "day": "2026-11-16", "sessions": 3, "visitors": 3, "pageviews": 5 } ],
+  "landing_pages": [ { "page": "/", "sessions": 2, "visitors": 2, "pageviews": 3, "bounce_rate": 0.5 } ],
+  "known_assistants": ["chatgpt", "perplexity", "claude", "gemini", "copilot", "…"],
+  "clean_only": true
+}
+```
+
+Sessions in the `ai` channel (`shared/channel.ts`): a referrer such as
+chatgpt.com / chat.openai.com / perplexity.ai / claude.ai / gemini.google.com /
+copilot.microsoft.com / poe.com / you.com / deepseek.com / kimi.com /
+doubao.com / …, or a `utm_source` naming one (`?utm_source=chatgpt.com`,
+which ChatGPT adds to its links). Bot and crawler sessions are excluded.
+`assistant` (one of `known_assistants`) restricts every part of the answer;
+an unknown one is a 400. AI-channel sources that match no known assistant are
+grouped as `other`. `daily` is bucketed by the site's local day using the UTC
+offset at the end of the period (a DST change inside the period moves that
+side's day boundary by an hour). Attribution is per session (the session's
+first event), as for `breakdown?dim=channel`.
+
+### Release and 404 tagging (f.js)
+
+- `data-release="v12"` on the script tag is stored on every pageview
+  (`props.release`) → `breakdown?dim=release`.
+- A page with `<meta name="pvuv:404">` in its head records its pageview with
+  `props.not_found = 1` (re-checked per SPA route) → `breakdown?dim=not_found`.
+
+No migration is needed: both ride in the existing `props` column.
 
 ### Crawler / indexing signals
 
@@ -238,10 +369,13 @@ Add to your client's MCP config (Claude Desktop shown):
 
 Tools: `list_sites`, `get_overview`, `get_realtime`, `get_timeseries`,
 `get_breakdown`, `get_traffic_quality`, `get_alerts`, `get_ad_protection`,
-`get_edge_requests`, `get_crawlers`, `get_suspicious_visitors`.
+`get_edge_requests`, `get_crawlers`, `get_suspicious_visitors`,
+`list_experiments`, `get_experiment`, `get_event_inventory`, `get_ai_referrals`,
+`get_funnel`.
 
 They map onto `/v1/sites`, `overview`, `realtime`, `timeseries`, `breakdown`,
-`quality`, `alerts`, `adguard`, `edge`, `crawlers` and `traffic`. Notes:
+`quality`, `alerts`, `adguard`, `edge`, `crawlers`, `traffic`, `experiments`,
+`experiment`, `event_inventory`, `ai_referrals` and `funnel`. Notes:
 
 - `period` defaults to `7d` (the REST API defaults to `30d`) and is limited to
   the named list (`24h` … `this_year`, with `7d` `30d` `90d` as rolling windows).
@@ -273,8 +407,12 @@ Output is a readable table; `--json` prints the raw API response for piping into
 `jq` or a script. `node cli/pvuv.mjs help` lists everything.
 
 Commands: `sites` `overview` `realtime` `timeseries` `breakdown` `quality`
-`alerts` `adguard` `edge` `crawlers` `traffic`. Flags: `--period` (default `7d`;
-`30d` for `crawlers`),
+`alerts` `adguard` `edge` `crawlers` `traffic` `experiments` `experiment`
+`events` `ai-referrals`. Flags: `--period` (default `7d`;
+`30d` for `crawlers`, `experiments`, `events`, `ai-referrals`; `90d` for `experiment`),
+`--compare previous` (`overview`), `--window` (`realtime`), `--experiment` `--goal`
+`--window-hours` `--baseline` `--min-exposures` (`experiment`), `--assistant`
+(`ai-referrals`),
 `--metric`, `--interval`, `--dim` (required for `breakdown`), `--limit`,
 `--min-score` (`traffic`, default 30), `--json`. There are no commands for
 `anomalies`, funnels, visitors, `vitals` or `ctit`, and no `--filters` flag —

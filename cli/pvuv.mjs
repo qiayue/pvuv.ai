@@ -35,8 +35,8 @@ function flagTakesValue(f) {
 const USAGE = `pvuv — read-only client for a self-hosted pvuv.ai deployment
 
   pvuv sites
-  pvuv overview   <site_id>  [--period ${PERIODS[3]}]
-  pvuv realtime   <site_id>
+  pvuv overview   <site_id>  [--period ${PERIODS[3]}] [--compare previous]
+  pvuv realtime   <site_id>  [--window 30]
   pvuv timeseries <site_id>  [--period 7d] [--metric pv] [--interval day]
   pvuv breakdown  <site_id>  --dim <dimension> [--period 7d] [--limit 20]
   pvuv quality    <site_id>  [--period 7d]
@@ -45,6 +45,11 @@ const USAGE = `pvuv — read-only client for a self-hosted pvuv.ai deployment
   pvuv edge       <site_id>  [--period 7d]
   pvuv crawlers   <site_id>  [--period 30d] [--limit 20]
   pvuv traffic    <site_id>  [--period 7d] [--min-score 30] [--limit 50]
+  pvuv experiments  <site_id>  [--period 30d]
+  pvuv experiment   <site_id>  --experiment <name> --goal <event> [--window-hours 48]
+                               [--baseline <variant>] [--min-exposures 100] [--win-threshold 0.99] [--period 90d]
+  pvuv events       <site_id>  [--period 30d]      (custom event inventory)
+  pvuv ai-referrals <site_id>  [--period 30d] [--assistant chatgpt]
 
   --json    print the raw API response instead of a table
 
@@ -103,9 +108,13 @@ async function main() {
         ...s, first_search_crawl: s.first_search_crawl_at ? new Date(s.first_search_crawl_at).toISOString().slice(0, 10) : null,
       })), ['site_id', 'name', 'domains', 'timezone', 'first_search_crawl']));
     case 'overview':
-      return out(await api(`/v1/sites/${needSite()}/overview`, { period }), (d) => pairs(d, ['period']));
+      return out(await api(`/v1/sites/${needSite()}/overview`, { period, compare: flag('compare') }), (d) => {
+        if (!d.compare) return pairs(d, ['period']);
+        const rows = Object.entries(d.compare.delta).map(([metric, x]) => ({ metric, now: d[metric], previous: d.compare.values[metric], change: x.abs, pct: x.pct }));
+        return `previous: ${d.compare.period.start} – ${d.compare.period.end}\n\n${table(rows)}`;
+      });
     case 'realtime':
-      return out(await api(`/v1/sites/${needSite()}/realtime`), (d) => pairs(d, ['minutes']));
+      return out(await api(`/v1/sites/${needSite()}/realtime`, { window: flag('window') }), (d) => pairs(d, ['minutes']));
     case 'timeseries':
       return out(await api(`/v1/sites/${needSite()}/timeseries`, {
         period, metric: flag('metric', 'pv'), interval: flag('interval'),
@@ -155,6 +164,25 @@ async function main() {
       return out(await api(`/v1/sites/${needSite()}/traffic`, {
         period, min_score: flag('min-score', 30), limit: flag('limit'),
       }), (d) => table(d.rows, ['visitor_id', 'events', 'sessions', 'country', 'browser', 'os', 'bot_score', 'verdict']));
+    case 'experiments':
+      return out(await api(`/v1/sites/${needSite()}/experiments`, { period: flag('period', '30d') }), (d) =>
+        table(d.experiments.flatMap((e) => e.variants.map((v) => ({ experiment: e.experiment, variant: v.variant, visitors: v.visitors, exposures: v.exposures,
+          last_seen: new Date(v.last_seen).toISOString().slice(0, 16).replace('T', ' ') })))));
+    case 'experiment': {
+      const d = await api(`/v1/sites/${needSite()}/experiment`, {
+        period: flag('period'), experiment: flag('experiment'), goal: flag('goal'), window_hours: flag('window-hours'),
+        baseline: flag('baseline'), min_exposures: flag('min-exposures'), win_threshold: flag('win-threshold'),
+      });
+      return out(d, (x) => `${table(x.variants, ['variant', 'visitors', 'conversions', 'rate', 'p_best', 'p_beat_baseline', 'lift'])}\n\n`
+        + `decision: ${x.decision.status}${x.decision.winner ? ` → ${x.decision.winner}` : ''}${x.decision.losers.length ? `  losers: ${x.decision.losers.join(', ')}` : ''}\n${x.decision.reason}`);
+    }
+    case 'events':
+      return out(await api(`/v1/sites/${needSite()}/event_inventory`, { period: flag('period', '30d') }), (d) =>
+        table(d.events.map((e) => ({ event: e.event, count: e.count, visitors: e.visitors, props: e.props.map((p) => p.key) }))));
+    case 'ai-referrals':
+      return out(await api(`/v1/sites/${needSite()}/ai_referrals`, { period: flag('period', '30d'), assistant: flag('assistant') }), (d) =>
+        `${pairs(d.totals)}\n\n${table(d.assistants, ['label', 'sessions', 'visitors', 'pageviews', 'bounce_rate'])}`
+        + `\n\ntop landing pages\n${table(d.landing_pages)}`);
     default:
       console.error(`unknown command: ${cmd}\n\n${USAGE}`);
       process.exit(2);

@@ -20,11 +20,12 @@
  * reuse the api worker's query layer against the same D1.
  */
 
-import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
+import { parsePeriod, siteTimezone, overview, overviewCompare, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from '../../api/src/queries';
 import { parseBotDirectory } from '../../../shared/botdir';
 import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
 import { crawlers, truthyParam } from '../../api/src/crawlers';
+import { extraReport } from '../../api/src/reports';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
 import {
@@ -807,8 +808,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const period = parsePeriod(url.searchParams.get('period'), site.timezone || 'UTC');
     const q = url.searchParams;
     const filters = parseFilters(q.get('filters'));
-    if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now()));
-    if (resource === 'overview') return json(await overview(env.DB, siteId, period, filters));
+    if (resource === 'realtime') return json(await realtime(env.DB, siteId, Date.now(), parseInt(q.get('window') ?? '30', 10)));
+    if (resource === 'overview') return json(await overviewCompare(env.DB, siteId, period, filters, q.get('compare')));
     if (resource === 'timeseries') return json(await timeseries(env.DB, siteId, q.get('metric') ?? 'pv', period, q.get('interval') ?? 'day', filters));
     if (resource === 'breakdown') {
       return json(await breakdown(env.DB, siteId, q.get('dim') ?? 'page', period, parseInt(q.get('limit') ?? '20', 10), q.get('key'), filters));
@@ -829,7 +830,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         return json(await funnelDropoff(env.DB, siteId, period, fsteps, parseInt(q.get('step') ?? '0', 10), filters,
           parseInt(q.get('limit') ?? '50', 10)));
       }
-      return json(await funnel(env.DB, siteId, period, fsteps, filters, { breakdown: q.get('breakdown') }));
+      return json(await funnel(env.DB, siteId, period, fsteps, filters, { breakdown: q.get('breakdown'), mode: q.get('mode') }));
     }
     if (resource === 'traffic') {
       return json(await traffic(env.DB, siteId, period, {
@@ -847,6 +848,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (resource === 'visitors' && subId && subResource === 'profile') {
       return json(await visitorProfile(env.DB, siteId, subId, period));
+    }
+    if (!subId) {
+      const extra = await extraReport(env.DB, siteId, resource, q, period);
+      if (extra !== undefined) return json(extra);
     }
     // latest stored AI report + whether generation is available
     if (resource === 'ai_report') {

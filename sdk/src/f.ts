@@ -8,6 +8,8 @@
  *           data-spa="true"              (optional: SPA route tracking)
  *           data-api="https://..."       (optional: self-hosted ingest, §12)
  *           data-exclude="/admin/*"      (optional: path exclusion globs)
+ *           data-release="v12"           (optional: site build/version, rides on
+ *                                         every pageview → breakdown dim=release)
  *           data-sensors="off"           (optional: disable §4.6 signals)
  *           data-adguard="balanced"      (ad protection — wired in M1 step 5)
  *           data-adclient="ca-pub-…"></script>
@@ -39,6 +41,7 @@ import type { XPayload } from '../../shared/flags';
   const api = (script.getAttribute('data-api') || 'https://in.pvuv.ai').replace(/\/+$/, '');
   const spa = script.getAttribute('data-spa') === 'true';
   const sensorsOff = script.getAttribute('data-sensors') === 'off';
+  const release = (script.getAttribute('data-release') || '').slice(0, 64);
   const excludeGlobs = (script.getAttribute('data-exclude') || '')
     .split(',')
     .map((g) => g.trim())
@@ -780,7 +783,15 @@ import type { XPayload } from '../../shared/flags';
     schedulePulse();
     visibleSince = doc.visibilityState === 'visible' ? Date.now() : 0;
     noteScroll();
-    enqueue(baseEvent('pageview'));
+    const pv = baseEvent('pageview');
+    // pageview props: the build the page came from (data-release) and whether
+    // the page declared itself a 404 (<meta name="pvuv:404">, re-read per
+    // pageview so an SPA route change is judged on its own head)
+    const pp: Record<string, unknown> = {};
+    if (release) pp.release = release;
+    if (doc.querySelector('meta[name="pvuv:404"]')) pp.not_found = 1;
+    if (release || pp.not_found) pv.p = pp;
+    enqueue(pv);
   }
 
   // Sent on every hide/leave with the dwell accumulated since the previous

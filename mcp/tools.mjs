@@ -16,7 +16,7 @@ export const PERIODS = [
 export const DIMENSIONS = [
   'page', 'entry_page', 'exit_page', 'source', 'referrer', 'country', 'region', 'city',
   'browser', 'os', 'device', 'size', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-  'ft_source', 'ft_medium', 'ft_campaign', 'goal', 'bot_category',
+  'ft_source', 'ft_medium', 'ft_campaign', 'goal', 'bot_category', 'channel', 'release', 'not_found',
 ];
 export const METRICS = [
   'pv', 'uv', 'sessions', 'bounce_rate', 'bounce_rate_single', 'avg_duration_ms', 'visit_duration_ms',
@@ -62,13 +62,24 @@ export const TOOLS = [
   },
   {
     name: 'get_overview',
-    description: 'Headline metrics for a period: pageviews, visitors, sessions, both bounce-rate definitions, engaged time, visit duration, and the split of pageviews across clean / suspect / bot / crawler verdicts.',
-    inputSchema: { type: 'object', properties: { ...siteArg, ...periodArg }, required: ['site_id'] },
+    description: 'Headline metrics for a period: pageviews, visitors, sessions, both bounce-rate definitions, engaged time, visit duration, and the split of pageviews across clean / suspect / bot / crawler verdicts. With compare=previous it also returns the previous period of the same length and the change of every metric (abs and pct).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...siteArg, ...periodArg,
+        compare: { type: 'string', enum: ['previous'], description: 'Also return the previous period and deltas' },
+      },
+      required: ['site_id'],
+    },
   },
   {
     name: 'get_realtime',
-    description: 'Visitors active in the last 30 minutes, with pageviews and a per-minute sparkline. Always live, independent of any period.',
-    inputSchema: { type: 'object', properties: { ...siteArg }, required: ['site_id'] },
+    description: 'Visitors active in the last N minutes (default 30, 5–60), with pageviews and a per-minute sparkline. Always live, independent of any period.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...siteArg, window: { type: 'number', description: 'Minutes, 5–60 (default 30)' } },
+      required: ['site_id'],
+    },
   },
   {
     name: 'get_timeseries',
@@ -85,7 +96,7 @@ export const TOOLS = [
   },
   {
     name: 'get_breakdown',
-    description: 'Top values for one dimension (pages, sources, countries, browsers, crawler categories, …) with pageviews, clean pageviews and visitors.',
+    description: 'Top values for one dimension (pages, sources, countries, browsers, crawler categories, …) with pageviews, clean pageviews and visitors. release = pageviews per site build (script data-release); not_found = paths of pages that marked themselves as 404 (broken links).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -129,6 +140,60 @@ export const TOOLS = [
     },
   },
   {
+    name: 'list_experiments',
+    description: 'Experiments seen in `exposure` custom events (pvuv(\'event\',\'exposure\',{experiment, variant})) in the period: each with its variants, exposure visitors and first/last seen. Clean traffic only.',
+    inputSchema: { type: 'object', properties: { ...siteArg, ...periodArg }, required: ['site_id'] },
+  },
+  {
+    name: 'get_experiment',
+    description: 'A/B readout for one experiment: per variant the visitors (first exposure wins), conversions to the goal event within window_hours of first exposure, rate, p_best (Bayesian Beta-Binomial, deterministic), p_beat_baseline and lift, plus a decision: insufficient (a variant below min_exposures), running, or winner (p_best ≥ win_threshold, default 0.99) with losers (p_best < 0.01). Default period 90d.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...siteArg, ...periodArg,
+        experiment: { type: 'string', description: 'Experiment name (the `experiment` prop of exposure events)' },
+        goal: { type: 'string', description: 'Custom event name that counts as a conversion, e.g. play_start (see get_event_inventory)' },
+        window_hours: { type: 'number', description: 'Conversion window after first exposure (default 48)' },
+        baseline: { type: 'string', description: 'Variant key of the control' },
+        min_exposures: { type: 'number', description: 'Visitors each variant needs before a verdict (default 100)' },
+        win_threshold: { type: 'number', description: 'P(best) a variant needs to be declared winner (default 0.99, range 0.5–0.999)' },
+      },
+      required: ['site_id', 'experiment', 'goal'],
+    },
+  },
+  {
+    name: 'get_event_inventory',
+    description: 'Every custom event name the site sends (lifecycle events excluded), with count, visitors, first/last seen and the prop keys observed (with example values). Use it to find what can serve as a goal or funnel step.',
+    inputSchema: { type: 'object', properties: { ...siteArg, ...periodArg }, required: ['site_id'] },
+  },
+  {
+    name: 'get_ai_referrals',
+    description: 'Visits that arrived from AI assistants (ChatGPT, Perplexity, Claude, Gemini, Copilot, DeepSeek, Kimi, Doubao, …, by referrer or utm_source): totals, per assistant, daily series and top landing pages. Clean traffic only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...siteArg, ...periodArg,
+        assistant: { type: 'string', description: 'Only this assistant, e.g. chatgpt, perplexity, claude, gemini, copilot' },
+      },
+      required: ['site_id'],
+    },
+  },
+  {
+    name: 'get_funnel',
+    description: 'Conversion funnel over clean traffic: a saved funnel (funnel_id) or ad-hoc steps, with per-step visitors, drop-off, median gap and friction (dwell, scroll, rage/dead clicks, JS errors of those who dropped). mode: ordered (default), unordered, or open (each step counted on its own).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...siteArg, ...periodArg,
+        funnel_id: { type: 'string', description: 'A saved funnel id' },
+        steps: { type: 'array', items: { type: 'object', properties: { type: { type: 'string', enum: ['page', 'event'] }, value: { type: 'string' } } }, description: '2–8 steps, e.g. [{"type":"page","value":"/"},{"type":"event","value":"play_start"}]' },
+        mode: { type: 'string', enum: ['ordered', 'unordered', 'open'] },
+        breakdown: { type: 'string', enum: ['source', 'country', 'device', 'browser', 'os'] },
+      },
+      required: ['site_id'],
+    },
+  },
+  {
     name: 'get_suspicious_visitors',
     description: 'Individual high-scoring visitors with their bot score, verdict and the evidence flags that fired. Use for drill-down after get_traffic_quality.',
     inputSchema: {
@@ -155,9 +220,9 @@ export async function callTool(name, a) {
         + `  first_search_crawl=${s.first_search_crawl_at ? new Date(s.first_search_crawl_at).toISOString() : 'none yet'}`).join('\n');
     }
     case 'get_overview':
-      return fmt(await api(`/v1/sites/${sid(a)}/overview`, { period: P(a) }));
+      return fmt(await api(`/v1/sites/${sid(a)}/overview`, { period: P(a), compare: a.compare }));
     case 'get_realtime':
-      return fmt(await api(`/v1/sites/${sid(a)}/realtime`));
+      return fmt(await api(`/v1/sites/${sid(a)}/realtime`, { window: a.window }));
     case 'get_timeseries':
       return fmt(await api(`/v1/sites/${sid(a)}/timeseries`, {
         period: P(a), metric: a.metric || 'pv', interval: a.interval,
@@ -176,6 +241,22 @@ export async function callTool(name, a) {
       return fmt(await api(`/v1/sites/${sid(a)}/edge`, { period: P(a) }));
     case 'get_crawlers':
       return fmt(await api(`/v1/sites/${sid(a)}/crawlers`, { period: P(a), limit: a.limit }));
+    case 'list_experiments':
+      return fmt(await api(`/v1/sites/${sid(a)}/experiments`, { period: a.period || '30d' }));
+    case 'get_experiment':
+      return fmt(await api(`/v1/sites/${sid(a)}/experiment`, {
+        period: a.period, experiment: a.experiment, goal: a.goal, window_hours: a.window_hours,
+        baseline: a.baseline, min_exposures: a.min_exposures, win_threshold: a.win_threshold,
+      }));
+    case 'get_event_inventory':
+      return fmt(await api(`/v1/sites/${sid(a)}/event_inventory`, { period: a.period || '30d' }));
+    case 'get_ai_referrals':
+      return fmt(await api(`/v1/sites/${sid(a)}/ai_referrals`, { period: a.period || '30d', assistant: a.assistant }));
+    case 'get_funnel':
+      return fmt(await api(`/v1/sites/${sid(a)}/funnel`, {
+        period: P(a), funnel_id: a.funnel_id, steps: a.steps ? JSON.stringify(a.steps) : undefined,
+        mode: a.mode, breakdown: a.breakdown,
+      }));
     case 'get_suspicious_visitors':
       return fmt(await api(`/v1/sites/${sid(a)}/traffic`, {
         period: P(a), min_score: a.min_score ?? 30, limit: a.limit,
