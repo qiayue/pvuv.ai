@@ -48,6 +48,8 @@ for (const [show, w, h] of [['drawer', 1440, 960], ['cards', 1440, 900], ['heatm
 const MOCK = {
   '/api/home': { name: 'pvuv.ai', description: '', primary_domain: '', logo_light: '', logo_dark: '', favicon: '' },
   '/api/me': { user: 'admin', timezone: 'Asia/Shanghai', ingest_host: '' },
+  // the shared sidebar's counts
+  '/api/portfolio': { sites: Array.from({ length: 126 }, (_, i) => ({ site_id: 's' + i, status: 'active', starred: i < 9, attention: i < 7 ? [{ code: 'x' }] : [] })) },
   '/api/settings/portfolio': { growth_uv_7d: 1000, growth_min_delta_pct: -10, decline_pct: 30, ivt_pct: 20,
     defaults: { growth_uv_7d: 1000, growth_min_delta_pct: -10, decline_pct: 30, ivt_pct: 20 } },
   '/api/sites': { sites: [{ site_id: 'Ab3xK9pQ', name: 'Pixel Golf' }] },
@@ -61,16 +63,15 @@ const MOCK = {
   '/api/settings/botdir': { imported: false },
   '/api/storage': { est_total_mb: 812.4, total_events: 1043210, sessions: 220311, profiles: 81233, retention: { raw_events_days: 90 }, partitions: [] },
 };
-for (const sec of ['portfolio', 'tokens']) {
-  const pg = await page(1440, 900);
+for (const [sec, name, w, h] of [['portfolio', 'settings', 1440, 900], ['tokens', 'settings-tokens', 1440, 900], ['tokens', 'settings-narrow', 390, 844]]) {
+  const pg = await page(w, h);
   pg.on('pageerror', (e) => console.error('settings', e.message));
   await pg.route('**/api/**', (route) => {
     const p = new URL(route.request().url()).pathname;
     route.fulfill({ status: MOCK[p] ? 200 : 404, contentType: 'application/json', body: JSON.stringify(MOCK[p] || { error: 'not mocked' }) });
   });
   await pg.goto(`${origin}/settings.html#${sec}`);
-  await pg.waitForTimeout(400);
-  const name = sec === 'portfolio' ? 'settings' : 'settings-tokens';
+  await pg.waitForTimeout(900);
   await pg.screenshot({ path: out(name) });
   console.log('wrote', out(name));
 }
