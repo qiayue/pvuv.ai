@@ -461,6 +461,7 @@
       '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.': '{n} 个站点在{period}的合计，与上一周期对比。已排除机器人和爬虫。',
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '{n} 个站点在{period}的合计。已排除机器人和爬虫。',
       '{pct} of visitors': '{pct} 的访客',
+      'Menu': '菜单',
     },
     ja: {
       'API tokens': 'API トークン',
@@ -779,6 +780,7 @@
       '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.': '{n} サイトの{period}の合計（前の期間と比較）。ボットとクローラーは除外。',
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '{n} サイトの{period}の合計。ボットとクローラーは除外。',
       '{pct} of visitors': '訪問者の {pct}',
+      'Menu': 'メニュー',
     },
     ko: {
       'API tokens': 'API 토큰',
@@ -1097,6 +1099,7 @@
       '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.': '사이트 {n}개, {period} 합계, 이전 기간과 비교. 봇과 크롤러 제외.',
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '사이트 {n}개, {period} 합계. 봇과 크롤러 제외.',
       '{pct} of visitors': '방문자의 {pct}',
+      'Menu': '메뉴',
     },
     de: {
       'API tokens': 'API-Tokens',
@@ -1415,6 +1418,7 @@
       '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.': '{n} Websites, Summen für {period}, verglichen mit dem vorherigen Zeitraum. Bots und Crawler ausgeschlossen.',
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '{n} Websites, Summen für {period}. Bots und Crawler ausgeschlossen.',
       '{pct} of visitors': '{pct} der Besucher',
+      'Menu': 'Menü',
     },
     fr: {
       'API tokens': 'Jetons API',
@@ -1733,6 +1737,7 @@
       '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.': '{n} sites, totaux pour {period}, comparés à la période précédente. Robots exclus.',
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '{n} sites, totaux pour {period}. Robots exclus.',
       '{pct} of visitors': '{pct} des visiteurs',
+      'Menu': 'Menu',
     },
     es: {
       'API tokens': 'Tokens de API',
@@ -2051,6 +2056,7 @@
       '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.': '{n} sitios, totales de {period}, comparados con el periodo anterior. Bots y rastreadores excluidos.',
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '{n} sitios, totales de {period}. Bots y rastreadores excluidos.',
       '{pct} of visitors': '{pct} de los visitantes',
+      'Menu': 'Menú',
     },
     // English for SYMBOLIC keys only (attn.<code>, …): ordinary
     // English UI strings are their own keys and need no entry.

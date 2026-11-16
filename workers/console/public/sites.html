@@ -8,28 +8,6 @@
 <style>
   /* portfolio overview — docs/design/portfolio-mock-light.html */
   body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
-  .app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
-  aside.side { background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
-  .logo { display: flex; align-items: center; gap: 10px; padding: 16px 18px; font-weight: 650; font-size: 17px; border-bottom: 1px solid var(--line); color: var(--text); }
-  .logo:hover { text-decoration: none; }
-  .logo .mark { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--text); display: grid; place-items: center; font-size: 10px; font-weight: 800; }
-  .logo img { height: 24px; display: block; }
-  .ws { padding: 12px 16px; border-bottom: 1px solid var(--line); }
-  .ws small { color: var(--mut); font-size: 13px; }
-  .ws div { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-  .side .cta { margin: 12px; justify-content: center; padding: 9px 0; }
-  nav.groups { padding: 4px 8px; flex: 1; overflow: auto; }
-  nav.groups h5 { margin: 16px 8px 6px; font-size: 13px; font-weight: 500; color: var(--mut); }
-  nav.groups a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--text); text-decoration: none; }
-  nav.groups a:hover { background: var(--surface-2); }
-  nav.groups a.on { background: #f1f1f3; font-weight: 600; }
-  nav.groups a.dim { color: var(--mut); }
-  nav.groups a .n { margin-left: auto; font-size: 12px; color: var(--mut); font-weight: 400; font-variant-numeric: tabular-nums; }
-  .me { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); position: relative; }
-  .me .av { width: 30px; height: 30px; border-radius: 50%; background: #e4e4e7; display: grid; place-items: center; font-size: 13px; color: var(--text-2); flex: none; }
-  .me small { display: block; color: var(--mut); font-size: 12px; }
-  .me .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
   main.pf { max-width: none; margin: 0; padding: 26px 32px 40px; min-width: 0; }
   h1.title { font-size: 30px; font-weight: 650; letter-spacing: -.01em; margin: 0 0 14px; color: var(--text); }
   .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
@@ -86,14 +64,11 @@
   .viewhost { padding: 14px 18px; min-height: 200px; }
   .menu { position: relative; }
   .menu-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(24,24,27,.10); }
-  .menu-pop.up { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; }
   .menu-pop a, .menu-pop button, .menu-pop label { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 9px; border-radius: 7px; border: 0; background: none; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
   .menu-pop a:hover, .menu-pop button:hover, .menu-pop label:hover { background: var(--surface-2); text-decoration: none; }
   .menu-pop h5 { margin: 6px 9px 4px; font-size: 11.5px; color: var(--mut); font-weight: 500; }
   .menu-pop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 2px; }
   .menu-pop select { width: 100%; }
-  .iconbtn { background: none; border: 0; color: var(--mut); padding: 4px; border-radius: 6px; display: inline-grid; place-items: center; }
-  .iconbtn:hover { background: var(--surface-2); color: var(--text); }
   select.stagesel { min-height: 32px; font-size: 13px; }
 
   /* add-site modal (kept flow: template picker + snippet) */
@@ -113,10 +88,7 @@
   .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: var(--text); font-family: var(--mono); }
   .snippet .row { display: flex; gap: 8px; margin-top: 12px; }
   @media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .pbars .r { grid-template-columns: 130px 1fr 70px 50px; } .pbars .r > :last-child { display: none; } }
-  @media (max-width: 900px) {
-    .app { grid-template-columns: 1fr; } aside.side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
-    nav.groups { display: none; } main.pf { padding: 18px 14px 30px; } .search { width: 100%; }
-  }
+  @media (max-width: 900px) { main.pf { padding: 18px 14px 30px; } .search { width: 100%; } }
   @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create .full { grid-column: span 1; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
 </head>
@@ -124,6 +96,7 @@
 <script src="/i18n.js"></script>
 <script src="/js/ui.js"></script>
 <script src="/js/cmdk.js"></script>
+<script src="/js/shell.js"></script>
 <!-- optional modules from the management stream; absent → graceful fallback -->
 <script src="/js/drawer.js" defer onerror="void 0"></script>
 <script src="/js/views.js" defer onerror="void 0"></script>
@@ -204,12 +177,32 @@ const Icon = ({ n }) => html`<svg class="i" viewBox="0 0 24 24" aria-hidden="tru
 const LS = { cols: 'pvuv.portfolio.cols', sort: 'pvuv.portfolio.sort', period: 'pvuv.portfolio.period', layout: 'pvuv.portfolio.layout' };
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked */ } };
-const qp = new URLSearchParams(location.search);
 const PERIODS = ['today', 'yesterday', '7d', '30d', '90d', 'this_week', 'last_week', 'this_month', 'last_month', 'this_year'];
 const PERIOD_EN = { today: 'Today', yesterday: 'Yesterday', '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', this_week: 'This week', last_week: 'Last week', this_month: 'This month', last_month: 'Last month', this_year: 'This year' };
 const QUICK = ['attention', 'new_week', 'no_google', 'ivt_high'];
 const TABS = ['overview', 'sites', 'lifecycle'];
 const LIFE_ORDER = ['growing', 'organic', 'crawled', 'awaiting_crawl', 'setup', 'declining'];
+
+/** every piece of view state the URL can carry (shareable; the shell links set it) */
+function urlState() {
+  const qp = new URLSearchParams(location.search);
+  const sortQ = qp.get('sort');
+  const preset = qp.get('preset');
+  return {
+    tab: TABS.includes(qp.get('tab')) ? qp.get('tab') : 'overview',
+    period: qp.get('period') || lsGet(LS.period, '7d'),
+    compare: qp.get('compare') !== 'none',
+    view: ['attention', 'starred'].includes(qp.get('view')) ? qp.get('view') : 'all',
+    stage: qp.get('stage') || '',
+    tag: qp.get('tag') || '',
+    quick: qp.get('quick') || '',
+    search: qp.get('q') || '',
+    sort: sortQ ? { id: sortQ.split(':')[0], dir: sortQ.split(':')[1] === 'asc' ? 'asc' : 'desc' } : (qp.has('view') || preset ? { id: 'uv', dir: 'desc' } : lsGet(LS.sort, { id: 'uv', dir: 'desc' })),
+    cols: (preset && PRESETS_REF[preset] ? PRESETS_REF[preset] : qp.get('cols') ? qp.get('cols').split(',') : lsGet(LS.cols, PRESETS_REF.overview)).filter((c) => COL_BY_REF[c]),
+    layout: qp.get('layout') || lsGet(LS.layout, 'table'),
+  };
+}
+let PRESETS_REF = {}, COL_BY_REF = {};
 
 // ── columns ─────────────────────────────────────────────────────────────
 const extVal = (s, k) => (s.external ? s.external[k] : null);
@@ -248,6 +241,7 @@ const COLS = [
   { id: 'adsense', label: 'Ad network', ext: true, sort: (s) => s.external?.adsense?.status || '', render: (s) => (s.external?.adsense ? `<span class="stage"><i style="background:${['ready', 'approved', 'ok'].includes(s.external.adsense.status) ? 'var(--up)' : 'var(--warn)'}"></i>${te(s.external.adsense.status)}</span>` : '–') },
 ];
 const COL_BY = Object.fromEntries(COLS.map((c) => [c.id, c]));
+COL_BY_REF = COL_BY;
 const PRESETS = {
   // external columns are listed but only shown when some site has external data
   overview: ['stage', 'live', 'uv', 'delta', 'trend', 'crawl', 'organic', 'ivt', 'revenue', 'rpm', 'adsense', 'attention'],
@@ -256,8 +250,11 @@ const PRESETS = {
   revenue: ['stage', 'uv', 'delta', 'revenue', 'rpm', 'adsense', 'attention'],
   ranking: ['rank', 'uv', 'ext_clean', 'internal', 'clean_pv', 'pv', 'human', 'ivt', 'trend'],
   growth: ['stage', 'uv', 'uv_prev', 'delta', 'trend', 'organic', 'ai', 'pv'],
+  // experiments are per site (the site preview / dashboard): the table just lists sites to open
+  experiments: ['stage', 'uv', 'delta', 'trend', 'organic', 'attention'],
 };
-const PRESET_EN = { overview: 'Overview', crawl: 'Indexing & crawlers', quality: 'Traffic quality', revenue: 'Revenue', ranking: 'Ranking · clean traffic', growth: 'Growth' };
+PRESETS_REF = PRESETS;
+const PRESET_EN = { overview: 'Overview', crawl: 'Indexing & crawlers', quality: 'Traffic quality', revenue: 'Revenue', ranking: 'Ranking · clean traffic', growth: 'Growth', experiments: 'Experiments' };
 
 // ── data ─────────────────────────────────────────────────────────────────
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
@@ -326,30 +323,36 @@ function Menu({ label, children, cls = 'p-btn', title, up }) {
 
 function App() {
   const [, setTick] = useState(0);
-  const [period, setPeriod] = useState(qp.get('period') || lsGet(LS.period, '7d'));
-  const [compare, setCompare] = useState(qp.get('compare') !== 'none');
+  const init = useMemo(urlState, []);
+  const [period, setPeriod] = useState(init.period);
+  const [compare, setCompare] = useState(init.compare);
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [syncing, setSyncing] = useState(false);
-  const [tab, setTab] = useState(TABS.includes(qp.get('tab')) ? qp.get('tab') : 'overview');
-  const [view, setView] = useState(['attention', 'starred'].includes(qp.get('view')) ? qp.get('view') : 'all');
-  const [stage, setStage] = useState(qp.get('stage') || '');
-  const [tag, setTag] = useState(qp.get('tag') || '');
-  const [quick, setQuick] = useState(qp.get('quick') || '');
-  const [search, setSearch] = useState(qp.get('q') || '');
-  const [sort, setSort] = useState(() => {
-    const s = qp.get('sort'); if (s) { const [id, dir] = s.split(':'); return { id, dir: dir === 'asc' ? 'asc' : 'desc' }; }
-    return lsGet(LS.sort, { id: 'uv', dir: 'desc' });
-  });
-  const [cols, setCols] = useState(() => (qp.get('cols') ? qp.get('cols').split(',') : lsGet(LS.cols, PRESETS.overview)).filter((c) => COL_BY[c]));
-  const [layout, setLayout] = useState(qp.get('layout') || lsGet(LS.layout, 'table'));
+  const [tab, setTab] = useState(init.tab);
+  const [view, setView] = useState(init.view);
+  const [stage, setStage] = useState(init.stage);
+  const [tag, setTag] = useState(init.tag);
+  const [quick, setQuick] = useState(init.quick);
+  const [search, setSearch] = useState(init.search);
+  const [sort, setSort] = useState(init.sort);
+  const [cols, setCols] = useState(init.cols);
+  const [layout, setLayout] = useState(init.layout);
+  // shell links (and back / forward) change the URL in place → re-read it
+  useEffect(() => {
+    const apply = () => {
+      const u = urlState();
+      setTab(u.tab); setPeriod(u.period); setCompare(u.compare); setView(u.view); setStage(u.stage); setTag(u.tag);
+      setQuick(u.quick); setSearch(u.search); setSort(u.sort); setCols(u.cols); setLayout(u.layout);
+    };
+    document.addEventListener('pvuv:route', apply); window.addEventListener('popstate', apply);
+    return () => { document.removeEventListener('pvuv:route', apply); window.removeEventListener('popstate', apply); };
+  }, []);
   const [metric, setMetric] = useState('uv');
   const [gran, setGran] = useState('day');
   const [selected, setSelected] = useState(() => new Set());
   const [focus, setFocus] = useState(-1);
   const [ranking, setRanking] = useState(null);
-  const [brand, setBrand] = useState({ name: 'pvuv.ai' });
-  const [me, setMe] = useState(null);
   const [modules, setModules] = useState({});
   const viewHost = useRef(); const bulkHost = useRef(); const bulkApi = useRef(null);
   const searchRef = useRef();
@@ -361,19 +364,11 @@ function App() {
     check(); window.addEventListener('load', check); document.addEventListener('pvuv:modules', check);
     return () => { window.removeEventListener('load', check); document.removeEventListener('pvuv:modules', check); };
   }, []);
-  useEffect(() => {
-    fetch('/api/home').then((r) => (r.ok ? r.json() : null)).then((b) => {
-      if (!b) return;
-      setBrand(b);
-      document.title = t('Portfolio overview') + ' — ' + (((b.name || '').trim()) || 'pvuv.ai');
-      if (b.favicon) { let l = document.querySelector('link[rel="icon"]'); if (!l) { l = document.createElement('link'); l.rel = 'icon'; document.head.appendChild(l); } l.href = b.favicon; }
-    }).catch(() => {});
-    fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {});
-  }, []);
+  useEffect(() => { document.title = t('Portfolio overview') + ' — pvuv.ai'; }, []);
 
   const load = useCallback((fresh) => {
     setErr(''); setSyncing(true);
-    return fetchPortfolio(period, compare, fresh).then((d) => { setData(d); window.pvuvCmdk?.setSites(d.sites); window.pvuvPortfolio = d; })
+    return fetchPortfolio(period, compare, fresh).then((d) => { setData(d); window.pvuvCmdk?.setSites(d.sites); window.pvuvPortfolio = d; document.dispatchEvent(new CustomEvent('pvuv:portfolio', { detail: d })); })
       .catch((e) => { if (e.message !== 'auth') setErr(e.message || 'failed'); })
       .finally(() => setSyncing(false));
   }, [period, compare]);
@@ -396,11 +391,15 @@ function App() {
     if (quick) p.set('quick', quick);
     if (search) p.set('q', search);
     if (!(sort.id === 'uv' && sort.dir === 'desc')) p.set('sort', sort.id + ':' + sort.dir);
-    if (cols.join(',') !== PRESETS.overview.join(',')) p.set('cols', cols.join(','));
+    const preset = Object.keys(PRESETS).find((k) => k !== 'overview' && PRESETS[k].join(',') === cols.join(','));
+    if (preset) p.set('preset', preset);
+    else if (cols.join(',') !== PRESETS.overview.join(',')) p.set('cols', cols.join(','));
     if (layout !== 'table') p.set('layout', layout);
     const qs = p.toString();
-    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
-    lsSet(LS.period, period); lsSet(LS.sort, sort); lsSet(LS.cols, cols); lsSet(LS.layout, layout);
+    if (location.search !== (qs ? '?' + qs : '')) history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+    document.dispatchEvent(new CustomEvent('pvuv:urlchange'));
+    // a named preset (sidebar link) is not remembered as the user's own column choice
+    lsSet(LS.period, period); lsSet(LS.sort, sort); if (!preset) lsSet(LS.cols, cols); lsSet(LS.layout, layout);
   }, [tab, period, compare, view, stage, tag, quick, search, sort, cols, layout]);
 
   const th = data?.thresholds || { ivt_pct: 20, growth_uv_7d: 1000 };
@@ -483,12 +482,6 @@ function App() {
 
   function toggleSel(id) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   function sortBy(id) { setSort((s) => (s.id === id ? { id, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { id, dir: COL_BY[id]?.num || id === 'attention' ? 'desc' : 'asc' })); }
-  function go(next) {
-    // sidebar / tab navigation; the attention queue always opens in its own order
-    setTab(next.tab ?? 'sites'); setView(next.view ?? 'all'); setQuick(''); if (next.stage !== undefined) setStage(next.stage);
-    if (next.view === 'attention') setSort({ id: 'uv', dir: 'desc' });
-    if (next.preset) { setCols(PRESETS[next.preset]); setLayout('table'); }
-  }
 
   // ── chrome ──
   const counts = useMemo(() => {
@@ -500,42 +493,8 @@ function App() {
     }
     return c;
   }, [sites]);
-  const logo = brand.logo_dark || brand.logo_light;
-  const user = (me && me.user) || 'admin';
-  const navOn = (k) => (k === 'overview' ? tab === 'overview' && view === 'all' : k === 'all' ? tab === 'sites' && view === 'all' && !stage : tab !== 'overview' && view === k);
-  const Side = html`<aside class="side">
-    <a class="logo" href="/sites.html">${logo ? html`<img src=${logo} alt=${brand.name || 'pvuv.ai'} />` : html`<span class="mark">pv</span>`}${logo ? null : (brand.name || 'pvuv.ai')}</a>
-    <div class="ws"><small>${t('Workspace')}</small><div><${Icon} n="home" /><span>${(brand.name || '').trim() || t('My sites')}</span></div></div>
-    <button class="p-btn primary cta" type="button" onClick=${openAdd}><${Icon} n="plus" />${t('New site')}</button>
-    <nav class="groups" aria-label=${t('Views')}>
-      <h5>${t('Sites')}</h5>
-      <a href="?" class=${navOn('overview') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ tab: 'overview' }); }}><${Icon} n="overview" />${t('Overview')}</a>
-      <a href="?view=attention&tab=sites" class=${navOn('attention') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ view: 'attention' }); }}><${Icon} n="alert" />${t('Needs attention')}<span class="n">${counts.attention}</span></a>
-      <a href="?view=starred&tab=sites" class=${navOn('starred') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ view: 'starred' }); }}><${Icon} n="star" />${t('Starred')}<span class="n">${counts.starred}</span></a>
-      <a href="?tab=sites" class=${navOn('all') ? 'on' : ''} onClick=${(e) => { e.preventDefault(); go({ stage: '' }); }}><${Icon} n="globe" />${t('All sites')}<span class="n">${counts.all}</span></a>
-      <h5>${t('Analysis')}</h5>
-      <a href="?tab=sites" onClick=${(e) => { e.preventDefault(); go({ preset: 'crawl' }); }}><${Icon} n="search" />${t('Indexing & crawlers')}</a>
-      <a href="?tab=sites" onClick=${(e) => { e.preventDefault(); go({ preset: 'quality' }); }}><${Icon} n="layers" />${t('Traffic quality')}</a>
-      <a class="dim" href="#" title=${t('Experiments are per site — open a site to see them.')} onClick=${(e) => { e.preventDefault(); window.pvuvCmdk?.open(); }}><${Icon} n="flask" />${t('Experiments')}</a>
-      <a href="?tab=sites" class=${hasExternal ? '' : 'dim'} title=${hasExternal ? '' : t('Connect an integration to see revenue.')} onClick=${(e) => { e.preventDefault(); if (hasExternal) go({ preset: 'revenue' }); else location.href = '/settings.html#integrations'; }}><${Icon} n="dollar" />${t('Revenue')}</a>
-      <h5>${t('Configure')}</h5>
-      <a href="/settings.html#integrations"><${Icon} n="plug" />${t('Integrations')}</a>
-      <a href="/settings.html#tokens"><${Icon} n="key" />${t('API tokens')}</a>
-      <a href="/settings.html"><${Icon} n="gear" />${t('Settings')}</a>
-    </nav>
-    <div class="me"><span class="av">${String(user).slice(0, 1).toUpperCase()}</span><div class="grow">${user}<small>${t('Self-hosted')}</small></div>
-      <${Menu} cls="iconbtn" label=${html`<${Icon} n="more" />`} title=${t('More')} up=${true}>
-        <h5>${t('Language')}</h5>
-        <div style="padding:0 6px"><select value=${I18N.lang} onChange=${(e) => I18N.setLang(e.target.value)}>${I18N.langs.map((l) => html`<option value=${l.code}>${l.label}</option>`)}</select></div>
-        <hr />
-        <a href="/health.html">${t('Self-check')}</a>
-        <button type="button" onClick=${async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login.html'; }}>${t('Sign out')}</button>
-      <//>
-    </div>
-  </aside>`;
-
-  if (err && !data) return html`<div class="app">${Side}<main class="pf"><h1 class="title">${t('Portfolio overview')}</h1><p class="loading-state">${t('failed')}: ${err} <button class="p-btn" onClick=${() => load(true)}>${t('Retry')}</button></p></main></div>`;
-  if (!data) return html`<div class="app">${Side}<main class="pf"><h1 class="title">${t('Portfolio overview')}</h1><p class="loading-state">${t('loading…')}</p></main></div>`;
+  if (err && !data) return html`<main class="pf"><h1 class="title">${t('Portfolio overview')}</h1><p class="loading-state">${t('failed')}: ${err} <button class="p-btn" onClick=${() => load(true)}>${t('Retry')}</button></p></main>`;
+  if (!data) return html`<main class="pf"><h1 class="title">${t('Portfolio overview')}</h1><p class="loading-state">${t('loading…')}</p></main>`;
 
   // ── overview numbers (server totals, or client sums under a tag filter) ──
   const activeScope = scope.filter((s) => s.status === 'active');
@@ -673,7 +632,7 @@ function App() {
   </section>`;
 
   const title = tab === 'sites' && view === 'attention' ? t('Needs attention') : tab === 'sites' && view === 'starred' ? t('Starred') : t('Portfolio overview');
-  return html`<div class="app">${Side}
+  return html`
     <main class="pf" aria-busy=${data._stale ? 'true' : 'false'} style=${data._stale ? 'opacity:.6;transition:opacity .2s' : ''}>
       <h1 class="title">${title}</h1>
       ${sites.length === 0 ? html`
@@ -688,6 +647,8 @@ function App() {
         ${TABS.map((k) => html`<button type="button" role="tab" aria-selected=${tab === k} class=${tab === k ? 'on' : ''} onClick=${() => { setTab(k); if (k === 'overview') setView('all'); }}>${t({ overview: 'Overview', sites: 'Sites', lifecycle: 'Lifecycle' }[k])}</button>`)}
       </div>
       ${Toolbar}
+      ${cols.join(',') === PRESETS.experiments.join(',') && tab === 'sites' ? html`<div class="p-card banner"><${Icon} n="flask" /><div><b>${t('Experiments')}</b>
+        <p>${t('Experiments are per site — open a site to see them.')}</p></div></div>` : null}
       ${allSetup ? html`<div class="p-card banner"><${Icon} n="code" /><div><b>${fill(t('{n} sites are waiting for their first visit'), { n: counts.all })}</b>
         <p>${t('Embed the snippet on each site (open a site for its snippet). Stages, trends and crawl signals fill in as data arrives.')}</p></div></div>` : null}
       ${tab === 'overview' ? html`
@@ -702,8 +663,7 @@ function App() {
         </section>
         ${Lifecycle}${Chart}${TableCard}` : tab === 'lifecycle' ? html`${Lifecycle}${Funnel}${TableCard}` : TableCard}
       `}
-    </main>
-  </div>`;
+    </main>`;
 }
 
 // ── add-site modal (kept flow: template picker + snippet) ────────────────
@@ -778,6 +738,11 @@ I18N.applyStatic();
 const root = document.getElementById('app');
 root.textContent = '';
 render(html`<${App} />`, root);
+if (new URLSearchParams(location.search).get('new') === '1') {
+  const u = new URLSearchParams(location.search); u.delete('new');
+  history.replaceState(null, '', location.pathname + (u.toString() ? '?' + u : ''));
+  openAdd();
+}
 </script>
 </body>
 </html>
