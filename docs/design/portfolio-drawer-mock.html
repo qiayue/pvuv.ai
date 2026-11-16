@@ -1,0 +1,101 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>站群总览 · 原型</title>
+<style>
+:root{--bg:#0f1218;--panel:#161a22;--line:#232936;--text:#e6e9ef;--mut:#8b93a1;--blue:#5b9cff;--green:#3fb97f;--amber:#e0a34a;--red:#ef6b6b;--violet:#a98bff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--line)}
+.brand{font-weight:700}.search{flex:0 0 360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--mut)}
+kbd{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px;color:var(--mut);margin-left:6px}
+.sp{flex:1}.btn{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:6px 11px}.btn.p{background:#2563eb;border-color:#2563eb}
+.wrap{display:grid;grid-template-columns:210px 1fr;min-height:calc(100vh - 49px)}
+aside{border-right:1px solid var(--line);padding:14px 10px}
+aside h4{margin:14px 8px 6px;font-size:11px;color:var(--mut);font-weight:600;letter-spacing:.04em}
+.v{display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;color:#c7cdd8}.v.on{background:#1f2633;color:#fff}
+.v b{font-weight:500;color:var(--mut)}.v .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px}
+main{padding:16px 20px}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px}
+.k{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px}.k .l{color:var(--mut);font-size:12px}.k .n{font-size:20px;font-weight:650;margin-top:2px}
+.up{color:var(--green)}.dn{color:var(--red)}.k small{font-size:12px;margin-left:6px}
+.funnel{display:flex;gap:4px;margin-bottom:12px}.fs{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12px;color:var(--mut)}.fs b{display:block;font-size:16px;color:var(--text)}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:8px}.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:#c7cdd8;font-size:12px}
+.chip.on{border-color:var(--blue);color:#fff}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+th{position:sticky;top:0;background:#1a1f29;text-align:left;font-weight:500;color:var(--mut);font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid #1e2430;white-space:nowrap}tr:hover td{background:#1b2130}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.site b{font-weight:600}.site div{color:var(--mut);font-size:11.5px}
+.st{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;border:1px solid}
+.s0{color:var(--mut);border-color:#3a4252}.s1{color:var(--amber);border-color:#5a4524}.s2{color:var(--blue);border-color:#22406e}.s3{color:var(--violet);border-color:#41357a}.s4{color:var(--green);border-color:#1f5a3f}.s9{color:var(--red);border-color:#6a2b2b}
+.age{color:var(--mut);font-size:11px;margin-left:4px}
+.eng{display:inline-flex;gap:3px}.e{width:20px;height:18px;border-radius:4px;font-size:10.5px;display:inline-grid;place-items:center;background:#232a37;color:#5d6676}
+.e.ok{background:#173a2b;color:#7fe0ad}.e.late{background:#4a2f17;color:#f3b866}
+.att{color:var(--red);font-size:12px}.att.w{color:var(--amber)}
+.hm{display:inline-grid;grid-template-columns:repeat(14,7px);gap:2px}.hm i{width:7px;height:12px;border-radius:2px;background:#232a37}
+.star{color:#f5c542}.tag{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:5px}
+.note{color:var(--mut);font-size:12px;margin-top:10px}
+</style></head><body>
+<header><span class="brand">pvuv.ai</span><div class="search">搜索站点、域名、标签…<kbd>⌘K</kbd></div><div class="sp"></div>
+<span class="chip">最近 7 天 ▾</span><span class="chip">对比：上一周期</span><button class="btn">批量操作</button><button class="btn p">＋ 新站点</button></header>
+<div class="wrap"><aside>
+<h4>视图</h4>
+<div class="v on"><span>全部站点</span><b>126</b></div>
+<div class="v"><span><i class="dot" style="background:var(--red)"></i>需要处理</span><b>7</b></div>
+<div class="v"><span>★ 收藏</span><b>9</b></div>
+<h4>生命周期</h4>
+<div class="v"><span><i class="dot" style="background:#5d6676"></i>待接入（没收到数据）</span><b>2</b></div>
+<div class="v"><span><i class="dot" style="background:var(--amber)"></i>已上线·等抓取</span><b>5</b></div>
+<div class="v"><span><i class="dot" style="background:var(--blue)"></i>已被抓取</span><b>18</b></div>
+<div class="v"><span><i class="dot" style="background:var(--violet)"></i>有自然流量</span><b>61</b></div>
+<div class="v"><span><i class="dot" style="background:var(--green)"></i>稳定增长</span><b>27</b></div>
+<div class="v"><span><i class="dot" style="background:var(--red)"></i>下滑 / 停滞</span><b>13</b></div>
+<h4>分组 / 标签</h4>
+<div class="v"><span>上线批次 · 本周</span><b>7</b></div>
+<div class="v"><span>小游戏</span><b>88</b></div>
+<div class="v"><span>内容站</span><b>38</b></div>
+<div class="v"><span>AdSense</span><b>71</b></div>
+<div class="v"><span>Adsterra</span><b>55</b></div>
+<div class="v"><span>已归档</span><b>4</b></div>
+</aside><main>
+<div class="kpis">
+<div class="k"><div class="l">真人访客</div><div class="n">48,210<small class="up">▲ 12%</small></div></div>
+<div class="k"><div class="l">浏览量</div><div class="n">131,904<small class="up">▲ 9%</small></div></div>
+<div class="k"><div class="l">无效流量占比</div><div class="n">6.8%<small class="dn">▲ 1.2pt</small></div></div>
+<div class="k"><div class="l">自然搜索访客</div><div class="n">19,377<small class="up">▲ 21%</small></div></div>
+<div class="k"><div class="l">AI 助手带来</div><div class="n">1,204<small class="up">▲ 64%</small></div></div>
+<div class="k"><div class="l">头部 10% 站点贡献</div><div class="n">71%</div></div>
+</div>
+<div class="funnel"><div class="fs"><b>126</b>总站点</div><div class="fs"><b>124</b>已收到数据</div><div class="fs"><b>119</b>已被 Google 抓取</div><div class="fs"><b>101</b>有自然流量</div><div class="fs"><b>27</b>周访客 > 1,000</div></div>
+<div class="bar"><span class="chip on">需要处理 7</span><span class="chip">本周上线 7</span><span class="chip">有流量没 Google 抓取 1</span><span class="chip">无效流量 > 20% 2</span><span class="sp"></span><span class="chip">列 ▾</span><span class="chip">表格 | 卡片 | 热力图</span></div>
+<table><thead><tr><th>☐</th><th>站点</th><th>阶段</th><th>上线</th><th class="num">真人访客 ▾</th><th class="num">环比</th><th>14 天趋势</th><th>搜索抓取 G B Y 百</th><th class="num">自然搜索</th><th class="num">无效流量</th><th>每日健康</th><th>需要处理</th></tr></thead><tbody id="rows"></tbody></table>
+<p class="note">原型示意：数据为虚构。点击行打开右侧预览抽屉，按 j/k 上下移动、回车进入单站详情。</p>
+</main></div><div id="drawer" style="position:fixed;top:49px;right:0;bottom:0;width:440px;background:#131720;border-left:1px solid var(--line);padding:18px 20px;box-shadow:-12px 0 30px rgba(0,0,0,.4)">
+<div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:16px;font-weight:650">Pixel Golf <span class="tag">小游戏</span></div><div style="color:var(--mut)">pixelgolf.io · 上线 120 天</div></div><span class="st s9">下滑</span></div>
+<div style="margin:14px 0;padding:10px 12px;border:1px solid #6a2b2b;background:#2a1517;border-radius:8px;color:#f3a5a5">⚠ 无效流量 31%（上周 9%），广告保护仍为“关闭”。<div style="margin-top:8px"><button class="btn p">开启“均衡”保护</button> <button class="btn">查看可疑来源</button></div></div>
+<div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="k"><div class="l">真人访客</div><div class="n">1,544<small class="dn">▼12%</small></div></div><div class="k"><div class="l">自然搜索</div><div class="n">512</div></div><div class="k"><div class="l">AI 带来</div><div class="n">37</div></div></div>
+<div class="l" style="color:var(--mut);margin:6px 0">30 天真人访客 vs 无效流量</div>
+<svg width="400" height="90"><polyline fill="none" stroke="#5b9cff" stroke-width="2" points="0,30 30,28 60,32 90,30 120,35 150,33 180,38 210,40 240,42 270,45 300,47 330,50 360,52 400,55"/><polyline fill="none" stroke="#ef6b6b" stroke-width="2" points="0,80 30,80 60,79 90,80 120,78 150,77 180,72 210,66 240,58 270,52 300,48 330,44 360,42 400,40"/></svg>
+<div style="color:var(--mut);margin:12px 0 6px">搜索引擎抓取</div>
+<table style="font-size:12px"><tr><th>引擎</th><th>首次抓取</th><th>最近</th><th class="num">7 天</th></tr>
+<tr><td>Googlebot</td><td>上线第 1 天</td><td>2 小时前</td><td class="num">1,204</td></tr><tr><td>Bingbot</td><td>第 3 天</td><td>今天</td><td class="num">312</td></tr><tr><td>YandexBot</td><td>第 6 天</td><td>昨天</td><td class="num">88</td></tr><tr><td>百度</td><td>第 15 天</td><td>3 天前</td><td class="num">21</td></tr></table>
+<div style="color:var(--mut);margin:12px 0 6px">实验</div><div class="k">首页标题 A/B · 版本 B 领先，胜出概率 93%（需 ≥ 99%）</div>
+<div style="margin-top:16px;display:flex;gap:8px"><button class="btn p">打开完整报表 ↵</button><button class="btn">★ 收藏</button><button class="btn">归档</button></div></div>
+<script>
+const R=[
+['★','Snake Rush','snakerush.io','小游戏','s4','稳定增长',182,9120,18,[3,4,4,5,6,6,7,7,8,8,9,9,10,11],'oooo',6210,4.1,'',''],
+['★','Gem Swap','gemswap.games','小游戏','s4','稳定增长',150,6833,7,[6,6,7,6,7,7,7,8,7,8,8,8,8,9],'ooo-',4120,5.0,'',''],
+['','Word Hunt','wordhunt.fun','内容站','s9','下滑',96,2104,-38,[9,9,8,8,7,7,6,5,5,4,4,3,3,3],'ooo-',1301,3.2,'d','访客 7 天下滑 38%'],
+['','Tile Merge','tilemerge.app','小游戏','s3','有自然流量',41,1980,64,[1,1,2,2,2,3,3,4,4,5,6,6,7,8],'oo--',1460,2.8,'',''],
+['','Pixel Golf','pixelgolf.io','小游戏','s9','下滑',120,1544,-12,[7,7,7,6,6,7,6,6,5,6,5,5,5,5],'oooo',512,31.4,'b','无效流量 31%，广告保护仍为“关闭”'],
+['','Neon Run','neonrun.games','小游戏','s2','已被抓取',9,212,null,[0,0,0,0,0,1,1,1,2,2,2,3,3,3],'o---',38,4.0,'',''],
+['','Hex Puzzle','hexpuzzle.fun','小游戏','s1','等抓取',4,96,null,[0,0,0,0,0,0,0,0,0,0,1,1,2,2],'l---',0,2.1,'w','上线 4 天，Google 还没来抓'],
+['','Color Sort','colorsort.app','小游戏','s1','等抓取',2,41,null,[0,0,0,0,0,0,0,0,0,0,0,0,1,2],'----',0,0,'',''],
+['','Car Drift','cardrift.io','小游戏','s0','待接入',1,0,null,[0,0,0,0,0,0,0,0,0,0,0,0,0,0],'----',0,0,'w','24 小时内没收到统计数据，检查嵌入代码'],
+];
+const sp=(a)=>{const m=Math.max(...a,1),w=96,h=22;const p=a.map((v,i)=>`${(i/(a.length-1)*w).toFixed(1)},${(h-2-v/m*(h-4)).toFixed(1)}`).join(' ');return `<svg width="${w}" height="${h}" role="img" aria-label="趋势"><polyline fill="none" stroke="#5b9cff" stroke-width="1.5" points="${p}"/></svg>`};
+const eng=(s)=>'<span class="eng">'+['G','B','Y','百'].map((n,i)=>`<span class="e ${s[i]==='o'?'ok':s[i]==='l'?'late':''}">${n}</span>`).join('')+'</span>';
+const hm=(a,ivt)=>'<span class="hm">'+a.map((v)=>{const c=v===0?'#232a37':ivt>20?'#7a3b2b':v<3?'#1d4d38':v<6?'#2a7a54':'#3fb97f';return `<i style="background:${c}"></i>`}).join('')+'</span>';
+window.R=R;document.getElementById('rows').innerHTML=R.map(r=>`<tr><td>☐</td><td class="site"><b><span class="star">${r[0]}</span> ${r[1]}</b><span class="tag">${r[3]}</span><div>${r[2]}</div></td>
+<td><span class="st ${r[4]}">${r[5]}</span></td><td>${r[6]} 天</td><td class="num">${r[7].toLocaleString()}</td>
+<td class="num ${r[8]==null?'':r[8]>=0?'up':'dn'}">${r[8]==null?'新站':(r[8]>0?'▲ ':'▼ ')+Math.abs(r[8])+'%'}</td>
+<td>${sp(r[9])}</td><td>${eng(r[10])}</td><td class="num">${r[11].toLocaleString()}</td><td class="num ${r[12]>20?'dn':''}">${r[12]}%</td><td>${hm(r[9],r[12])}</td>
+<td class="att ${r[13]==='w'?'w':''}">${r[14]}</td></tr>`).join('');
+</script></body></html>

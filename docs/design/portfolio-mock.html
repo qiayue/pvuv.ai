@@ -1,0 +1,121 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>站群总览 · 原型</title>
+<style>
+:root{--bg:#0f1218;--panel:#161a22;--line:#232936;--text:#e6e9ef;--mut:#8b93a1;--blue:#5b9cff;--green:#3fb97f;--amber:#e0a34a;--red:#ef6b6b;--violet:#a98bff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--line)}
+.brand{font-weight:700}.search{flex:0 0 360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--mut)}
+kbd{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px;color:var(--mut);margin-left:6px}
+.sp{flex:1}.btn{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:6px 11px}.btn.p{background:#2563eb;border-color:#2563eb}
+.wrap{display:grid;grid-template-columns:210px 1fr;min-height:calc(100vh - 49px)}
+aside{border-right:1px solid var(--line);padding:14px 10px}
+aside h4{margin:14px 8px 6px;font-size:11px;color:var(--mut);font-weight:600;letter-spacing:.04em}
+.v{display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;color:#c7cdd8}.v.on{background:#1f2633;color:#fff}
+.v b{font-weight:500;color:var(--mut)}.v .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px}
+main{padding:16px 20px}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px}
+.k{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px}.k .l{color:var(--mut);font-size:12px}.k .n{font-size:20px;font-weight:650;margin-top:2px}
+.up{color:var(--green)}.dn{color:var(--red)}.k small{font-size:12px;margin-left:6px}
+.funnel{display:flex;gap:4px;margin-bottom:12px}.fs{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12px;color:var(--mut)}.fs b{display:block;font-size:16px;color:var(--text)}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:8px}.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:#c7cdd8;font-size:12px}
+.chip.on{border-color:var(--blue);color:#fff}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+th{position:sticky;top:0;background:#1a1f29;text-align:left;font-weight:500;color:var(--mut);font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid #1e2430;white-space:nowrap}tr:hover td{background:#1b2130}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.site b{font-weight:600}.site div{color:var(--mut);font-size:11.5px}
+.st{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;border:1px solid}
+.s0{color:var(--mut);border-color:#3a4252}.s1{color:var(--amber);border-color:#5a4524}.s2{color:var(--blue);border-color:#22406e}.s3{color:var(--violet);border-color:#41357a}.s4{color:var(--green);border-color:#1f5a3f}.s9{color:var(--red);border-color:#6a2b2b}
+.age{color:var(--mut);font-size:11px;margin-left:4px}
+.eng{display:inline-flex;gap:3px}.e{width:20px;height:18px;border-radius:4px;font-size:10.5px;display:inline-grid;place-items:center;background:#232a37;color:#5d6676}
+.e.ok{background:#173a2b;color:#7fe0ad}.e.late{background:#4a2f17;color:#f3b866}
+.att{color:var(--red);font-size:12px}.att.w{color:var(--amber)}
+.hm{display:inline-grid;grid-template-columns:repeat(14,7px);gap:2px}.hm i{width:7px;height:12px;border-radius:2px;background:#232a37}
+.star{color:#f5c542}.tag{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:5px}
+.note{color:var(--mut);font-size:12px;margin-top:10px}
+
+:root{--bg:#08090c;--panel:#0f1115;--line:#1c1f26;--text:#eceef3;--mut:#7d8390;--blue:#8b7cff;--spark:#9a8cff;--green:#4cc38a;--violet:#b39dff}
+body{font-family:Inter,-apple-system,"PingFang SC",sans-serif;background:radial-gradient(1200px 600px at 70% -200px,#1b1640 0%,#08090c 60%)}
+header{background:rgba(8,9,12,.6);backdrop-filter:blur(8px)}
+.k,.fs,table{border-radius:12px;background:linear-gradient(180deg,#12141a,#0e1014);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.btn.p{background:linear-gradient(180deg,#8b7cff,#6b5cf0);border:0;box-shadow:0 0 0 1px #7c6cff,0 6px 20px rgba(124,108,255,.35)}
+th{background:#101217}.v.on{background:#1a1830;box-shadow:inset 2px 0 0 #8b7cff}
+.chip.on{border-color:#8b7cff;background:#1a1830}
+
+.k{position:relative;overflow:hidden;padding:12px 14px 30px}.k .mini{position:absolute;left:0;right:0;bottom:0;height:30px}
+.st{border:0;font-weight:500}.s0{background:#22252d;color:#a0a6b2}.s1{background:#3a2b14;color:#f2b65e}.s2{background:#14284a;color:#7fb2ff}.s3{background:#2a2050;color:#b9a6ff}.s4{background:#123826;color:#6fe0a3}.s9{background:#3d1a1e;color:#ff8a8a}
+.av{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:9px;font-weight:700;font-size:13px;color:#fff;margin-right:10px;vertical-align:middle;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.site{display:flex;align-items:center}.site .tx{display:inline-block}
+table{border:1px solid var(--line)}td{border-bottom:1px solid #15171d;padding:9px 10px}tr:hover td{background:#14161d}
+.hm{grid-template-columns:repeat(14,6px);gap:3px}.hm i{width:6px;height:16px;border-radius:3px}
+.e{border-radius:6px;width:22px;height:20px}.e.ok{background:#123826;color:#6fe0a3}
+.fs{position:relative;overflow:hidden}.fs .pb{position:absolute;left:0;bottom:0;height:3px;background:linear-gradient(90deg,#8b7cff,#4cc38a)}
+.att{display:inline-block;padding:3px 9px;border-radius:7px;background:#2a1418}.att.w{background:#2e2312}.att:empty{display:none}
+.kpis>*,.funnel>*{min-width:0}main{min-width:0;overflow:hidden}.k .mini svg{display:block;width:100%}
+td:last-child{white-space:normal;max-width:210px}.att{line-height:1.35}.hm{grid-template-columns:repeat(14,5px);gap:2px}.hm i{width:5px}
+.funnel .fs:nth-child(n){flex:1 1 0}</style></head><body>
+<header><span class="brand">pvuv.ai</span><span class="chip">精致版 · 渐变面积 + 头像 + 柔和标签</span><div class="search">搜索站点、域名、标签…<kbd>⌘K</kbd></div><div class="sp"></div>
+<span class="chip">最近 7 天 ▾</span><span class="chip">对比：上一周期</span><button class="btn">批量操作</button><button class="btn p">＋ 新站点</button></header>
+<div class="wrap"><aside>
+<h4>视图</h4>
+<div class="v on"><span>全部站点</span><b>126</b></div>
+<div class="v"><span><i class="dot" style="background:var(--red)"></i>需要处理</span><b>7</b></div>
+<div class="v"><span>★ 收藏</span><b>9</b></div>
+<h4>生命周期</h4>
+<div class="v"><span><i class="dot" style="background:#5d6676"></i>待接入（没收到数据）</span><b>2</b></div>
+<div class="v"><span><i class="dot" style="background:var(--amber)"></i>已上线·等抓取</span><b>5</b></div>
+<div class="v"><span><i class="dot" style="background:var(--blue)"></i>已被抓取</span><b>18</b></div>
+<div class="v"><span><i class="dot" style="background:var(--violet)"></i>有自然流量</span><b>61</b></div>
+<div class="v"><span><i class="dot" style="background:var(--green)"></i>稳定增长</span><b>27</b></div>
+<div class="v"><span><i class="dot" style="background:var(--red)"></i>下滑 / 停滞</span><b>13</b></div>
+<h4>分组 / 标签</h4>
+<div class="v"><span>上线批次 · 本周</span><b>7</b></div>
+<div class="v"><span>小游戏</span><b>88</b></div>
+<div class="v"><span>内容站</span><b>38</b></div>
+<div class="v"><span>AdSense</span><b>71</b></div>
+<div class="v"><span>Adsterra</span><b>55</b></div>
+<div class="v"><span>已归档</span><b>4</b></div>
+</aside><main>
+<div class="kpis">
+<div class="k"><div class="l">真人访客</div><div class="n">48,210<small class="up">▲ 12%</small></div></div>
+<div class="k"><div class="l">浏览量</div><div class="n">131,904<small class="up">▲ 9%</small></div></div>
+<div class="k"><div class="l">无效流量占比</div><div class="n">6.8%<small class="dn">▲ 1.2pt</small></div></div>
+<div class="k"><div class="l">自然搜索访客</div><div class="n">19,377<small class="up">▲ 21%</small></div></div>
+<div class="k"><div class="l">AI 助手带来</div><div class="n">1,204<small class="up">▲ 64%</small></div></div>
+<div class="k"><div class="l">头部 10% 站点贡献</div><div class="n">71%</div></div>
+</div>
+<div class="funnel"><div class="fs"><b>126</b>总站点</div><div class="fs"><b>124</b>已收到数据</div><div class="fs"><b>119</b>已被 Google 抓取</div><div class="fs"><b>101</b>有自然流量</div><div class="fs"><b>27</b>周访客 > 1,000</div></div>
+<div class="bar"><span class="chip on">需要处理 7</span><span class="chip">本周上线 7</span><span class="chip">有流量没 Google 抓取 1</span><span class="chip">无效流量 > 20% 2</span><span class="sp"></span><span class="chip">列 ▾</span><span class="chip">表格 | 卡片 | 热力图</span></div>
+<table><thead><tr><th>☐</th><th>站点</th><th>阶段</th><th>上线</th><th class="num">真人访客 ▾</th><th class="num">环比</th><th>14 天趋势</th><th>搜索抓取 G B Y 百</th><th class="num">自然搜索</th><th class="num">无效流量</th><th>每日健康</th><th>需要处理</th></tr></thead><tbody id="rows"></tbody></table>
+<p class="note">原型示意：数据为虚构。点击行打开右侧预览抽屉，按 j/k 上下移动、回车进入单站详情。</p>
+</main></div>
+<script>
+const R=[
+['★','Snake Rush','snakerush.io','小游戏','s4','稳定增长',182,9120,18,[3,4,4,5,6,6,7,7,8,8,9,9,10,11],'oooo',6210,4.1,'',''],
+['★','Gem Swap','gemswap.games','小游戏','s4','稳定增长',150,6833,7,[6,6,7,6,7,7,7,8,7,8,8,8,8,9],'ooo-',4120,5.0,'',''],
+['','Word Hunt','wordhunt.fun','内容站','s9','下滑',96,2104,-38,[9,9,8,8,7,7,6,5,5,4,4,3,3,3],'ooo-',1301,3.2,'d','访客 7 天下滑 38%'],
+['','Tile Merge','tilemerge.app','小游戏','s3','有自然流量',41,1980,64,[1,1,2,2,2,3,3,4,4,5,6,6,7,8],'oo--',1460,2.8,'',''],
+['','Pixel Golf','pixelgolf.io','小游戏','s9','下滑',120,1544,-12,[7,7,7,6,6,7,6,6,5,6,5,5,5,5],'oooo',512,31.4,'b','无效流量 31%，广告保护仍为“关闭”'],
+['','Neon Run','neonrun.games','小游戏','s2','已被抓取',9,212,null,[0,0,0,0,0,1,1,1,2,2,2,3,3,3],'o---',38,4.0,'',''],
+['','Hex Puzzle','hexpuzzle.fun','小游戏','s1','等抓取',4,96,null,[0,0,0,0,0,0,0,0,0,0,1,1,2,2],'l---',0,2.1,'w','上线 4 天，Google 还没来抓'],
+['','Color Sort','colorsort.app','小游戏','s1','等抓取',2,41,null,[0,0,0,0,0,0,0,0,0,0,0,0,1,2],'----',0,0,'',''],
+['','Car Drift','cardrift.io','小游戏','s0','待接入',1,0,null,[0,0,0,0,0,0,0,0,0,0,0,0,0,0],'----',0,0,'w','24 小时内没收到统计数据，检查嵌入代码'],
+];
+const sp=(a)=>{const m=Math.max(...a,1),w=96,h=22;const p=a.map((v,i)=>`${(i/(a.length-1)*w).toFixed(1)},${(h-2-v/m*(h-4)).toFixed(1)}`).join(' ');return `<svg width="${w}" height="${h}" role="img" aria-label="趋势"><polyline fill="none" style="stroke:var(--spark,#5b9cff)" stroke-width="1.5" points="${p}"/></svg>`};
+const eng=(s)=>'<span class="eng">'+['G','B','Y','百'].map((n,i)=>`<span class="e ${s[i]==='o'?'ok':s[i]==='l'?'late':''}">${n}</span>`).join('')+'</span>';
+const hm=(a,ivt)=>'<span class="hm">'+a.map((v)=>{const c=v===0?'#232a37':ivt>20?'#7a3b2b':v<3?'#1d4d38':v<6?'#2a7a54':'#3fb97f';return `<i style="background:${c}"></i>`}).join('')+'</span>';
+document.getElementById('rows').innerHTML=R.map(r=>`<tr><td>☐</td><td class="site"><b><span class="star">${r[0]}</span> ${r[1]}</b><span class="tag">${r[3]}</span><div>${r[2]}</div></td>
+<td><span class="st ${r[4]}">${r[5]}</span></td><td>${r[6]} 天</td><td class="num">${r[7].toLocaleString()}</td>
+<td class="num ${r[8]==null?'':r[8]>=0?'up':'dn'}">${r[8]==null?'新站':(r[8]>0?'▲ ':'▼ ')+Math.abs(r[8])+'%'}</td>
+<td>${sp(r[9])}</td><td>${eng(r[10])}</td><td class="num">${r[11].toLocaleString()}</td><td class="num ${r[12]>20?'dn':''}">${r[12]}%</td><td>${hm(r[9],r[12])}</td>
+<td class="att ${r[13]==='w'?'w':''}">${r[14]}</td></tr>`).join('');
+
+const COLORS=['#7c6cff','#22b07d','#e0663f','#2f8cf0','#d64f8a','#c9a227','#11a3a3','#8a5cf6','#5e6ad2'];
+const area=(a,c)=>{const m=Math.max(...a,1),w=110,h=26;const pts=a.map((v,i)=>[(i/(a.length-1)*w),(h-2-v/m*(h-6))]);const line=pts.map(p=>p.map(n=>n.toFixed(1)).join(',')).join(' ');const id='g'+Math.random().toString(36).slice(2,7);
+return `<svg width="${w}" height="${h}"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".45"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><polygon fill="url(#${id})" points="0,${h} ${line} ${w},${h}"/><polyline fill="none" stroke="${c}" stroke-width="1.6" points="${line}"/></svg>`};
+document.querySelectorAll('#rows tr').forEach((tr,i)=>{const r=R[i];const c=tr.children[1];c.innerHTML=`<span class="av" style="background:${COLORS[i%COLORS.length]}">${r[1][0]}</span><span class="tx"><b><span class="star">${r[0]}</span> ${r[1]}</b><span class="tag">${r[3]}</span><div>${r[2]}</div></span>`;
+const col=r[8]!=null&&r[8]<0?'#ff7a85':'#9a8cff';tr.children[6].innerHTML=area(r[9],col);});
+const mini=[[3,4,4,5,5,6,7,7,8,9],[4,4,5,5,6,6,6,7,7,8],[2,2,2,3,3,3,4,4,5,5],[2,3,3,4,5,5,6,7,8,9],[1,1,2,2,3,4,5,6,8,10],[5,5,5,6,6,6,6,7,7,7]];
+document.querySelectorAll('.k').forEach((k,i)=>{const d=document.createElement('div');d.className='mini';const a=mini[i],m=Math.max(...a),w=300,h=30;const pts=a.map((v,j)=>`${(j/(a.length-1)*w).toFixed(1)},${(h-v/m*(h-4)).toFixed(1)}`).join(' ');const c=i===2?'#ff7a85':'#8b7cff';
+d.innerHTML=`<svg width="100%" height="30" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><defs><linearGradient id="k${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".35"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><polygon fill="url(#k${i})" points="0,${h} ${pts} ${w},${h}"/><polyline fill="none" stroke="${c}" stroke-width="1.5" points="${pts}"/></svg>`;d.querySelector("svg").removeAttribute("width");k.appendChild(d)});
+[100,98,94,80,21].forEach((p,i)=>{const f=document.querySelectorAll('.fs')[i];const b=document.createElement('div');b.className='pb';b.style.width=p+'%';f.appendChild(b)});
+</script></body></html>
