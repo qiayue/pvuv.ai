@@ -32,6 +32,21 @@ breaking changes, always with a D1 migration and upgrade notes in
   - Console site creation accepts a site template (`template`), like
     `POST /v1/sites`.
   - Vendored Preact + htm (`vendor/preact-htm.js`, htm 3.1.1 standalone).
+- Portfolio management (console + api): `POST /v1/sites/bulk` /
+  `POST /api/sites/bulk` (star, unstar, tag, untag, archive, restore,
+  ad-protection mode for up to 500 sites, all-or-nothing on ownership) and
+  `PUT /v1/sites/{id}/labels` / `PUT /api/sites/{id}/labels` (star, tags,
+  notes; max 20 tags × 32 characters). Automatic `launch:YYYY-Www` cohort tag.
+  See [`docs/API.md`](./docs/API.md#bulk-actions-and-labels).
+- Console: site preview drawer (attention items with one-click fixes, 30-day
+  clean visitors vs invalid share, per-engine crawl table, running
+  experiments, star / tag / archive), cards and heatmap views, bulk-action
+  toolbar with CSV export.
+- Console `settings.html`: API tokens, site templates, storage & retention,
+  crawler directory, AI reports, Cloudflare edge token, branding and default
+  timezone moved out of the sites page into one page with a section nav, plus
+  **Portfolio thresholds** (`GET`/`PUT /api/settings/portfolio`: stable-growth
+  visitors and change, decline %, IVT %).
 - Reports for site launchers and A/B-testing clients (api + console, MCP, CLI;
   see [`docs/API.md`](./docs/API.md)):
   - `GET /v1/sites/{id}/experiment` — Bayesian readout of an experiment

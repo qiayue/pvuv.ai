@@ -632,6 +632,61 @@ holds is a `409` that names that site. Changes reach ingest immediately: the
 cached site config is invalidated. Timezone is immutable; the ad-protection
 mode is changed in the console.
 
+### Bulk actions and labels
+
+Portfolio management for owners of many sites. The console (session cookie)
+exposes the same two endpoints under `/api/…`; on the api worker they need an
+all-sites **read/write** token (read-only and site-scoped tokens get `403`).
+
+```bash
+curl -X POST "$PVUV_API_URL/v1/sites/bulk" \
+  -H "Authorization: Bearer $PVUV_WRITE_TOKEN" -H "content-type: application/json" \
+  -d '{"site_ids":["Ab3xK9pQ","Zq81mPw2"],"action":"tag","value":"Mini games"}'
+```
+
+| `action` | `value` | Effect |
+|---|---|---|
+| `star` / `unstar` | — | sets the star |
+| `tag` / `untag` | a tag | adds / removes one tag (case-insensitive match) |
+| `archive` / `restore` | — | site `status` (archived sites stop collecting, data is kept) |
+| `adguard` | `off` \| `balanced` \| `loose` \| `strict` | ad-protection mode |
+
+1–500 distinct site ids per request. **All-or-nothing on ownership**: one id
+the caller does not own rejects the whole request (`403`) and nothing changes.
+`archive`, `restore` and `adguard` invalidate the cached site config, so ingest
+and the ad gate apply them on the next event.
+
+```json
+{ "ok": true, "action": "restore", "updated": 1,
+  "skipped": [ { "site_id": "Zq81mPw2", "reason": "domain_conflict", "conflict_site_id": "Kd02nVb7" } ] }
+```
+
+`updated` counts sites that actually changed (re-starring a starred site is a
+no-op). `skipped` lists sites left alone: `domain_conflict` — a restored site's
+domain now belongs to another active site (see `PATCH` above); `tag_limit` —
+the site already has 20 tags.
+
+```bash
+curl -X PUT "$PVUV_API_URL/v1/sites/Ab3xK9pQ/labels" \
+  -H "Authorization: Bearer $PVUV_WRITE_TOKEN" -H "content-type: application/json" \
+  -d '{"starred":true,"tags":["Mini games","AdSense"],"notes":"launch batch 47"}'
+```
+
+Any of `starred` (boolean), `tags` (the **full** list — replaces the stored
+one) and `notes` (string ≤ 2000 characters, `null` clears it); absent keys
+keep their value. Returns `{site_id, starred, tags, notes, updated_at}`.
+
+Tags are trimmed, whitespace-collapsed and cut to 32 characters; duplicates
+differing only in case are dropped; at most 20 per site. The prefix `launch:`
+is reserved: every site also carries a computed cohort tag `launch:YYYY-Www`
+(ISO week of its creation in the owner's timezone), which is never stored.
+
+Instance thresholds used by the overview's lifecycle stages and attention queue
+are edited in the console at **Settings → Portfolio thresholds**
+(`GET`/`PUT /api/settings/portfolio`, session only):
+`{ "growth_uv_7d": 1000, "growth_min_delta_pct": -10, "decline_pct": 30, "ivt_pct": 20 }`
+(defaults shown; `PUT` takes any subset).
+
 ### `POST /v1/sites/{id}/funnels`
 
 ```json
@@ -653,7 +708,7 @@ never changes.
 A template is a per-owner preset: timezone, engagement threshold, ad-protection
 mode, AdSense client and a list of default funnels. Any field can be left unset
 (it then falls back to the normal default). Templates are managed in the
-console (⚙ settings → **Site templates**); the API lists them:
+console (**Settings → Site templates**); the API lists them:
 
 ```bash
 curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/templates"

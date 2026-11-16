@@ -42,6 +42,7 @@ import { extraReport } from './reports';
 import { cachedPortfolio } from './portfolio';
 import { hmacSign } from '../../../shared/ids';
 import { CONFIG } from '../../../shared/config.gen';
+import { applyBulk, putLabels, LabelError } from '../../../shared/labels';
 import {
   normalizeDomains, resolveSettings, insertSite, getSite, findActiveSiteByDomain, findTemplate, listTemplates,
   ensureFunnel, validateSteps, funnelName, buildSnippet, SiteError, SITE_STATUSES, MAX_STEP_LENGTH,
@@ -246,7 +247,8 @@ async function handleWrite(request: Request, env: Env): Promise<Response> {
   const path = new URL(request.url).pathname;
   const siteMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})$/);
   const subMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/(tokens|funnels|crawler_hits)$/);
-  const method = path === '/v1/sites' || subMatch ? 'POST' : siteMatch ? 'PATCH' : null;
+  const labelsMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/labels$/);
+  const method = path === '/v1/sites' || path === '/v1/sites/bulk' || subMatch ? 'POST' : siteMatch ? 'PATCH' : labelsMatch ? 'PUT' : null;
   if (!method) return json({ error: 'not found' }, 404);
   if (request.method !== method) return json({ error: 'method not allowed' }, 405);
   // crawler reports have their own auth (ingest tokens) and limits
@@ -274,6 +276,8 @@ async function handleWrite(request: Request, env: Env): Promise<Response> {
 
   try {
     if (path === '/v1/sites') return await provisionSite(env, caller.owner_id, body);
+    if (path === '/v1/sites/bulk') return json(await applyBulk(env.DB, env.SITE_CONFIG, caller.owner_id, body));
+    if (labelsMatch) return json(await putLabels(env.DB, caller.owner_id, labelsMatch[1], body));
     if (siteMatch) {
       await requireOwner(env, siteMatch[1], caller.owner_id);
       return await updateSite(env, caller.owner_id, siteMatch[1], body);
@@ -285,7 +289,7 @@ async function handleWrite(request: Request, env: Env): Promise<Response> {
     if (steps.length < 2) return json({ error: `a funnel needs 2–8 steps with a value (max ${MAX_STEP_LENGTH} chars)` }, 400);
     return json(await ensureFunnel(env.DB, siteId, funnelName(body.name), steps));
   } catch (err) {
-    if (err instanceof SiteError) throw new ApiError(err.status, err.message);
+    if (err instanceof SiteError || err instanceof LabelError) throw new ApiError(err.status, err.message);
     throw err;
   }
 }
