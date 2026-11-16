@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/svg+xml" href="/pvuv-icon.svg">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard — pvuv.ai</title>
+<title>Dashboard — pvuv</title>
 <link rel="stylesheet" href="/console.css">
 <style>
   /* page-specific: realtime strip, shadow banner, site switcher, chart tooltip,
@@ -345,7 +346,7 @@ document.getElementById('trafficAll').href = `/visitor.html?site=${encodeURIComp
 const visitorsByPath = (path) =>
   `/visitor.html?site=${encodeURIComponent(site)}&path=${encodeURIComponent(path)}`;
 let siteName = site; // replaced with the friendly name once /api/sites loads
-let brandName = 'pvuv.ai'; // instance brand (configurable), for the tab title suffix
+let brandName = 'pvuv'; // instance brand (configurable), for the tab title suffix
 const PREF_KEY = 'pvuv.chartPrefs';
 const FILTER_KEY = 'pvuv.filters.' + site;
 

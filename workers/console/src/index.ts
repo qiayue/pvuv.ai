@@ -154,7 +154,7 @@ export default {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_HOME = {
-  site_name: 'Web analytics',
+  site_name: 'pvuv',
   site_description: 'This site runs a self-hosted analytics instance.',
   primary_domain: '',
   logo_light: '', // light-colored logo → shown on DARK backgrounds (console/dark theme)

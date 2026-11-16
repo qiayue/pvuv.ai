@@ -98,7 +98,7 @@
   function render() {
     if (!aside) return;
     var b = state.brand || {};
-    var name = (b.name || '').trim() || 'pvuv.ai';
+    var name = (b.name || '').trim() || 'pvuv';
     var logo = b.logo_dark || b.logo_light;
     var user = state.user || '';
     var c = state.counts;
@@ -113,7 +113,7 @@
       return '<option value="' + l.code + '"' + (l.code === window.PVI18N.lang ? ' selected' : '') + '>' + esc(l.label) + '</option>';
     }).join('') + '</select>' : '';
     aside.innerHTML =
-      '<a class="logo" href="/sites.html">' + (logo ? '<img src="' + esc(logo) + '" alt="' + esc(name) + '">' : '<span class="mark">pv</span>' + esc(name)) + '</a>'
+      '<a class="logo" href="/sites.html">' + (logo ? '<img src="' + esc(logo) + '" alt="' + esc(name) + '">' : '<img class="mark-img" src="/pvuv-icon.svg" alt="">' + esc(name)) + '</a>'
       + '<button type="button" class="shell-toggle iconbtn" aria-label="' + esc(t('Menu')) + '" aria-expanded="false">' + icon('menu') + '</button>'
       + '<div class="ws"><small>' + esc(t('Workspace')) + '</small><div>' + icon('home') + '<span>' + esc(name) + '</span></div></div>'
       + '<a class="p-btn primary cta" href="/sites.html?new=1" data-new>' + icon('plus') + esc(t('New site')) + '</a>'

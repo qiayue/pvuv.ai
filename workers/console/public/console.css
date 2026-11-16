@@ -641,6 +641,7 @@ aside.shell { background: var(--surface); border-right: 1px solid var(--line); d
 .shell .logo:hover { text-decoration: none; }
 .shell .logo .mark { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--text); display: grid; place-items: center; font-size: 10px; font-weight: 800; }
 .shell .logo img { height: 24px; display: block; }
+.shell .logo img.mark-img { width: 24px; height: 24px; border-radius: 6px; }
 .shell .ws { padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .shell .ws small { color: var(--mut); font-size: 13px; }
 .shell .ws div { display: flex; align-items: center; gap: 8px; margin-top: 6px; color: var(--text); }

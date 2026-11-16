@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/svg+xml" href="/pvuv-icon.svg">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Analytics — pvuv.ai</title>
+<title>Analytics — pvuv</title>
 <link rel="stylesheet" href="/console.css">
 <style>
   header .pub { font-size: 11.5px; color: var(--muted); border: 1px solid var(--border-2); border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
@@ -49,7 +50,7 @@
   <p><b data-i18n="This dashboard link is invalid or has been disabled.">This dashboard link is invalid or has been disabled.</b></p>
   <p class="muted" data-i18n="Ask the site owner for a fresh link.">Ask the site owner for a fresh link.</p>
 </div>
-<footer>Powered by <a href="https://pvuv.ai">pvuv.ai</a> — <span data-i18n="analytics with invalid-traffic detection">analytics with invalid-traffic detection</span></footer>
+<footer>Powered by <a href="https://pvuv.ai">pvuv</a> — <span data-i18n="analytics with invalid-traffic detection">analytics with invalid-traffic detection</span></footer>
 <script>
 const qs = new URLSearchParams(location.search);
 const site = qs.get('site'), key = qs.get('k');
@@ -147,7 +148,7 @@ async function loadMeta() {
     const m = await get('meta');
     if (m && m.name) {
       document.getElementById('siteName').textContent = m.name;
-      document.title = `${m.name} — pvuv.ai`;
+      document.title = `${m.name} — pvuv`;
     }
   } catch { fail(); }
 }

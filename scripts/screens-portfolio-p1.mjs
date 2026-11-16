@@ -119,7 +119,7 @@ async function shoot(browser, name, scenario, { url = '/sites.html', after, heig
     if (p.startsWith('/api/')) return route.fulfill({ json: {} });
     const file = join(ROOT, p === '/' ? 'index.html' : p);
     if (!existsSync(file)) return route.fulfill({ status: 404, body: 'not found' });
-    const type = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css' }[extname(file)] || 'application/octet-stream';
+    const type = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' }[extname(file)] || 'application/octet-stream';
     return route.fulfill({ body: readFileSync(file), contentType: type });
   });
   await page.goto('http://console.test' + url);
