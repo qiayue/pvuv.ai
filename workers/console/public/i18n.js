@@ -3245,19 +3245,6 @@
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '{n} sitios, totales de {period}. Bots y rastreadores excluidos.',
       '{pct} of visitors': '{pct} de los visitantes',
       'Menu': 'Menú',
-    },
-    // English for SYMBOLIC keys only (attn.<code>, …): ordinary
-    // English UI strings are their own keys and need no entry.
-    en: {
-      // ── portfolio:p1
-      'attn.no_data_24h': 'No data in the last {hours} h — check the embed code',
-      'attn.no_data_24h_never': 'No data received yet — check the embed code',
-      'attn.crawl_overdue': 'Live {days} days, no search engine has crawled it yet',
-      'attn.organic_overdue': 'Crawled {days} days ago, still no search visitors',
-      'attn.declining': 'Visitors down {pct}% over {days} days',
-      'attn.ivt_high': 'Invalid traffic {ivt_pct}%',
-      'attn.ivt_high_off': 'Invalid traffic {ivt_pct}% while ad protection is off',
-      'attn.ivt_spike': 'Invalid traffic jumped to {ivt_pct}% (was {prev_pct}%)',
       // ── portfolio:p2
       "Own y-scale": "Escala Y propia",
       "Sparkline scale": "Escala de minigráficos",
@@ -3497,6 +3484,25 @@
       "Sync all": "Sincronizar todo",
       "Sync": "Sincronizar",
       "Synced": "Sincronizado",
+    },
+    // English for SYMBOLIC keys only (attn.<code>, …): ordinary
+    // English UI strings are their own keys and need no entry.
+    en: {
+      // ── portfolio:p1
+      'attn.no_data_24h': 'No data in the last {hours} h — check the embed code',
+      'attn.no_data_24h_never': 'No data received yet — check the embed code',
+      'attn.crawl_overdue': 'Live {days} days, no search engine has crawled it yet',
+      'attn.organic_overdue': 'Crawled {days} days ago, still no search visitors',
+      'attn.declining': 'Visitors down {pct}% over {days} days',
+      'attn.ivt_high': 'Invalid traffic {ivt_pct}%',
+      'attn.ivt_high_off': 'Invalid traffic {ivt_pct}% while ad protection is off',
+      'attn.ivt_spike': 'Invalid traffic jumped to {ivt_pct}% (was {prev_pct}%)',
+      // ── portfolio:p3
+      'attn.traffic_no_revenue': '{uv} clean visitors but no ad revenue',
+      'attn.adsense_needs_attention': 'AdSense needs attention ({domain})',
+      'attn.ads_txt_problem': 'ads.txt problem: {status}',
+      'attn.network_declined': 'Ads disabled by {network}',
+      'attn.external_stale': '{source} data not updated for {hours} h',
     },
   };
 

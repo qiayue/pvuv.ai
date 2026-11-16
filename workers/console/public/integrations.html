@@ -8,12 +8,8 @@
 </head>
 <body class="p3">
 <script src="/i18n.js"></script>
-<header class="p3-top">
-  <a href="/sites.html" class="p3-back"><svg class="p3-i" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span data-i18n="All sites">All sites</span></a>
-  <span class="sp"></span>
-  <select id="lang" aria-label="Language"></select>
-  <a href="/settings.html" class="btn" data-i18n="Settings">Settings</a>
-</header>
+<script src="/js/cmdk.js"></script>
+<script src="/js/shell.js"></script>
 <main class="p3-main">
   <h1 class="p3-title" data-i18n="Integrations">Integrations</h1>
   <nav class="p3-tabs" id="tabs">
@@ -271,7 +267,6 @@ document.addEventListener('change', async (ev) => {
   try { await api('/api/integrations/mapping', { method: 'PUT', body: JSON.stringify(body) }); await load(); } catch (e) { alert(e.message); }
 });
 
-window.PVI18N.mountSelect(document.getElementById('lang'));
 window.PVI18N.applyStatic();
 document.addEventListener('pvuv:lang', () => { if (data) render(); renderBanner(); });
 renderBanner();
