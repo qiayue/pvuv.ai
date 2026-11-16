@@ -5,50 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Settings — pvuv.ai</title>
 <link rel="stylesheet" href="/console.css">
-<style>
-  /* contract light tokens (docs/design/portfolio-ui.md §1), declared here so
-   * the page renders correctly whatever console.css's :root holds */
-  body.p2-set {
-    --bg:#f7f7f8; --surface:#fff; --line:#e7e7ea; --line-soft:#f0f0f2;
-    --text:#18181b; --text-2:#52525b; --mut:#8a8a93;
-    --accent:#3b82f6; --accent-soft:#eaf1fe; --track:#ececef;
-    --cta:#5bc477; --cta-text:#0b2e17;
-    --up:#16a34a; --down:#dc2626; --warn:#d97706;
-    --radius:12px; --radius-sm:8px;
-  }
-</style>
 </head>
 <body class="p2-set">
 <script src="/i18n.js"></script>
+<script src="/js/cmdk.js"></script>
+<script src="/js/shell.js"></script>
 <datalist id="tzlist"></datalist>
-<div class="p2-set-app">
-  <aside class="p2-set-side">
-    <div class="p2-set-logo" id="brand"><span class="mark">pv</span>pvuv</div>
-    <nav class="p2-set-nav" id="setnav" aria-label="Settings sections">
-      <a href="/sites.html" class="back"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg><span data-i18n="All sites">All sites</span></a>
-      <h5 data-i18n="Instance">Instance</h5>
-      <a href="#general" data-sec="general"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg><span data-i18n="General">General</span></a>
-      <a href="#portfolio" data-sec="portfolio"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span data-i18n="Portfolio thresholds">Portfolio thresholds</span></a>
-      <h5 data-i18n="Access">Access</h5>
-      <a href="#tokens" data-sec="tokens"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg><span data-i18n="API tokens">API tokens</span></a>
-      <a href="#templates" data-sec="templates"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 9v11"/></svg><span data-i18n="Site templates">Site templates</span></a>
-      <h5 data-i18n="Data">Data</h5>
-      <a href="#botdir" data-sec="botdir"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span data-i18n="Crawler directory">Crawler directory</span></a>
-      <a href="#cfedge" data-sec="cfedge"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .5-8 6 6 0 0 0-11.6 1.5A3.3 3.3 0 0 0 7 18z"/></svg><span data-i18n="Cloudflare edge requests">Cloudflare edge requests</span></a>
-      <a href="#storage" data-sec="storage"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg><span data-i18n="Storage & retention">Storage &amp; retention</span></a>
-      <h5 data-i18n="AI">AI</h5>
-      <a href="#ai" data-sec="ai"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/></svg><span data-i18n="AI analysis reports">AI analysis reports</span></a>
-    </nav>
-    <div class="p2-set-foot">
-      <select id="lang" aria-label="Language"></select>
-      <a href="/health.html" class="p2-btn sm" data-i18n="Self-check">Self-check</a>
-      <button id="logout" type="button" class="p2-btn sm" data-i18n="Sign out">Sign out</button>
-    </div>
-  </aside>
-
   <main class="p2-set-main">
     <h1 data-i18n="Settings">Settings</h1>
     <p class="lead" data-i18n="settings-lead">Instance-wide settings: access, data sources and the thresholds the sites overview uses.</p>
+    <div class="p2-set-body">
+      <nav class="p2-set-nav" id="setnav" aria-label="Settings sections">
+        <h5 data-i18n="Instance">Instance</h5>
+        <a href="#general" data-sec="general"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg><span data-i18n="General">General</span></a>
+        <a href="#portfolio" data-sec="portfolio"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span data-i18n="Portfolio thresholds">Portfolio thresholds</span></a>
+        <h5 data-i18n="Access">Access</h5>
+        <a href="#tokens" data-sec="tokens"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg><span data-i18n="API tokens">API tokens</span></a>
+        <a href="#templates" data-sec="templates"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 9v11"/></svg><span data-i18n="Site templates">Site templates</span></a>
+        <h5 data-i18n="Data">Data</h5>
+        <a href="#botdir" data-sec="botdir"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span data-i18n="Crawler directory">Crawler directory</span></a>
+        <a href="#cfedge" data-sec="cfedge"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .5-8 6 6 0 0 0-11.6 1.5A3.3 3.3 0 0 0 7 18z"/></svg><span data-i18n="Cloudflare edge requests">Cloudflare edge requests</span></a>
+        <a href="#storage" data-sec="storage"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg><span data-i18n="Storage & retention">Storage &amp; retention</span></a>
+        <h5 data-i18n="AI">AI</h5>
+        <a href="#ai" data-sec="ai"><svg class="p2-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/></svg><span data-i18n="AI analysis reports">AI analysis reports</span></a>
+      </nav>
+      <div class="p2-set-secs">
 
     <!-- ── General: branding + default timezone ─────────────────────────── -->
     <section class="p2-set-sec" id="sec-general" data-sec="general">
@@ -221,8 +202,9 @@
         <div class="actions"><button type="submit" class="p2-btn primary" data-i18n="Save AI settings">Save AI settings</button></div>
       </form>
     </section>
+      </div>
+    </div>
   </main>
-</div>
 <script>
 // Instance settings — moved out of the old sites.html ⚙ panel, one section per
 // nav entry (#hash routing). Same endpoints as before:
@@ -256,7 +238,7 @@ function show(sec, force) {
   document.querySelectorAll('#setnav a[data-sec]').forEach((a) => {
     const on = a.dataset.sec === sec;
     a.classList.toggle('on', on);
-    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    if (on) { a.setAttribute('aria-current', 'page'); a.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } else a.removeAttribute('aria-current');
   });
   if (force || !loaded.has(sec)) { loaded.add(sec); LOADERS[sec](); }
 }
@@ -265,8 +247,6 @@ window.addEventListener('hashchange', () => show(location.hash.slice(1)));
 // --- branding ------------------------------------------------------------------
 function applyBranding(b) {
   const name = (b.name || '').trim() || 'pvuv.ai';
-  const logo = b.logo_light || b.logo_dark;
-  $('brand').innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : `<span class="mark">${esc(Array.from(name)[0].toLowerCase())}</span>${esc(name)}`;
   document.title = t('Settings') + ' — ' + name;
   if (b.favicon) {
     let link = document.querySelector('link[rel="icon"]');
@@ -293,7 +273,11 @@ $('homeSettings').addEventListener('submit', async (e) => {
     logo_light: $('hsLogoLight').value, logo_dark: $('hsLogoDark').value, favicon: $('hsFavicon').value,
   });
   say($('hsMsg'), r.ok ? t('saved') : t('save failed'), r.ok);
-  if (r.ok) loadHomeSettings();
+  if (r.ok) {
+    // the sidebar caches the brand for 5 minutes; drop it so the new name/logo shows on the next page
+    try { sessionStorage.removeItem('pvuv.shell.v1'); } catch { /* storage blocked */ }
+    loadHomeSettings();
+  }
 });
 
 // --- default timezone ------------------------------------------------------------
@@ -581,14 +565,9 @@ $('aiSettings').addEventListener('submit', async (e) => {
   if (r.ok) { $('aiKey').value = ''; loadAiSettings(); }
 });
 
-$('logout').addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
-  location.href = '/login.html';
-});
 
 // language switcher: re-apply static labels and reload the open section's
 // dynamic text (key-state hints, tables)
-window.PVI18N.mountSelect($('lang'));
 window.PVI18N.applyStatic();
 document.addEventListener('pvuv:lang', () => {
   window.PVI18N.applyStatic();
