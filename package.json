@@ -31,7 +31,8 @@
     "typecheck": "tsc --noEmit && tsc -p sdk --noEmit",
     "dev:proxy": "wrangler dev -c workers/proxy/wrangler.toml",
     "deploy:proxy": "wrangler deploy -c workers/proxy/wrangler.toml",
-    "setup": "node scripts/setup.mjs"
+    "setup": "node scripts/setup.mjs",
+    "test": "sh tests/run-integration.sh"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260101.0",

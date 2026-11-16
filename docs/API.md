@@ -211,4 +211,4 @@ every consumer at once.
 
 A console owner can issue an all-sites **read/write** token for a trusted integration. Existing and newly created read-only tokens cannot write. The integration may `POST /v1/sites` with `{ "name": "Example", "domain": "example.com" }`; this returns `{ created, site }` and reuses the owner's active site for that domain. It may then `POST /v1/sites/{site_id}/funnels` with a name and 2–8 page/event steps. For compatibility, `POST /v1/sites/{site_id}/tokens` returns a null token: crawler reporting is disabled because this self-hosted version includes crawler pageviews in its overall visitor count. Browser tracking is unaffected. All tokens remain revocable in the console. Write tokens should be stored as secrets and granted only to trusted services.
 
-Local integration tests: run `sh tests/run-integration.sh` after `pnpm install`. The script builds temporary Worker bundles and removes them on exit.
+Local integration tests: run `npm test` after `npm install`. The script builds temporary Worker bundles and removes them on exit.

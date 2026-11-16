@@ -167,3 +167,4 @@ workers/console/public/home.*.html
 
 # local wrangler dev persistence (D1/KV state, seed helpers)
 .wrangler-local/
+.test-*.mjs
