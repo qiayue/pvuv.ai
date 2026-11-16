@@ -12,6 +12,8 @@
  *   GET|POST /api/templates, DELETE /api/templates/:id   (site templates)
  *   GET  /api/sites/:id/(overview|timeseries|breakdown|quality|traffic)
  *   GET  /api/sites/:id/visitors/:vid/profile
+ *   POST /api/sites/bulk, PUT /api/sites/:id/labels   (portfolio labels)
+ *   GET|PUT /api/settings/portfolio                     (portfolio thresholds)
  *
  * Auth: OAuth-only (Google / GitHub). Single-tenant — every email in
  * ADMIN_EMAILS (a plain var, comma-separated) shares one 'admin' owner and
@@ -43,6 +45,8 @@ import { runRetentionPurge, storageReport } from '../../cron/src/retention';
 import { CONFIG } from '../../../shared/config.gen';
 import { LlmError } from './llm';
 import { generateReport, type ReportLang } from './report';
+import { applyBulk, putLabels, LabelError } from '../../../shared/labels';
+import { readPortfolioThresholds, writePortfolioThresholds, validateThresholds, PORTFOLIO_DEFAULTS } from '../../../shared/thresholds';
 
 /** KV key the ingest worker reads the compiled directory from (§6.6). */
 const BOTDIR_KV_KEY = 'botdir:v1';
@@ -439,6 +443,20 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
+  // portfolio thresholds (docs/design/portfolio-ui.md §1): what counts as
+  // stable growth / declining / high IVT on the overview. Instance-wide.
+  if (path === '/api/settings/portfolio') {
+    if (request.method === 'GET') return json({ ...(await readPortfolioThresholds(env.DB)), defaults: PORTFOLIO_DEFAULTS });
+    if (request.method === 'PUT' || request.method === 'POST') {
+      let body: unknown;
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const v = validateThresholds(body);
+      if ('error' in v) return json({ error: v.error }, 400);
+      return json({ ...(await writePortfolioThresholds(env.DB, v.values)), defaults: PORTFOLIO_DEFAULTS });
+    }
+    return json({ error: 'method not allowed' }, 405);
+  }
+
   // Crawler directory (§6.6): the deployer downloads a public bots-and-agents
   // catalogue and pastes it here. Parsed into a compact pattern list, stored in
   // D1 (source of truth, survives KV eviction) and mirrored to KV for the
@@ -629,6 +647,26 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       return json({ sites: rows.results });
     }
     if (request.method === 'POST') return createSite(request, env, user);
+  }
+
+  // ── portfolio labels & bulk actions (docs/design/portfolio-ui.md §3.2) ──
+  if (path === '/api/sites/bulk') {
+    if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+    let body: unknown;
+    try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    try { return json(await applyBulk(env.DB, env.SITE_CONFIG, user, body)); } catch (err) {
+      if (err instanceof LabelError) return json({ error: err.message }, err.status);
+      throw err;
+    }
+  }
+  const labelsMatch = path.match(/^\/api\/sites\/([A-Za-z0-9]{4,16})\/labels$/);
+  if (labelsMatch && request.method === 'PUT') {
+    let body: unknown;
+    try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+    try { return json(await putLabels(env.DB, user, labelsMatch[1], body)); } catch (err) {
+      if (err instanceof LabelError) return json({ error: err.message }, err.status);
+      throw err;
+    }
   }
 
   // public-dashboard sharing: enable mints a fresh random token (also rotates
