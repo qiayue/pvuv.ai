@@ -42,6 +42,7 @@ function localHour(ts: number, tz: string): number {
 }
 import { FLAG, FAKE_SEARCH_MASK, searchRefDomainSql } from '../../../shared/flags';
 import { monthSuffix, eventsTableName, eventsIndexDDL, ensureEventColumns, RESERVED_EVENTS_SQL } from '../../../shared/events';
+import { rollupCrawlerDay, backfillCrawlersOnce } from './crawlers';
 
 export async function runHourlyRollup(env: Env): Promise<void> {
   const now = Date.now();
@@ -76,8 +77,19 @@ export async function runHourlyRollup(env: Env): Promise<void> {
     for (const ymd of days) {
       const span = localDaySpan(tz, ymd.y, ymd.m0, ymd.d);
       await rollupSiteDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing, idleCutoff);
+      // crawler/indexing signals (0024) — a separate metric, written AFTER the
+      // PV/UV rollup has committed and guarded, so it can never cost a site
+      // its rollup (and before 0024 is applied it simply logs and moves on)
+      try {
+        await rollupCrawlerDay(env.DB, site.site_id, span.day, span.startTs, span.endTs, existing);
+      } catch (err) {
+        console.error(`rollup: crawler signals failed for ${site.site_id} ${span.day}`, err);
+      }
     }
   }
+
+  // one-time, resumable fill of the crawler tables from data already present
+  try { await backfillCrawlersOnce(env, existing, now); } catch (err) { console.error('rollup: crawler backfill failed', err); }
 }
 
 /**

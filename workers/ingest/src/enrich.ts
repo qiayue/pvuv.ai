@@ -336,6 +336,7 @@ export async function enrichEvent(
     bot_flags: 0,
     score_stage: 'realtime',
     bot_category: null, // stamped by the caller after directory lookup (§6.6)
+    crawler_engine: null, // stamped by the caller (shared/crawlers.ts, migration 0024)
     lcp_ms: vitalMs(ev.wv?.lcp),
     cls: vitalCls(ev.wv?.cls),
     inp_ms: vitalMs(ev.wv?.inp),

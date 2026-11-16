@@ -24,6 +24,7 @@
 import type { Env } from './index';
 import { localYMD, localDaySpan, addDays } from '../../../shared/tz';
 import { listZones, zoneForDomains, edgeTotals, edgeAgents, MAX_AGENT_ROWS, type CfZone } from '../../../shared/cfedge';
+import { recordEdgeCrawlerDay, loadBotDirectory } from './crawlers';
 
 export const CF_TOKEN_KEY = 'cf_api_token';
 export const CF_STATUS_KEY = 'cf_edge_status';
@@ -95,6 +96,9 @@ export async function runEdgePull(env: Env): Promise<void> {
     "SELECT site_id, allowed_domains, timezone FROM sites WHERE status = 'active'",
   ).all<{ site_id: string; allowed_domains: string; timezone: string }>();
 
+  // owner-imported bot directory, for classifying crawler agents (0024)
+  const directory = await loadBotDirectory(env.DB);
+
   let queries = 0;
   let matched = 0;
   let written = 0;
@@ -145,6 +149,13 @@ export async function runEdgePull(env: Env): Promise<void> {
         ];
         await env.DB.batch(stmts);
         written++;
+        // crawler/indexing signals (0024): classify the agents just stored.
+        // Separate metric, own guard — never fails the pull it rides on.
+        try {
+          await recordEdgeCrawlerDay(env.DB, site.site_id, day.day, day.startTs, agents, directory);
+        } catch (err) {
+          console.error(`edge: crawler signals failed for ${site.site_id} ${day.day}`, err);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!firstError) firstError = msg;

@@ -32,8 +32,7 @@
     "test": "sh tests/run-integration.sh",
     "dev:proxy": "wrangler dev -c workers/proxy/wrangler.toml",
     "deploy:proxy": "wrangler deploy -c workers/proxy/wrangler.toml",
-    "setup": "node scripts/setup.mjs",
-    "test": "sh tests/run-integration.sh"
+    "setup": "node scripts/setup.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260101.0",

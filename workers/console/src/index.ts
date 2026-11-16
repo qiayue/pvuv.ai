@@ -24,6 +24,7 @@ import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries
 import { parseBotDirectory } from '../../../shared/botdir';
 import { createToken } from '../../../shared/tokens';
 import { verifySession, SESSION_COOKIE } from '../../api/src/auth';
+import { crawlers } from '../../api/src/crawlers';
 import { generateSiteId, hmacSign, serializeCookie } from '../../../shared/ids';
 import { runDiagnostics, probeEvent } from './diagnostics';
 import {
@@ -817,6 +818,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (resource === 'ctit') return json(await conversionTiming(env.DB, siteId, period));
     if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
     if (resource === 'edge') return json(await edge(env.DB, siteId, period));
+    if (resource === 'crawlers') return json(await crawlers(env.DB, siteId, period, { limit: parseInt(q.get('limit') ?? '20', 10) }));
     if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
     if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
     if (resource === 'funnel' || resource === 'funnel_dropoff') {

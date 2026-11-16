@@ -117,6 +117,18 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { ...siteArg, ...periodArg }, required: ['site_id'] },
   },
   {
+    name: 'get_crawlers',
+    description: 'Crawler / indexing signals — a separate metric that never counts toward visitors: per crawler engine (Googlebot, Bingbot, Yandex, Baidu, Applebot, AdsBot/Mediapartners as ads, AI crawlers, SEO tools) the first and last time it was seen, hits in the period and a daily series, plus the top crawled pages and first_search_crawl_at. Answers "has Google found this new site yet". `sources` says whether Cloudflare edge data (non-JS crawlers) was available; top pages are beacon-only (JS-rendering crawlers).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...siteArg, ...periodArg,
+        limit: { type: 'number', description: 'Top pages (default 20)' },
+      },
+      required: ['site_id'],
+    },
+  },
+  {
     name: 'get_suspicious_visitors',
     description: 'Individual high-scoring visitors with their bot score, verdict and the evidence flags that fired. Use for drill-down after get_traffic_quality.',
     inputSchema: {
@@ -139,7 +151,8 @@ export async function callTool(name, a) {
       const d = await api('/v1/sites');
       if (!d.sites?.length) return 'No sites found for this token.';
       return d.sites.map((s) =>
-        `${s.site_id}  ${s.name}  [${(s.domains || []).join(', ')}]  tz=${s.timezone}`).join('\n');
+        `${s.site_id}  ${s.name}  [${(s.domains || []).join(', ')}]  tz=${s.timezone}`
+        + `  first_search_crawl=${s.first_search_crawl_at ? new Date(s.first_search_crawl_at).toISOString() : 'none yet'}`).join('\n');
     }
     case 'get_overview':
       return fmt(await api(`/v1/sites/${sid(a)}/overview`, { period: P(a) }));
@@ -161,6 +174,8 @@ export async function callTool(name, a) {
       return fmt(await api(`/v1/sites/${sid(a)}/adguard`, { period: P(a) }));
     case 'get_edge_requests':
       return fmt(await api(`/v1/sites/${sid(a)}/edge`, { period: P(a) }));
+    case 'get_crawlers':
+      return fmt(await api(`/v1/sites/${sid(a)}/crawlers`, { period: P(a), limit: a.limit }));
     case 'get_suspicious_visitors':
       return fmt(await api(`/v1/sites/${sid(a)}/traffic`, {
         period: P(a), min_score: a.min_score ?? 30, limit: a.limit,

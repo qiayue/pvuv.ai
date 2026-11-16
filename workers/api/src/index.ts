@@ -13,6 +13,7 @@
  *   GET /v1/sites/:id/funnel_dropoff?funnel_id=…&step=1
  *   GET /v1/sites/:id/visitors?path=/pay&limit=50
  *   GET /v1/sites/:id/visitors/:vid/profile
+ *   GET /v1/sites/:id/crawlers?period=30d             — crawler/indexing signals (separate metric)
  *   GET /v1/templates                               — the owner's site templates
  *
  * Site provisioning (write tokens only — see handleWrite):
@@ -25,6 +26,7 @@
 
 import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
+import { crawlers, firstSearchCrawls } from './crawlers';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
 import { hmacSign } from '../../../shared/ids';
 import { CONFIG } from '../../../shared/config.gen';
@@ -85,11 +87,17 @@ async function route(request: Request, env: Env): Promise<Response> {
     const rows = await env.DB.prepare(
       `SELECT site_id, name, allowed_domains, timezone, created_at FROM sites WHERE ${where.join(' AND ')} ORDER BY created_at`,
     ).bind(...binds).all<{ site_id: string; name: string; allowed_domains: string; timezone: string; created_at: number }>();
+    // launch overview: when a search engine first crawled each site (crawler
+    // milestones, 0024) — null until one has
+    const firstCrawl = await firstSearchCrawls(env.DB, rows.results.map((r) => r.site_id));
     return json({
       sites: rows.results.map((r) => {
         let domains: string[] = [];
         try { domains = JSON.parse(r.allowed_domains); } catch { /* stored malformed → report none */ }
-        return { site_id: r.site_id, name: r.name, domains, timezone: r.timezone, created_at: r.created_at };
+        return {
+          site_id: r.site_id, name: r.name, domains, timezone: r.timezone, created_at: r.created_at,
+          first_search_crawl_at: firstCrawl.get(r.site_id) ?? null,
+        };
       }),
     });
   }
@@ -141,6 +149,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (resource === 'ctit') return json(await conversionTiming(env.DB, siteId, period));
   if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
   if (resource === 'edge') return json(await edge(env.DB, siteId, period));
+  if (resource === 'crawlers') return json(await crawlers(env.DB, siteId, period, { limit: parseInt(q.get('limit') ?? '20', 10) }));
   if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
   if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
   // funnel: ad-hoc `steps`, or a saved funnel by `funnel_id` (so an agent can

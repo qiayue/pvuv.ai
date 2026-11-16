@@ -43,6 +43,7 @@ const USAGE = `pvuv — read-only client for a self-hosted pvuv.ai deployment
   pvuv alerts     <site_id>  [--period 7d]
   pvuv adguard    <site_id>  [--period 7d]
   pvuv edge       <site_id>  [--period 7d]
+  pvuv crawlers   <site_id>  [--period 30d] [--limit 20]
   pvuv traffic    <site_id>  [--period 7d] [--min-score 30] [--limit 50]
 
   --json    print the raw API response instead of a table
@@ -98,7 +99,9 @@ async function main() {
 
   switch (cmd) {
     case 'sites':
-      return out(await api('/v1/sites'), (d) => table(d.sites, ['site_id', 'name', 'domains', 'timezone']));
+      return out(await api('/v1/sites'), (d) => table(d.sites.map((s) => ({
+        ...s, first_search_crawl: s.first_search_crawl_at ? new Date(s.first_search_crawl_at).toISOString().slice(0, 10) : null,
+      })), ['site_id', 'name', 'domains', 'timezone', 'first_search_crawl']));
     case 'overview':
       return out(await api(`/v1/sites/${needSite()}/overview`, { period }), (d) => pairs(d, ['period']));
     case 'realtime':
@@ -136,6 +139,17 @@ async function main() {
         if (!d.available) return 'no edge data — a Cloudflare API token has not been configured for this deployment';
         return `${pairs(d.totals || {})}\n\ntop user agents\n`
           + table((d.agents || []).slice(0, 15).map((a) => ({ user_agent: a.user_agent, requests: a.requests })));
+      });
+    case 'crawlers':
+      return out(await api(`/v1/sites/${needSite()}/crawlers`, { period: flag('period', '30d'), limit: flag('limit') }), (d) => {
+        const day = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace('T', ' ') : null);
+        const srcs = `sources: beacon${d.sources?.edge?.available ? ' + cloudflare edge' : ' only (no Cloudflare edge data — non-JS crawlers are not counted)'}`;
+        const engines = (d.engines || []).map((e) => ({
+          engine: e.label, kind: e.kind, first_seen: day(e.first_seen_at), last_seen: day(e.last_seen_at),
+          hits: e.hits, beacon: e.beacon_hits, edge: e.edge_hits, pages: e.pages,
+        }));
+        return `first search crawl: ${day(d.first_search_crawl_at) ?? 'none yet'}\n${srcs}\n\n${table(engines)}`
+          + `\n\ntop crawled pages (beacon only)\n${table((d.top_pages?.pages || []).map((p) => ({ path: p.path, hits: p.hits, engines: Object.keys(p.engines).join(', ') })))}`;
       });
     case 'traffic':
       return out(await api(`/v1/sites/${needSite()}/traffic`, {

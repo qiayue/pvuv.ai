@@ -11,6 +11,7 @@ import { enrichEvent, parseUA, isChromiumUA, isHeadlessUA, hashIP, fingerprintHa
 import { scoreRealtime } from './score';
 import { classifyAsn } from '../../../shared/asn';
 import { matchBot, type BotEntry } from '../../../shared/botdir';
+import { classifyCrawler, kindFromCategory, otherEngine } from '../../../shared/crawlers';
 import { hmacSign, signVerdictState, verifyVerdictState, type VerdictState } from '../../../shared/ids';
 import type { XPayload, Verdict } from '../../../shared/flags';
 import {
@@ -196,6 +197,11 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
   const botCategory = verifiedCategory
     ?? (declaredAgent ? 'ai_agent_declared' : null)
     ?? matchBot(reqCtx.ua, await botDirectory(env))?.category ?? null;
+  // crawler ENGINE (googlebot, bingbot, …) for the separate crawler/indexing
+  // metric (migration 0024). Descriptive only — read by the crawler rollup,
+  // never by scoring, verdicts or PV/UV. The UA is not stored, so this is the
+  // only point where the engine can be known.
+  const crawlerMatch = classifyCrawler(reqCtx.ua, botCategory);
   const asnType = classifyAsn(typeof cf?.asn === 'number' ? cf.asn : undefined, cf?.asOrganization);
   // transport fingerprint: one keyed hash per request (see migration 0018)
   const tlsFp = await transportFingerprint(env.HMAC_KEY, cf);
@@ -236,7 +242,11 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
     // (unless already scored bot); keeps them out of clean counts and visible
     // in the crawler-category breakdown
     if ((verifiedCategory || declaredAgent) && scored.verdict !== 'bot') scored.verdict = 'crawler';
-    rows.push({ ...row, ...scored, bot_category: botCategory, tls_fp: tlsFp });
+    // a crawler-class event the built-in list cannot name still gets an engine
+    // bucket (other_<kind>), so "a search crawler came" is never lost
+    const crawlerEngine = crawlerMatch?.engine
+      ?? (scored.verdict === 'crawler' ? otherEngine(kindFromCategory(botCategory) ?? 'other') : null);
+    rows.push({ ...row, ...scored, bot_category: botCategory, tls_fp: tlsFp, crawler_engine: crawlerEngine });
   }
   if (rows.length === 0) return respond(204);
 
