@@ -63,7 +63,7 @@ Most self-hosted analytics tools count traffic but treat every request as real. 
 - On-demand written reports per site: *data anomaly → attribution → actionable recommendations*, using any OpenAI-compatible endpoint or the Anthropic API that you configure
 
 **Open by default**
-- Read-only REST API, an **MCP server** so your own chatbot can query your traffic, and a **CLI** — one revocable, scopeable token for all three ([`docs/API.md`](./docs/API.md))
+- REST API, an **MCP server** so your own chatbot can query your traffic, and a **CLI** — one revocable, scopeable token for all three, read-only by default; an opt-in read/write token lets a trusted site launcher create sites, apply templates and get the embed snippet in one call ([`docs/API.md`](./docs/API.md))
 - Console in 7 languages (English, 中文, 日本語, 한국어, Deutsch, Français, Español), switchable client-side
 - One-click export of everything the dashboard shows, as JSON
 - Configurable D1 retention with a storage panel, so a busy site stays inside D1's limits
@@ -208,7 +208,7 @@ Scoring weights, verdict thresholds, and the blocklist are **tunable and deploym
 
 ## API, MCP server & CLI
 
-Read your data from anywhere: a REST API for integrations, an **MCP server** so your own chatbot can answer questions about your traffic, and a **CLI** for terminals and cron jobs. All read-only, all sharing one credential.
+Read your data from anywhere: a REST API for integrations, an **MCP server** so your own chatbot can answer questions about your traffic, and a **CLI** for terminals and cron jobs. All three share one credential, read-only by default. A separately issued **read/write** token adds site provisioning: one `POST /v1/sites` registers a site (from a reusable template, with its default funnels) and returns the embed snippet, and `PATCH` renames, re-domains or archives it.
 
 Create a personal API token in the console (⚙ → API tokens) — scoped to one site or all of yours, individually revocable, stored only as an HMAC.
 

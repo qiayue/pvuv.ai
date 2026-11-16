@@ -21,6 +21,14 @@ kv_namespaces = [
   { binding = "SITE_CONFIG", id = "PLACEHOLDER_KV_SITE_CONFIG_ID" }
 ]
 
+[vars]
+# Where the embed snippet returned by POST /v1/sites points — the same values
+# the console uses: f.js is served by the console host, events go to the
+# ingest host (keep INGEST_HOST equal to workers/console/wrangler.toml's).
+# Leave either empty and POST /v1/sites returns `snippet: null`.
+CONSOLE_HOST = "pvuv.ai"
+INGEST_HOST = "in.pvuv.ai"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "pvuv-db"

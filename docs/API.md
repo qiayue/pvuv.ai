@@ -1,6 +1,9 @@
 # API, MCP server & CLI
 
-Three ways to read a pvuv.ai deployment programmatically. Report queries use a personal API token. Tokens are read-only by default; an owner can explicitly issue a read/write integration token as described below.
+Three ways to read a pvuv.ai deployment programmatically, all sharing one
+credential: a personal API token. Tokens are read-only by default; an owner can
+explicitly issue a **read/write** token that also lets a trusted integration —
+such as a site launcher — create and manage sites ([§6 Site provisioning](#6-site-provisioning-readwrite-tokens)).
 
 - **REST API** — for dashboards, scripts, spreadsheets, anything that speaks HTTP
 - **MCP server** — so your own chatbot can answer questions about your traffic
@@ -25,9 +28,16 @@ recovered — if you lose it, revoke it and create another. Tokens start with
 Revoking takes effect immediately. `last used` in the list helps you spot
 credentials nothing is using any more.
 
+A token also has a **permission**:
+
+| Permission | Can |
+|---|---|
+| Read only (default) | query reports for the sites in its scope |
+| Read & manage sites | the same, plus create / update / archive sites and funnels — [§6](#6-site-provisioning-readwrite-tokens). All sites only. |
+
 > A token grants read access to the sites in its scope. Treat it like a
 > password: it is not a public key, and anything holding it can read your
-> analytics.
+> analytics — and, for a read/write token, change your sites.
 
 ---
 
@@ -51,6 +61,7 @@ that is signed in to the console can call it directly for that owner's sites.
 | Endpoint | Returns | Parameters |
 |---|---|---|
 | `GET /v1/sites` | sites this token can read (`site_id`, `name`, `domains`, `timezone`, `created_at`) — **call first**, ids are not guessable | — |
+| `GET /v1/templates` | the owner's site templates (see [§6](#6-site-provisioning-readwrite-tokens)) | — |
 | `GET /v1/sites/summary` | per-site totals for every site in scope, in one pass (`uv_approx: true` when visitors are summed per day) | `period` |
 | `GET /v1/sites/{id}/overview` | pageviews, visitors, sessions, both bounce rates, dwell, visit duration, verdict split, conversions, revenue | `period` `filters` |
 | `GET /v1/sites/{id}/realtime` | `{window_minutes, online, pageviews, minutes[]}` for the last 30 min; bot/crawler traffic excluded; always live (ignores `period`) | — |
@@ -207,8 +218,169 @@ Prefer personal tokens for anything else: `API_TOKEN` cannot be scoped to a
 site, revoked individually, or attributed to a client, and rotating it breaks
 every consumer at once.
 
-## Site-management integration
+---
 
-A console owner can issue an all-sites **read/write** token for a trusted integration. Existing and newly created read-only tokens cannot write. The integration may `POST /v1/sites` with `{ "name": "Example", "domain": "example.com" }`; this returns `{ created, site }` and reuses the owner's active site for that domain. It may then `POST /v1/sites/{site_id}/funnels` with a name and 2–8 page/event steps. For compatibility, `POST /v1/sites/{site_id}/tokens` returns a null token: crawler reporting is disabled because this self-hosted version includes crawler pageviews in its overall visitor count. Browser tracking is unaffected. All tokens remain revocable in the console. Write tokens should be stored as secrets and granted only to trusted services.
+## 6. Site provisioning (read/write tokens)
 
-Local integration tests: run `npm test` after `npm install`. The script builds temporary Worker bundles and removes them on exit.
+A site launcher — anything that brings new sites up on a schedule — can
+register each site, configure it and get its embed tag in **one call**, then
+manage the site through its lifecycle. These endpoints need a **read/write**
+token: console → ⚙ settings → API tokens → Permission **Read & manage sites**.
+A read/write token always covers all of the owner's sites (it cannot be scoped
+to one), still reads like any other token, and is revocable like any other.
+Store it as a secret and give it only to a service you trust: it can create,
+rename and archive your sites.
+
+Read-only tokens, session cookies and the legacy `API_TOKEN` get `403` on every
+write endpoint. Unknown paths return `404` before any authentication; a known
+path with the wrong method returns `405`. Request bodies are JSON, at most
+16 KB.
+
+| Endpoint | Does |
+|---|---|
+| `POST /v1/sites` | find-or-create a site by domain, optionally from a template; returns the embed snippet |
+| `PATCH /v1/sites/{id}` | rename, replace / add / remove domains, archive or restore |
+| `POST /v1/sites/{id}/funnels` | find-or-create a saved funnel by name |
+| `GET /v1/templates` | the owner's site templates (any of the owner's tokens, read-only included) |
+| `POST /v1/sites/{id}/tokens` | compatibility stub — always `{"token": null, "supported": false}` (see below) |
+
+**Every write is safe to retry.** A launcher that times out and tries again
+gets the same site and the same funnels back (`created: false`), never a
+duplicate — including when several identical requests race.
+
+### Domains
+
+Every domain — in `POST /v1/sites`, `PATCH`, and the console's own site form —
+goes through one normaliser: lowercased; scheme, port, path, query and a
+trailing dot dropped; a Unicode name converted to its IDNA `xn--` form. So
+`https://Shop.Example.com:8443/landing` is stored as `shop.example.com`, and
+`bücher.de` as `xn--bcher-kva.de`. IP addresses and anything that is not a
+hostname are refused (`400 invalid domain: …`); `localhost` is accepted for
+local development. A site's whitelist also admits subdomains, so `example.com`
+covers `www.example.com`.
+
+### `POST /v1/sites`
+
+```bash
+curl -X POST "$PVUV_API_URL/v1/sites" \
+  -H "Authorization: Bearer $PVUV_WRITE_TOKEN" -H "content-type: application/json" \
+  -d '{"name":"Snake Game","domain":"snake.example.com","template":"Game site"}'
+```
+
+| Field | |
+|---|---|
+| `name` | required, up to 100 chars |
+| `domain` | required (or `domains`) — the site's primary domain |
+| `domains` | optional extra domains, e.g. `["www.snake.example.com"]` |
+| `template` | optional template **id or name** (name match is case-insensitive) |
+| `timezone` | IANA id, e.g. `Europe/Berlin` — **fixed at creation**, cannot be changed later |
+| `engaged_seconds` | engagement threshold, clamped to 1–300 |
+| `adguard_mode` | `off` · `balanced` · `loose` · `strict` |
+| `adclient` | AdSense publisher id `ca-pub-…`; `null` clears a template's value |
+
+Each setting resolves as **request field → template → default** (owner's
+default timezone, 15 s, `off`, no adclient). Validation follows the console's
+rules, but strictly: an invalid timezone, mode or adclient is a `400`, never
+silently dropped.
+
+The call is idempotent per owner + domain: if one of the owner's **active**
+sites already lists any of the requested domains, that site is returned with
+`created: false` and the settings in the request are *not* applied to it
+(the timezone is immutable anyway; use `PATCH` or the console for the rest).
+A template's default funnels are ensured by name on every call, so a retry
+after a partial failure completes the set.
+
+```json
+{
+  "created": true,
+  "site": {
+    "site_id": "Ab3xK9pQ", "name": "Snake Game", "domains": ["snake.example.com"],
+    "timezone": "America/New_York", "status": "active",
+    "adguard_mode": "balanced", "adclient": "ca-pub-1234567890123456",
+    "engaged_seconds": 20, "shadow_until": 1764633600000
+  },
+  "snippet": "<script defer src=\"https://analytics.example.com/f.js\"\n        data-site=\"Ab3xK9pQ\"\n        data-api=\"https://in.example.com\"\n        data-adguard=\"balanced\"\n        data-adclient=\"ca-pub-1234567890123456\"></script>",
+  "template": "Tm4pQ2xZ",
+  "funnels": [
+    { "funnel_id": "Fz81kLmN", "name": "Play", "created": true, "updated": false }
+  ]
+}
+```
+
+`snippet` is exactly the tag the console shows after creating a site: paste it
+into the site's `<head>`. It is built from the api worker's `CONSOLE_HOST`
+(where `f.js` is served) and `INGEST_HOST` vars in `workers/api/wrangler.toml`;
+if either is empty, `snippet` is `null`. New sites start in shadow mode
+(record-only until `shadow_until`) like console-created ones.
+
+### `PATCH /v1/sites/{id}`
+
+Typical launch day: a site goes live on a test subdomain, then moves to its
+production domain with both `www` and the apex.
+
+```bash
+curl -X PATCH "$PVUV_API_URL/v1/sites/Ab3xK9pQ" \
+  -H "Authorization: Bearer $PVUV_WRITE_TOKEN" -H "content-type: application/json" \
+  -d '{"name":"Snake","add_domains":["snake.com","www.snake.com"],"remove_domains":["snake.example.com"]}'
+```
+
+| Field | |
+|---|---|
+| `name` | new name |
+| `domains` | replace the whole list |
+| `add_domains` / `remove_domains` | applied after `domains`, in that order |
+| `status` | `archived` stops collection (ingest only accepts active sites) and hides the site from `GET /v1/sites`; its data is kept. `active` restores it. |
+
+Returns `{ "changed": true, "site": {…} }` (`changed: false` for a no-op). A
+site must keep at least one domain, and a domain can belong to only one active
+site per owner — adding (or restoring a site with) a domain another active site
+holds is a `409` that names that site. Changes reach ingest immediately: the
+cached site config is invalidated. Timezone is immutable; the ad-protection
+mode is changed in the console.
+
+### `POST /v1/sites/{id}/funnels`
+
+```json
+{ "name": "Play", "steps": [ {"type":"page","value":"/"}, {"type":"event","value":"play_start"} ] }
+```
+
+2–8 steps of `page` (path, `*` suffix matches a prefix) or `event` (event
+name); each value non-empty and at most 512 characters. Find-or-create **by
+name**: a funnel of that name is returned as is (`created: false`); if its
+steps differ they are replaced and `updated: true` says so; the `funnel_id`
+never changes.
+
+```json
+{ "funnel_id": "Fz81kLmN", "name": "Play", "steps": [...], "created": false, "updated": true, "updated_at": 1764633600000 }
+```
+
+### Templates
+
+A template is a per-owner preset: timezone, engagement threshold, ad-protection
+mode, AdSense client and a list of default funnels. Any field can be left unset
+(it then falls back to the normal default). Templates are managed in the
+console (⚙ settings → **Site templates**); the API lists them:
+
+```bash
+curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/templates"
+```
+
+```json
+{ "templates": [ {
+  "template_id": "Tm4pQ2xZ", "name": "Game site", "timezone": "America/New_York",
+  "engaged_seconds": 20, "adguard_mode": "balanced", "adclient": "ca-pub-1234567890123456",
+  "funnels": [ { "name": "Play", "steps": [...] } ], "created_at": 1764633600000, "updated_at": 1764633600000
+} ] }
+```
+
+### Crawler reporting
+
+`POST /v1/sites/{id}/tokens` returns `{"token": null, "supported": false}`:
+server-side crawler reporting is unavailable, because this self-hosted version
+would count crawler pageviews in the overall visitor numbers. Browser tracking
+is unaffected.
+
+### Tests
+
+`npm test` runs the integration suite (`tests/*.test.mjs`) against temporary
+Worker bundles and an in-memory SQLite stand-in for D1.

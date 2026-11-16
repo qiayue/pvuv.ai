@@ -149,6 +149,9 @@ sed -i "s/PLACEHOLDER_KV_SITE_CONFIG_ID/$KV_SITE_CONFIG_ID/" workers/*/wrangler.
   （如果就是要部署在主域名上，填 `example.com`）
 - `workers/console/wrangler.toml` 的 `[vars] INGEST_HOST` → 你的上报主机名（如
   `in.example.com`）；控制台生成的每段嵌入代码里的 `data-api` 都取自它
+- `workers/api/wrangler.toml` 的 `[vars] CONSOLE_HOST` / `INGEST_HOST` → 你的控制台
+  主机名和同一个上报主机名；`POST /v1/sites`（站点开通，见 [`docs/API.md`](./docs/API.md)
+  第 6 节）返回的嵌入代码由它们生成。`npm run setup` 会自动填写；留空则该字段为 `null`
 - `workers/console/wrangler.toml` 的 `[vars] ADMIN_EMAILS` → 你的管理员邮箱（逗号
   分隔）。本版本是**单租户**：列表里的人共享同一份站点列表（你自己的站点），
   其他人一律拒绝。登录仅支持 OAuth，第 7 步配置。
@@ -487,11 +490,15 @@ npm run deploy:console
 ## API 令牌、MCP 服务器与 CLI（可选）
 
 在控制台之外读取你的数据:REST API、让你自己的 Chatbot 回答流量问题的 **MCP
-服务器**,以及适合终端与定时任务的 **CLI**。三者均为只读。
+服务器**,以及适合终端与定时任务的 **CLI**。默认只读。
 
 在控制台创建令牌:**⚙ 设置 → API 令牌**。用持有它的客户端来命名,并选择适用
 范围(单个站点或全部站点)。令牌**仅显示一次**——服务端只存 HMAC,无法找回。
 吊销立即生效。
+
+权限选 **读取并管理站点** 的令牌(只能覆盖全部站点)还能开通站点——按**站点模板**
+(⚙ 设置 → 站点模板)创建站点、拿回嵌入代码、添加漏斗、更换域名和归档——适合交给
+自动建站的可信工具。见 [`docs/API.md`](./docs/API.md) 第 6 节。
 
 ```bash
 export PVUV_API_URL=https://api.example.com
@@ -650,6 +657,11 @@ npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:all            # ingest + consumer + api + console + cron
 npm run deploy:proxy          # 仅当你用了第一方反代
 ```
+
+0.1.0 之后(站点开通):部署 api 和 console worker 之前必须先应用迁移 **0022**(令牌
+权限)和 **0023**(站点模板)。`workers/api/wrangler.toml` 新增了 `[vars]` 中的
+`CONSOLE_HOST` / `INGEST_HOST`,默认是参考部署的主机名——请改成你自己的,否则
+`POST /v1/sites` 返回的嵌入代码会指向错误的主机。
 
 从 0.1.0 之前的部署升级（全新安装在第 6 步已应用全部 21 个迁移，可跳过下面这些）：
 

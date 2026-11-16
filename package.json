@@ -29,6 +29,7 @@
     "db:migrate:local": "wrangler d1 migrations apply pvuv-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply pvuv-db --remote",
     "typecheck": "tsc --noEmit && tsc -p sdk --noEmit",
+    "test": "sh tests/run-integration.sh",
     "dev:proxy": "wrangler dev -c workers/proxy/wrangler.toml",
     "deploy:proxy": "wrangler deploy -c workers/proxy/wrangler.toml",
     "setup": "node scripts/setup.mjs",

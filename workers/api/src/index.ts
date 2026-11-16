@@ -13,6 +13,10 @@
  *   GET /v1/sites/:id/funnel_dropoff?funnel_id=…&step=1
  *   GET /v1/sites/:id/visitors?path=/pay&limit=50
  *   GET /v1/sites/:id/visitors/:vid/profile
+ *   GET /v1/templates                               — the owner's site templates
+ *
+ * Site provisioning (write tokens only — see handleWrite):
+ *   POST  /v1/sites, PATCH /v1/sites/:id, POST /v1/sites/:id/funnels
  *
  * Auth (§10): external systems send `Authorization: Bearer <API_TOKEN>`
  * (server-side token, full read access); owners use the console's signed
@@ -22,8 +26,13 @@
 import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
 import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
-import { hmacSign, generateSiteId } from '../../../shared/ids';
+import { hmacSign } from '../../../shared/ids';
 import { CONFIG } from '../../../shared/config.gen';
+import {
+  normalizeDomains, resolveSettings, insertSite, getSite, findActiveSiteByDomain, findTemplate, listTemplates,
+  ensureFunnel, validateSteps, funnelName, buildSnippet, SiteError, SITE_STATUSES, MAX_STEP_LENGTH,
+  type SiteRecord, type SiteTemplate,
+} from '../../../shared/sites';
 
 export interface Env {
   DB: D1Database;
@@ -31,6 +40,11 @@ export interface Env {
   HMAC_KEY: string;
   API_TOKEN: string;
   SITE_CONFIG: KVNamespace;
+  /** Plain vars (workers/api/wrangler.toml [vars]) — where the embed snippet
+   *  returned by POST /v1/sites points: f.js is served by the console, events
+   *  go to the ingest worker. Unset → `snippet: null`. */
+  CONSOLE_HOST?: string;
+  INGEST_HOST?: string;
 }
 
 export default {
@@ -46,8 +60,7 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 async function route(request: Request, env: Env): Promise<Response> {
-  if (request.method === 'POST') return handleWrite(request, env);
-  if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
+  if (request.method !== 'GET') return handleWrite(request, env);
 
   const url = new URL(request.url);
 
@@ -79,6 +92,14 @@ async function route(request: Request, env: Env): Promise<Response> {
         return { site_id: r.site_id, name: r.name, domains, timezone: r.timezone, created_at: r.created_at };
       }),
     });
+  }
+
+  // site templates (migration 0023) — what an integration may pass as
+  // POST /v1/sites {"template": …}. Any of the owner's tokens may list them.
+  if (url.pathname === '/v1/templates') {
+    const caller = await resolveCaller(request, env);
+    if (!caller.ownerId) throw new ApiError(403, 'templates belong to an owner — use a personal API token');
+    return json({ templates: await listTemplates(env.DB, caller.ownerId) });
   }
 
   // batched per-site totals for a site LIST — one pass over the rollups (and,
@@ -166,8 +187,28 @@ async function route(request: Request, env: Env): Promise<Response> {
   return json({ error: 'not found' }, 404);
 }
 
+// ---------------------------------------------------------------------------
+// site provisioning (write tokens only)
+//
+//   POST  /v1/sites                  find-or-create a site by domain (+ template)
+//   PATCH /v1/sites/:id              rename, change domains, archive / restore
+//   POST  /v1/sites/:id/funnels      find-or-create a saved funnel by name
+//   POST  /v1/sites/:id/tokens       stub — crawler reporting is unavailable
+//
+// Every call is safe to retry: an integration that times out and tries again
+// gets the same site / funnel back rather than a duplicate.
+// ---------------------------------------------------------------------------
+
+/** Route a non-GET request. Unknown paths are a 404 BEFORE any auth, so a typo
+ *  reads as "no such endpoint" rather than "bad token". */
 async function handleWrite(request: Request, env: Env): Promise<Response> {
   const path = new URL(request.url).pathname;
+  const siteMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})$/);
+  const subMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/(tokens|funnels)$/);
+  const method = path === '/v1/sites' || subMatch ? 'POST' : siteMatch ? 'PATCH' : null;
+  if (!method) return json({ error: 'not found' }, 404);
+  if (request.method !== method) return json({ error: 'method not allowed' }, 405);
+
   const token = bearerFrom(request);
   if (!token || !looksLikeApiToken(token)) throw new ApiError(401, 'auth required');
   const hash = await hashToken(env.HMAC_KEY, token);
@@ -183,47 +224,123 @@ async function handleWrite(request: Request, env: Env): Promise<Response> {
   let body: Record<string, unknown>;
   try { body = JSON.parse(text); } catch { return json({error: 'bad json'}, 400); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return json({error: 'bad json'}, 400);
-  if (path === '/v1/sites') {
-    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 100) : '';
-    const domain = typeof body.domain === 'string' ? body.domain.trim().toLowerCase() : '';
-    if (!name || domain.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/.test(domain)) return json({error:'valid name and domain required'},400);
-    const existing = await env.DB.prepare("SELECT site_id,name,allowed_domains,timezone FROM sites WHERE owner_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM json_each(allowed_domains) WHERE value = ?) LIMIT 1")
-      .bind(caller.owner_id, domain).first<{site_id:string;name:string;allowed_domains:string;timezone:string}>();
-    if (existing) return json({created:false,site:{site_id:existing.site_id,name:existing.name,domains:JSON.parse(existing.allowed_domains),timezone:existing.timezone}});
-    const owner = await env.DB.prepare('SELECT timezone FROM users WHERE user_id = ?').bind(caller.owner_id).first<{timezone:string}>();
-    const timezone = owner?.timezone || 'UTC';
-    const now = Date.now(), siteId = generateSiteId(), shadow = now + Math.max(0, CONFIG.adguard.shadow_days) * 86400000;
-    const inserted = await env.DB.prepare(`INSERT INTO sites (site_id,name,owner_id,allowed_domains,adguard_mode,timezone,engaged_seconds,shadow_until,created_at)
-      SELECT ?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM sites WHERE owner_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM json_each(allowed_domains) WHERE value = ?))`)
-      .bind(siteId,name,caller.owner_id,JSON.stringify([domain]),'off',timezone,15,shadow,now,caller.owner_id,domain).run();
-    if (!inserted.meta.changes) {
-      const winner = await env.DB.prepare("SELECT site_id,name,allowed_domains,timezone FROM sites WHERE owner_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM json_each(allowed_domains) WHERE value = ?) LIMIT 1")
-        .bind(caller.owner_id,domain).first<{site_id:string;name:string;allowed_domains:string;timezone:string}>();
-      if (!winner) throw new ApiError(409,'site creation conflicted; retry');
-      return json({created:false,site:{site_id:winner.site_id,name:winner.name,domains:JSON.parse(winner.allowed_domains),timezone:winner.timezone}});
+
+  try {
+    if (path === '/v1/sites') return await provisionSite(env, caller.owner_id, body);
+    if (siteMatch) {
+      await requireOwner(env, siteMatch[1], caller.owner_id);
+      return await updateSite(env, caller.owner_id, siteMatch[1], body);
     }
-    await env.SITE_CONFIG.put(`site:${siteId}`,JSON.stringify({site_id:siteId,allowed_domains:[domain],adguard_mode:'off',adclient:null,status:'active',shadow_until:shadow}),{expirationTtl:300});
-    return json({created:true,site:{site_id:siteId,name,domains:[domain],timezone}});
-  }
-  const match = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/(tokens|funnels)$/);
-  if (match) {
-    const siteId = match[1];
+    const siteId = subMatch![1];
     await requireOwner(env, siteId, caller.owner_id);
     // GeFeiSites treats an absent token as disabled crawler reporting. The
     // self-hosted analytics schema counts crawler pageviews in overall UV, so
     // minting an ingest token here would misrepresent crawlers as visitors.
-    if (match[2] === 'tokens') return json({token:null, supported:false, reason:'crawler reporting is unavailable'});
-    const steps = Array.isArray(body.steps) ? body.steps.filter((x: unknown): x is {type: 'page' | 'event'; value: string} => {
-      if (!x || typeof x !== 'object') return false;
-      const step = x as Record<string, unknown>;
-      return (step.type === 'page' || step.type === 'event') && typeof step.value === 'string' && step.value.length > 0;
-    }).slice(0,8) : [];
-    if (steps.length < 2) return json({error:'a funnel needs 2–8 valid steps'},400);
-    const id = generateSiteId(), now = Date.now(), name = typeof body.name === 'string' ? body.name.trim().slice(0,60) || 'Funnel' : 'Funnel';
-    await env.DB.prepare('INSERT INTO funnels (site_id,funnel_id,name,steps,created_at,updated_at) VALUES (?,?,?,?,?,?)').bind(siteId,id,name,JSON.stringify(steps),now,now).run();
-    return json({funnel_id:id,name,steps,updated_at:now});
+    if (subMatch![2] === 'tokens') return json({token:null, supported:false, reason:'crawler reporting is unavailable'});
+    const steps = validateSteps(body.steps);
+    if (steps.length < 2) return json({ error: `a funnel needs 2–8 steps with a value (max ${MAX_STEP_LENGTH} chars)` }, 400);
+    return json(await ensureFunnel(env.DB, siteId, funnelName(body.name), steps));
+  } catch (err) {
+    if (err instanceof SiteError) throw new ApiError(err.status, err.message);
+    throw err;
   }
-  return json({error:'not found'},404);
+}
+
+/** Public shape of a site in write responses (a superset of GET /v1/sites). */
+function siteOut(s: SiteRecord) {
+  return { site_id: s.site_id, name: s.name, domains: s.domains, timezone: s.timezone, status: s.status,
+    adguard_mode: s.adguard_mode, adclient: s.adclient, engaged_seconds: s.engaged_seconds, shadow_until: s.shadow_until };
+}
+
+/** The embed tag, when the deployment declares where f.js and ingest live
+ *  (workers/api/wrangler.toml [vars] CONSOLE_HOST / INGEST_HOST). */
+function snippetFor(env: Env, s: SiteRecord): string | null {
+  if (!env.CONSOLE_HOST || !env.INGEST_HOST) return null;
+  return buildSnippet(`https://${env.CONSOLE_HOST}`, env.INGEST_HOST, s);
+}
+
+/** POST /v1/sites — idempotent per owner + domain. Settings: explicit field >
+ *  template > default, validated with the console's rules (but strictly: a
+ *  malformed adclient or mode is a 400, not silently dropped). A template's
+ *  default funnels are ensured by name on every call, so a retry after a
+ *  partial failure completes the set. */
+async function provisionSite(env: Env, owner: string, body: Record<string, unknown>): Promise<Response> {
+  const name = typeof body.name === 'string' ? body.name.trim().slice(0, 100) : '';
+  const requested = [body.domain, ...(Array.isArray(body.domains) ? body.domains : [])].filter((d) => d !== undefined && d !== null && d !== '');
+  const { domains, invalid } = normalizeDomains(requested);
+  if (!name || !domains.length) return json({error:'valid name and domain required'},400);
+  if (invalid.length) return json({ error: `invalid domain: ${invalid[0]}` }, 400);
+
+  let template: SiteTemplate | null = null;
+  if (body.template !== undefined && body.template !== null && body.template !== '') {
+    template = await findTemplate(env.DB, owner, String(body.template));
+    if (!template) return json({ error: `no such template: ${String(body.template)}` }, 400);
+  }
+  const owned = await env.DB.prepare('SELECT timezone FROM users WHERE user_id = ?').bind(owner).first<{timezone:string}>();
+  const resolved = resolveSettings(body, template, owned?.timezone || 'UTC', true);
+  if ('error' in resolved) return json({ error: resolved.error }, 400);
+
+  const { created, site } = await insertSite(env.DB, env.SITE_CONFIG, owner, { name, domains, ...resolved.settings },
+    { dedupe: true, shadowDays: CONFIG.adguard.shadow_days });
+  const funnels = [];
+  for (const f of template?.funnels ?? []) {
+    const r = await ensureFunnel(env.DB, site.site_id, f.name, f.steps);
+    funnels.push({ funnel_id: r.funnel_id, name: r.name, created: r.created, updated: r.updated });
+  }
+  return json({ created, site: siteOut(site), snippet: snippetFor(env, site), template: template?.template_id ?? null, funnels });
+}
+
+/** PATCH /v1/sites/:id — `name`; `domains` (replace the list) and/or
+ *  `add_domains` / `remove_domains`; `status` 'active' | 'archived'. An
+ *  archived site stops collecting (ingest only accepts active sites) but keeps
+ *  its data, and drops out of GET /v1/sites. A domain may belong to only one
+ *  active site per owner, which keeps POST /v1/sites' dedupe unambiguous. */
+async function updateSite(env: Env, owner: string, siteId: string, body: Record<string, unknown>): Promise<Response> {
+  const site = await getSite(env.DB, siteId);
+  if (!site) throw new ApiError(404, 'no such site');
+
+  let name = site.name;
+  if (body.name !== undefined) {
+    name = typeof body.name === 'string' ? body.name.trim().slice(0, 100) : '';
+    if (!name) return json({ error: 'name must be a non-empty string' }, 400);
+  }
+  let domains = site.domains.slice();
+  const list = (key: string): string[] | Response => {
+    if (body[key] === undefined) return [];
+    if (!Array.isArray(body[key])) return json({ error: `${key} must be a list` }, 400);
+    const { domains: d, invalid } = normalizeDomains(body[key]);
+    if (invalid.length) return json({ error: `invalid domain: ${invalid[0]}` }, 400);
+    return d;
+  };
+  const replace = list('domains'), add = list('add_domains'), remove = list('remove_domains');
+  for (const x of [replace, add, remove]) if (x instanceof Response) return x;
+  if (body.domains !== undefined) domains = replace as string[];
+  for (const d of add as string[]) if (!domains.includes(d)) domains.push(d);
+  domains = domains.filter((d) => !(remove as string[]).includes(d));
+  if (!domains.length) return json({ error: 'a site needs at least one domain' }, 400);
+
+  let status = site.status;
+  if (body.status !== undefined) {
+    if (typeof body.status !== 'string' || !SITE_STATUSES.has(body.status)) return json({ error: 'status must be active or archived' }, 400);
+    status = body.status;
+  }
+  if (status === 'active') {
+    const clash = await findActiveSiteByDomain(env.DB, owner, domains, siteId);
+    if (clash) {
+      const taken = domains.find((d) => clash.domains.includes(d));
+      return json({ error: `domain ${taken} already belongs to active site ${clash.site_id}`, site_id: clash.site_id }, 409);
+    }
+  }
+
+  const changed = name !== site.name || status !== site.status || JSON.stringify(domains) !== JSON.stringify(site.domains);
+  if (changed) {
+    await env.DB.prepare('UPDATE sites SET name = ?, allowed_domains = ?, status = ? WHERE site_id = ?')
+      .bind(name, JSON.stringify(domains), status, siteId).run();
+    // ingest caches site:<id> for minutes; drop it so the new whitelist /
+    // status applies on the next event instead of after the TTL
+    await env.SITE_CONFIG.delete(`site:${siteId}`);
+  }
+  return json({ changed, site: siteOut({ ...site, name, domains, status }) });
 }
 
 // ---------------------------------------------------------------------------

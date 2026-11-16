@@ -158,6 +158,10 @@ Each worker owns one hostname, declared as a Cloudflare **Custom Domain**:
 - `workers/console/wrangler.toml` `[vars] INGEST_HOST` → your ingest host
   (e.g. `in.example.com`); the console builds every embed snippet's `data-api`
   from it
+- `workers/api/wrangler.toml` `[vars] CONSOLE_HOST` / `INGEST_HOST` → your
+  console host and the same ingest host; `POST /v1/sites` (site provisioning,
+  [`docs/API.md`](./docs/API.md) §6) builds the snippet it returns from them.
+  `npm run setup` fills both in; leave them empty and that field is `null`
 - `workers/console/wrangler.toml` `[vars] ADMIN_EMAILS` → your admin email(s),
   comma-separated. This build is **single-tenant**: everyone listed shares one
   site list (your own sites); anyone else is refused. Login is OAuth-only —
@@ -559,12 +563,18 @@ browser. Then open any site → *AI report* → **Generate**.
 
 Read your data from outside the console: a REST API, an **MCP server** so your
 own chatbot can answer questions about your traffic, and a **CLI** for terminals
-and cron jobs. All read-only.
+and cron jobs. Read-only by default.
 
 Create a token in the console: **⚙ settings → API tokens**. Name it after the
 client that will hold it, and scope it to one site or all of yours. It is shown
 **once** — only an HMAC is stored, so it cannot be recovered. Revoking takes
 effect immediately.
+
+A token issued with permission **Read & manage sites** (all sites only) can
+also provision sites — create them from a **site template** (⚙ settings → Site
+templates), get the embed snippet back, add funnels, move domains and archive —
+for a trusted launcher that brings sites up automatically. See
+[`docs/API.md`](./docs/API.md) §6.
 
 ```bash
 export PVUV_API_URL=https://api.example.com
@@ -737,6 +747,12 @@ npm run build:sdk && cp sdk/dist/f.js workers/console/public/f.js
 npm run deploy:all            # ingest + consumer + api + console + cron
 npm run deploy:proxy          # ONLY if you use the first-party reverse proxy
 ```
+
+Since 0.1.0 (site provisioning): migrations **0022** (token permissions) and
+**0023** (site templates) must be applied before deploying the api and console
+workers. `workers/api/wrangler.toml` gained a `[vars]` block with
+`CONSOLE_HOST` / `INGEST_HOST`, shipped with the reference hosts — set them to
+yours, or `POST /v1/sites` returns a snippet pointing at the wrong hosts.
 
 Upgrading a pre-0.1.0 deployment (fresh installs get all 21 migrations in step 6
 and can skip this list):

@@ -9,6 +9,7 @@
  *   GET  /api/me
  *   GET  /api/sites
  *   POST /api/sites            {name, domains[], adguard_mode?, adclient?}
+ *   GET|POST /api/templates, DELETE /api/templates/:id   (site templates)
  *   GET  /api/sites/:id/(overview|timeseries|breakdown|quality|traffic)
  *   GET  /api/sites/:id/visitors/:vid/profile
  *
@@ -30,6 +31,10 @@ import {
   clearStateCookie, OAuthError,
 } from './oauth';
 import { isValidTimezone } from '../../../shared/tz';
+import {
+  ADGUARD_MODES, ADCLIENT_RE, normalizeDomains, resolveSettings, insertSite, validateSteps, funnelName,
+  listTemplates, validateTemplate,
+} from '../../../shared/sites';
 import { zoneForDomains } from '../../../shared/cfedge';
 import { readCfToken, verifyCfToken, CF_TOKEN_KEY, CF_STATUS_KEY } from '../../cron/src/edge';
 import { runRetentionPurge, storageReport } from '../../cron/src/retention';
@@ -671,7 +676,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const sets: string[] = ['adguard_mode = ?'];
     const binds: unknown[] = [mode];
     if (body.adclient !== undefined) {
-      const ac = body.adclient && /^ca-pub-\d{6,20}$/.test(body.adclient) ? body.adclient : null;
+      const ac = body.adclient && ADCLIENT_RE.test(body.adclient) ? body.adclient : null;
       sets.push('adclient = ?'); binds.push(ac);
     }
     await env.DB.prepare(`UPDATE sites SET ${sets.join(', ')} WHERE site_id = ?`).bind(...binds, siteId).run();
@@ -733,9 +738,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (request.method === 'POST') {
       let body: { funnel_id?: string; name?: string; steps?: unknown };
       try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
-      const steps = parseFunnelSteps(JSON.stringify(body.steps ?? []));
+      // same write-side validation as the api worker (shared/sites.ts)
+      const steps = validateSteps(body.steps);
       if (steps.length < 2) return json({ error: 'a funnel needs 2–8 steps with a value' }, 400);
-      const name = (body.name || '').trim().slice(0, 60) || 'Funnel';
+      const name = funnelName(body.name);
       const id = (body.funnel_id || funnelId || generateSiteId()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
       if (!id) return json({ error: 'bad funnel id' }, 400);
       const now = Date.now();
@@ -749,6 +755,44 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       await env.DB.prepare('DELETE FROM funnels WHERE site_id = ? AND funnel_id = ?').bind(siteId, funnelId).run();
       return json({ ok: true });
     }
+  }
+
+  // ── site templates (migration 0023): per-owner presets that POST /v1/sites
+  // applies by id or name. Saving with an existing template_id updates it.
+  const tplMatch = path.match(/^\/api\/templates(?:\/([A-Za-z0-9]{4,16}))?$/);
+  if (tplMatch) {
+    const tplId = tplMatch[1];
+    if (request.method === 'GET' && !tplId) return json({ templates: await listTemplates(env.DB, user) });
+    if (request.method === 'POST') {
+      let body: Record<string, unknown>;
+      try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'bad json' }, 400);
+      const v = validateTemplate(body);
+      if ('error' in v) return json({ error: v.error }, 400);
+      const t = v.template;
+      const id = tplId || (typeof body.template_id === 'string' ? body.template_id : '');
+      const clash = await env.DB.prepare('SELECT template_id FROM site_templates WHERE owner_id = ? AND name = ? COLLATE NOCASE')
+        .bind(user, t.name).first<{ template_id: string }>();
+      if (clash && clash.template_id !== id) return json({ error: 'a template with this name already exists' }, 409);
+      const now = Date.now();
+      if (id) {
+        const res = await env.DB.prepare(`UPDATE site_templates SET name = ?, timezone = ?, engaged_seconds = ?, adguard_mode = ?,
+            adclient = ?, funnels = ?, updated_at = ? WHERE owner_id = ? AND template_id = ?`)
+          .bind(t.name, t.timezone, t.engaged_seconds, t.adguard_mode, t.adclient, JSON.stringify(t.funnels), now, user, id).run();
+        if (!res.meta.changes) return json({ error: 'no such template' }, 404);
+        return json({ template_id: id, ...t, updated_at: now });
+      }
+      const newId = generateSiteId();
+      await env.DB.prepare(`INSERT INTO site_templates (template_id, owner_id, name, timezone, engaged_seconds, adguard_mode, adclient, funnels, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(newId, user, t.name, t.timezone, t.engaged_seconds, t.adguard_mode, t.adclient, JSON.stringify(t.funnels), now, now).run();
+      return json({ template_id: newId, ...t, created_at: now, updated_at: now });
+    }
+    if (request.method === 'DELETE' && tplId) {
+      await env.DB.prepare('DELETE FROM site_templates WHERE owner_id = ? AND template_id = ?').bind(user, tplId).run();
+      return json({ ok: true });
+    }
+    return json({ error: 'method not allowed' }, 405);
   }
 
   // site-scoped queries — reuse the api worker's query layer
@@ -888,59 +932,34 @@ function redirect(location: string, setCookie?: string): Response {
 // site registration (§18.6): issue site_id, persist, write-through KV cache
 // ---------------------------------------------------------------------------
 
-const ADGUARD_MODES = new Set(['off', 'loose', 'balanced', 'strict']);
-
 async function createSite(request: Request, env: Env, owner: string): Promise<Response> {
-  let body: { name?: string; domains?: string[]; adguard_mode?: string; adclient?: string; timezone?: string; engaged_seconds?: number };
+  let body: Record<string, unknown>;
   try {
     body = await request.json();
   } catch {
     return json({ error: 'bad json' }, 400);
   }
+  if (!body || typeof body !== 'object') return json({ error: 'bad json' }, 400);
 
-  const name = (body.name ?? '').trim().slice(0, 100);
-  const domains = (body.domains ?? [])
-    .map((d) => String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
-    .filter((d) => /^[a-z0-9.-]+$/.test(d));
+  // the form is forgiving: entries that don't parse as a hostname are skipped
+  // (the api worker refuses them instead) — see shared/sites.ts normalizeDomain
+  const name = String(body.name ?? '').trim().slice(0, 100);
+  const { domains } = normalizeDomains(body.domains);
   if (!name || domains.length === 0) return json({ error: 'name and at least one valid domain required' }, 400);
 
-  const adguardMode = ADGUARD_MODES.has(body.adguard_mode ?? '') ? body.adguard_mode! : 'off';
-  const adclient = body.adclient && /^ca-pub-\d{6,20}$/.test(body.adclient) ? body.adclient : null;
+  // timezone is fixed at creation (immutable): fall back to the user's default,
+  // then UTC; an invalid IANA id is refused rather than stored. Ad-guard mode /
+  // adclient fall back to off / none when malformed (non-strict).
+  const resolved = resolveSettings(body, null, await userTimezone(env, owner), false);
+  if ('error' in resolved) return json({ error: resolved.error }, 400);
+  const s = resolved.settings;
 
-  // timezone is fixed at creation (immutable). Fall back to the user's default,
-  // then UTC. Reject an invalid IANA id rather than silently store a bad tz.
-  let timezone = (body.timezone ?? '').trim();
-  if (!timezone) timezone = await userTimezone(env, owner);
-  if (!isValidTimezone(timezone)) return json({ error: `invalid timezone: ${timezone}` }, 400);
+  // no per-domain dedupe here: an owner may deliberately re-create a site
+  // (e.g. to pick another, immutable timezone). The api worker dedupes.
+  const { site } = await insertSite(env.DB, env.SITE_CONFIG, owner, { name, domains, ...s },
+    { dedupe: false, shadowDays: CONFIG.adguard.shadow_days });
 
-  // GA4 engagement dwell threshold (seconds), set at creation. Clamp to a sane
-  // 1–300s; default 15 when unset/invalid.
-  const engagedSeconds = Number.isFinite(body.engaged_seconds)
-    ? Math.min(Math.max(Math.round(body.engaged_seconds!), 1), 300) : 15;
-
-  // shadow mode (§7): new sites record-only for the first shadow_days before
-  // ads are actually blocked. shadow_until = when enforcement begins.
-  const createdAt = Date.now();
-  const shadowUntil = createdAt + Math.max(0, CONFIG.adguard.shadow_days) * 86_400_000;
-
-  const siteId = generateSiteId();
-  await env.DB.prepare(`
-    INSERT INTO sites (site_id, name, owner_id, allowed_domains, adguard_mode, adclient, timezone, engaged_seconds, shadow_until, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(siteId, name, owner, JSON.stringify(domains), adguardMode, adclient, timezone, engagedSeconds, shadowUntil, createdAt).run();
-
-  // write-through KV so ingest sees the new site immediately (§5 whitelist);
-  // shape must match the ingest worker's SiteConfig
-  await env.SITE_CONFIG.put(`site:${siteId}`, JSON.stringify({
-    site_id: siteId,
-    allowed_domains: domains,
-    adguard_mode: adguardMode,
-    adclient,
-    status: 'active',
-    shadow_until: shadowUntil,
-  }), { expirationTtl: 300 });
-
-  return json({ site_id: siteId, name, domains, adguard_mode: adguardMode, adclient, timezone, shadow_until: shadowUntil });
+  return json({ site_id: site.site_id, name, domains, adguard_mode: s.adguard_mode, adclient: s.adclient, timezone: s.timezone, shadow_until: site.shadow_until });
 }
 
 /** The user's default timezone for new sites (users.timezone), fallback UTC. */
