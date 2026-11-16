@@ -119,6 +119,8 @@
 </head>
 <body>
 <script src="/i18n.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/cmdk.js"></script>
 <header>
   <a href="/sites.html" data-i18n="← sites">← sites</a>
   <div class="switcher" id="switcher">
@@ -130,6 +132,7 @@
       <ul id="switchList" role="listbox"></ul>
     </div>
   </div>
+  <button class="btn cmdk-btn" type="button" onclick="window.pvuvCmdk && window.pvuvCmdk.open()" title="Jump to a site (⌘K or /)" data-i18n-title="Jump to a site (⌘K or /)"><kbd>⌘K</kbd></button>
   <a id="visitorsLink" href="#" data-i18n="visitors →">visitors →</a>
   <div class="hdr-right">
   <select id="lang" aria-label="Language"></select>

@@ -289,3 +289,13 @@ test('cohortTag is the ISO week of creation in the site timezone', () => {
   assert.equal(cohortTag(Date.UTC(2026, 10, 15, 23, 30), 'UTC'), 'launch:2026-W46');
   assert.equal(cohortTag(Date.UTC(2026, 10, 15, 23, 30), 'Asia/Tokyo'), 'launch:2026-W47');
 });
+
+test('migration 0026 matches the canonical schema and is idempotent', () => {
+  const a = new DatabaseSync(':memory:');
+  a.exec(readFileSync('migrations/0026_site_labels.sql', 'utf8'));
+  a.exec(readFileSync('migrations/0026_site_labels.sql', 'utf8'));
+  const b = new DatabaseSync(':memory:');
+  b.exec(readFileSync('shared/schema.sql', 'utf8'));
+  const cols = (db) => db.prepare('PRAGMA table_info(site_labels)').all().map((c) => [c.name, c.type, c.dflt_value, c.pk]);
+  assert.deepEqual(cols(a), cols(b));
+});

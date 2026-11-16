@@ -6,790 +6,650 @@
 <title>Sites — pvuv.ai</title>
 <link rel="stylesheet" href="/console.css">
 <style>
-  .brand img.logo { height: 28px; display: block; }
-  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .head h2 { margin: 0; }
-  .toolbar { display: flex; align-items: center; gap: 8px; }
-  .scards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
-  .scard { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; color: inherit; transition: border-color .12s, background .12s, transform .12s; }
-  .scard:hover { border-color: var(--border-3); background: #191d26; text-decoration: none; transform: translateY(-1px); }
-  .scard .name { font-weight: 700; font-size: 15px; }
-  .scard .dom { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
-  .scard .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
-  .scard .stat .v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .scard .stat .k { color: var(--muted); font-size: 11px; }
-  .scard .foot { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .scard .foot .spacer { flex: 1; }
-  .panel.form { margin-top: 16px; border-radius: var(--radius-lg); padding: 18px; }
-  .panel .phead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  .panel .phead h3 { margin: 0; font-size: 14px; }
-  .panel .close { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
-  .panel .close:hover { color: var(--text); background: var(--surface-2); }
-  form.create { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
-  form.create label { font-size: 13px; color: var(--muted); display: block; }
-  form.create input, form.create select, form.create textarea { width: 100%; margin-top: 3px; background-color: var(--bg); }
-  form.create button[type="submit"], form.create button.act { grid-column: span 2; justify-self: start; }
-  form.create button { min-height: 32px; padding: 5px 16px; border: 1px solid var(--accent-2); border-radius: var(--radius-sm); background: var(--accent-2); color: #fff; font-weight: 600; }
-  form.create button:hover { background: var(--accent-3); border-color: var(--accent-3); }
-  form.create button[type="button"] { background: var(--surface); border-color: var(--border-2); color: var(--text-2); font-weight: 500; }
-  form.create button[type="button"]:hover { background: var(--surface-2); border-color: var(--border-3); color: var(--text); }
-  form.create button.danger { background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad-text); }
-  form.create .actions { grid-column: span 2; display: flex; gap: 8px; flex-wrap: wrap; }
-  form.create .section-title { grid-column: span 2; margin: 4px 0 -4px; }
-  form.create .section-title strong { font-size: 13px; color: #c7cdd8; }
-  form.create .section-title span { font-size: 12px; color: var(--muted); }
-  form.create .subform { grid-column: span 2; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }
-  .full { grid-column: span 2; }
-  .snippet { display: none; margin-top: 14px; background: #0c1117; border: 1px solid #2b3a2e; border-radius: var(--radius); padding: 14px; }
+  /* portfolio overview (docs/design/portfolio-ui.md, portfolio-mock.html) */
+  .topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 10px 20px; min-height: 56px;
+    background: rgba(8,9,12,.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid var(--p-line); }
+  .topbar .brand { font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .topbar .brand img.logo { height: 26px; display: block; }
+  .search { flex: 0 1 380px; display: flex; align-items: center; gap: 8px; background: var(--p-panel); border: 1px solid var(--p-line-2); border-radius: 9px; padding: 0 10px; min-height: 34px; }
+  .search input, .search input[type=search] { -webkit-appearance: none; appearance: none; box-shadow: none; border-radius: 0; flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--p-text); font-size: 13px; padding: 6px 0; }
+  .search input:focus-visible { outline: none; }
+  .search input[type=search] { border: 0 !important; background: transparent !important; min-height: 0; padding: 6px 0; }
+  .search:focus-within { border-color: var(--p-accent); }
+  .search input::placeholder { color: var(--p-mut); }
+  .search kbd { cursor: pointer; }
+  .sp { flex: 1; }
+  .menu { position: relative; }
+  .menu-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px; background: #12141a; border: 1px solid var(--p-line-2); border-radius: 10px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  .menu-pop a, .menu-pop button, .menu-pop label { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 9px; border-radius: 7px; border: 0; background: none; color: var(--p-text-2); font-size: 13px; text-align: left; cursor: pointer; }
+  .menu-pop a:hover, .menu-pop button:hover, .menu-pop label:hover { background: var(--p-panel-2); text-decoration: none; color: #fff; }
+  .menu-pop h5 { margin: 6px 9px 4px; font-size: 11px; color: var(--p-mut); font-weight: 600; letter-spacing: .04em; }
+  .menu-pop hr { border: 0; border-top: 1px solid var(--p-line); margin: 5px 2px; }
+  .menu-pop select { width: 100%; margin: 2px 0; }
+
+  .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 56px); }
+  aside.side { border-right: 1px solid var(--p-line); padding: 14px 10px; position: sticky; top: 56px; align-self: start; max-height: calc(100vh - 56px); overflow: auto; }
+  aside.side h4 { margin: 16px 8px 6px; font-size: 11px; color: var(--p-mut); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  aside.side h4:first-child { margin-top: 2px; }
+  .v { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px; background: none; color: var(--p-text-2); font-size: 13px; text-align: left; }
+  .v:hover { background: var(--p-panel-2); color: #fff; }
+  .v.on { background: var(--p-accent-bg); color: #fff; box-shadow: inset 2px 0 0 var(--p-accent); }
+  .v span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v b { font-weight: 500; color: var(--p-mut); font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+
+  main.pf { max-width: none; margin: 0; padding: 16px 20px 40px; min-width: 0; }
+  .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .k { position: relative; overflow: hidden; padding: 12px 14px 34px; }
+  .k .l { color: var(--p-mut); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .k .n { font-size: 21px; font-weight: 650; margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .k .n small { font-size: 12px; margin-left: 7px; font-weight: 600; }
+  .k .mini { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; }
+  .funnel { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .fs { position: relative; overflow: hidden; padding: 8px 12px 10px; font-size: 12px; color: var(--p-mut); }
+  .fs b { display: block; font-size: 17px; color: var(--p-text); font-variant-numeric: tabular-nums; }
+  .fs .pb { position: absolute; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, #8b7cff, #4cc38a); border-radius: 0 3px 3px 0; }
+  .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .qchip { border: 1px solid var(--p-line-2); background: var(--p-panel); color: var(--p-text-2); border-radius: 999px; padding: 4px 11px; font-size: 12px; }
+  .qchip:hover { border-color: #353a48; color: #fff; }
+  .qchip.on { border-color: var(--p-accent); background: var(--p-accent-bg); color: #fff; }
+  .qchip b { font-weight: 600; margin-left: 4px; }
+  .seg { display: inline-flex; border: 1px solid var(--p-line-2); border-radius: 9px; overflow: hidden; }
+  .seg button { border: 0; background: var(--p-panel); color: var(--p-text-2); padding: 5px 11px; font-size: 12px; }
+  .seg button + button { border-left: 1px solid var(--p-line-2); }
+  .seg button.on { background: var(--p-accent-bg); color: #fff; }
+  .seg button:disabled { color: #4f5664; }
+
+  .tablewrap { overflow: auto; border: 1px solid var(--p-line); border-radius: var(--p-radius); background: var(--p-panel-grad); box-shadow: var(--p-shadow); }
+  table.pt { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  table.pt th { position: sticky; top: 0; z-index: 2; background: #101217; text-align: left; font-weight: 500; color: var(--p-mut); font-size: 12px; padding: 9px 10px;
+    border-bottom: 1px solid var(--p-line); white-space: nowrap; user-select: none; }
+  table.pt th.sortable { cursor: pointer; } table.pt th.sortable:hover { color: var(--p-text); }
+  table.pt th.sorted { color: var(--p-text); }
+  table.pt td { padding: 9px 10px; border-bottom: 1px solid var(--p-row); white-space: nowrap; vertical-align: middle; }
+  table.pt tbody tr { cursor: pointer; }
+  table.pt tbody tr:hover td { background: var(--p-panel-2); }
+  table.pt tbody tr.focus td { background: #15142a; }
+  table.pt tbody tr.focus td:first-child { box-shadow: inset 2px 0 0 var(--p-accent); }
+  table.pt tbody tr.sel td { background: #13122a; }
+  table.pt .num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.pt td.att-c { white-space: normal; min-width: 170px; max-width: 230px; }
+  table.pt td.cb, table.pt th.cb { width: 34px; padding-right: 0; }
+  input.pcb { width: 15px; height: 15px; accent-color: var(--p-accent); cursor: pointer; vertical-align: middle; }
+  .site { display: flex; align-items: center; gap: 10px; min-width: 210px; }
+  .site .tx { min-width: 0; }
+  .site .nm { font-weight: 600; color: var(--p-text); }
+  .site .dm { color: var(--p-mut); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .star { color: var(--p-star); margin-right: 3px; }
+  .muted2 { color: var(--p-mut); }
+  .note { color: var(--p-mut); font-size: 12px; margin-top: 10px; }
+  .banner { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 12px; }
+  .banner .ic { font-size: 22px; }
+  .banner p { margin: 2px 0 0; color: var(--p-mut); font-size: 12.5px; }
+  .empty-state { text-align: center; padding: 60px 20px; }
+  .empty-state h2 { color: var(--p-text); font-size: 18px; margin: 10px 0 6px; }
+  .empty-state p { color: var(--p-mut); margin: 0 0 18px; }
+  .loading-state { color: var(--p-mut); padding: 40px; text-align: center; }
+  .bulkbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 10px; }
+  .bulkbar[hidden] { display: none; }
+  .viewhost { min-height: 200px; }
+
+  /* add-site modal (kept flow: template picker + snippet) */
+  dialog.pdlg { width: min(640px, 94vw); padding: 0; border: 1px solid var(--p-line-2); border-radius: 14px; background: #101217; color: var(--p-text); box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+  dialog.pdlg::backdrop { background: rgba(4,5,8,.66); backdrop-filter: blur(3px); }
+  .pdlg .dh { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--p-line); }
+  .pdlg .dh h3 { margin: 0; font-size: 15px; }
+  .pdlg .x { background: none; border: 0; color: var(--p-mut); font-size: 20px; line-height: 1; padding: 2px 8px; border-radius: 6px; }
+  .pdlg .x:hover { color: #fff; background: var(--p-panel-2); }
+  form.create { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; padding: 16px 18px 18px; }
+  form.create label { font-size: 12.5px; color: var(--p-mut); display: block; }
+  form.create input, form.create select { width: 100%; margin-top: 4px; background: var(--p-bg); border: 1px solid var(--p-line-2); border-radius: 8px; padding: 7px 9px; color: var(--p-text); }
+  form.create .full { grid-column: span 2; }
+  form.create .hint { color: var(--p-mut); font-size: 11.5px; }
+  form.create .err { color: var(--p-red-text); font-size: 13px; margin: 0; min-height: 1em; }
+  .snippet { margin: 0 18px 18px; background: #0b0d11; border: 1px solid #22402e; border-radius: 10px; padding: 14px; }
   .snippet pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; font-size: 12.5px; color: #9ece9e; font-family: var(--mono); }
-  .err { color: var(--bad); font-size: 13px; grid-column: span 2; min-height: 1em; margin: 0; }
-  .helpbox { font-size: 12px; color: var(--muted); background: #0c1117; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
-  @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create button[type="submit"], form.create .actions, form.create .section-title, form.create .subform, .err, .full { grid-column: span 1; } }
-  #ranking th { white-space: nowrap; }
+  .snippet .row { display: flex; gap: 8px; margin-top: 12px; }
+  @media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; } aside.side { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--p-line); }
+    .funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); } .search { display: none; }
+  }
+  @media (max-width: 560px) { form.create { grid-template-columns: 1fr; } form.create .full { grid-column: span 1; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
 </head>
-<body>
+<body class="premium">
 <script src="/i18n.js"></script>
-<header>
-  <span class="brand" id="brand">pvuv.ai</span>
-  <div class="hdr-right">
-    <select id="lang" aria-label="Language"></select>
-    <a href="/health.html" id="selfcheckLink" class="btn" data-i18n="Self-check">Self-check</a>
-    <button id="logout" class="btn" data-i18n="Sign out">Sign out</button>
+<script src="/js/ui.js"></script>
+<script src="/js/cmdk.js"></script>
+<!-- optional modules from the management stream; absent → graceful fallback -->
+<script src="/js/drawer.js" defer onerror="void 0"></script>
+<script src="/js/views.js" defer onerror="void 0"></script>
+<script src="/js/bulk.js" defer onerror="void 0"></script>
+
+<div id="app"><p class="loading-state" data-i18n="loading…">loading…</p></div>
+
+<datalist id="tzlist"></datalist>
+<dialog class="pdlg" id="addDlg" aria-labelledby="addTitle">
+  <div class="dh"><h3 id="addTitle" data-i18n="Add a site">Add a site</h3><button class="x" type="button" data-close aria-label="Close">×</button></div>
+  <form class="create" id="create">
+    <div class="full"><label><span data-i18n="Template">Template</span>
+      <select id="tpl"><option value="" data-i18n="No template">No template</option></select></label>
+      <span class="hint" data-i18n="tpl-pick-help">A template pre-fills the settings below and adds its default funnels.</span></div>
+    <div><label><span data-i18n="Site name">Site name</span><input id="name" required placeholder="My Blog" data-i18n-ph="My Blog"></label></div>
+    <div><label><span data-i18n="Domains (comma-separated)">Domains (comma-separated)</span><input id="domains" required placeholder="example.com, www.example.com"></label></div>
+    <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
+      <!-- stored modes; labels say what each BLOCKS, in ascending strength (see site.html) -->
+      <select id="agmode">
+        <option value="off" data-i18n="Off">Off</option>
+        <option value="balanced" data-i18n="Balanced — bots &amp; crawlers">Balanced — bots &amp; crawlers</option>
+        <option value="loose" data-i18n="Aggressive — everything not clean">Aggressive — everything not clean</option>
+        <option value="strict" data-i18n="Strictest — clean + interacted">Strictest — clean + interacted</option>
+      </select></label></div>
+    <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
+    <div><label><span data-i18n="Timezone">Timezone</span> <span style="color:#e0a34a" data-i18n="(can't be changed later)">(can't be changed later)</span>
+      <input id="tz" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
+    <div><label><span data-i18n="Engagement threshold (seconds)">Engagement threshold (seconds)</span>
+      <input id="engaged" type="number" min="1" max="300" value="15" placeholder="15"></label></div>
+    <p class="err full" id="err"></p>
+    <div class="full"><button type="submit" class="p-btn primary" data-i18n="Create site">Create site</button></div>
+  </form>
+  <div class="snippet" id="snippet" hidden>
+    <b data-i18n="Site created — embed this snippet:">Site created — embed this snippet:</b>
+    <pre id="snippetCode"></pre>
+    <p class="muted" style="font-size:12px;margin:8px 0 0" data-i18n="snippet-help">data-api must point at your ingest host — adjust it if yours differs. See DEPLOY.md.</p>
+    <div class="row"><button type="button" class="p-btn" id="copySnippet" data-i18n="Copy">Copy</button>
+      <button type="button" class="p-btn" id="addAnother" data-i18n="Add another">Add another</button>
+      <button type="button" class="p-btn primary" data-close data-i18n="Done">Done</button></div>
   </div>
-</header>
-<main>
-  <div class="head">
-    <h2 data-i18n="Your sites">Your sites</h2>
-    <div class="toolbar">
-      <select id="period" aria-label="Date range">
-        <optgroup label="Rolling" data-i18n-label="Rolling">
-          <option value="24h" selected data-i18n="Last 24 hours">Last 24 hours</option>
-          <option value="today" data-i18n="Today">Today</option>
-          <option value="7d" data-i18n="Last 7 days">Last 7 days</option>
-          <option value="30d" data-i18n="Last 30 days">Last 30 days</option>
-          <option value="90d" data-i18n="Last 90 days">Last 90 days</option>
-        </optgroup>
-        <optgroup label="Calendar" data-i18n-label="Calendar">
-          <option value="yesterday" data-i18n="Yesterday">Yesterday</option>
-          <option value="this_week" data-i18n="This week">This week</option>
-          <option value="last_week" data-i18n="Last week">Last week</option>
-          <option value="this_month" data-i18n="This month">This month</option>
-          <option value="last_month" data-i18n="Last month">Last month</option>
-          <option value="this_year" data-i18n="This year">This year</option>
-        </optgroup>
-      </select>
-      <button class="btn primary" id="btnAdd">＋ <span data-i18n="New site">New site</span></button>
-      <button class="btn icon" id="btnSettings" title="Settings" data-i18n-title="Settings" aria-label="Settings">⚙</button>
-    </div>
-  </div>
-  <div id="sites"><p class="loading" data-i18n="loading…">loading…</p></div>
+</dialog>
 
-  <section id="rankingSection" hidden style="margin-top:24px">
-    <div class="head">
-      <h2 data-i18n="Site ranking · clean traffic">Site ranking · clean traffic</h2>
-      <span style="font-size:12px;color:#8b93a1" data-i18n="ranking-help">Ranked by external clean pageviews — bots &amp; crawlers excluded, mutual visits between your own sites don't count.</span>
-    </div>
-    <div class="panel" id="ranking"><p class="loading" data-i18n="loading…">loading…</p></div>
-  </section>
+<script type="module">
+import { html, render, useState, useEffect, useMemo, useRef, useCallback } from '/vendor/preact-htm.js';
 
-  <datalist id="tzlist"></datalist>
-
-  <section class="panel form" id="addPanel" hidden>
-    <div class="phead"><h3 data-i18n="Add a site">Add a site</h3><button class="close" data-close="addPanel" aria-label="Close">×</button></div>
-    <form class="create" id="create">
-      <div><label><span data-i18n="Site name">Site name</span><input id="name" required placeholder="My Blog" data-i18n-ph="My Blog"></label></div>
-      <div><label><span data-i18n="Domains (comma-separated)">Domains (comma-separated)</span><input id="domains" required placeholder="example.com, www.example.com"></label></div>
-      <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
-        <!-- values are the stored modes; labels say what each BLOCKS, in ascending
-             strength, because "loose" blocks more than "balanced" (see site.html) -->
-        <select id="agmode">
-          <option value="off" data-i18n="Off">Off</option>
-          <option value="balanced" data-i18n="Balanced — bots &amp; crawlers">Balanced — bots &amp; crawlers</option>
-          <option value="loose" data-i18n="Aggressive — everything not clean">Aggressive — everything not clean</option>
-          <option value="strict" data-i18n="Strictest — clean + interacted">Strictest — clean + interacted</option>
-        </select></label></div>
-      <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="adclient" placeholder="ca-pub-1234567890123456"></label></div>
-      <div><label><span data-i18n="Timezone">Timezone</span> <span style="color:#e0a34a" data-i18n="(can't be changed later)">(can't be changed later)</span>
-        <input id="tz" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
-      <div><label><span data-i18n="Engagement threshold (seconds)">Engagement threshold (seconds)</span>
-        <input id="engaged" type="number" min="1" max="300" value="15" placeholder="15">
-        <span style="color:#8b93a1;font-size:12px">a visit is "engaged" (not a bounce) after this dwell time. GA4 default 10s; we default 15s.</span>
-      </label></div>
-      <p class="err" id="err"></p>
-      <button type="submit" data-i18n="Create site">Create site</button>
-    </form>
-    <div class="snippet" id="snippet">
-      <b data-i18n="Site created — embed this snippet:">Site created — embed this snippet:</b>
-      <pre id="snippetCode"></pre>
-      <p style="color:#8b93a1;font-size:12px;margin:8px 0 0">
-        data-api must point at your ingest host — adjust it if yours is not
-        in.&lt;your-domain&gt;. See DEPLOY.md.
-      </p>
-    </div>
-  </section>
-
-  <section class="panel form" id="homePanel" hidden>
-    <div class="phead"><h3 data-i18n="Site & branding">Site &amp; branding</h3><button class="close" data-close="homePanel" aria-label="Close">×</button></div>
-    <form class="create" id="homeSettings">
-      <div><label><span data-i18n="Brand name (header + homepage)">Brand name (header + homepage)</span><input id="hsName" maxlength="100" placeholder="PVUV.ai"></label></div>
-      <div><label><span data-i18n="Primary domain">Primary domain</span><input id="hsDomain" maxlength="120" placeholder="www.example.com"></label></div>
-      <div class="full"><label><span data-i18n="Description">Description</span><input id="hsDesc" maxlength="500" placeholder="This site runs a self-hosted analytics instance."></label></div>
-      <div><label><span data-i18n="Logo — light (for dark backgrounds)">Logo — light (for dark backgrounds)</span><input id="hsLogoLight" maxlength="500" placeholder="/logo-light.svg or https://…"></label></div>
-      <div><label><span data-i18n="Logo — dark (for light backgrounds)">Logo — dark (for light backgrounds)</span><input id="hsLogoDark" maxlength="500" placeholder="/logo-dark.svg or https://…"></label></div>
-      <div class="full"><label><span data-i18n="Favicon">Favicon</span><input id="hsFavicon" maxlength="500" placeholder="/favicon.ico or https://…"></label></div>
-      <p class="err" id="hsMsg"></p>
-      <button type="submit" data-i18n="Save">Save</button>
-    </form>
-    <p style="margin:14px 0 0;font-size:12.5px;color:#8b93a1;border-top:1px solid #262b36;padding-top:12px">
-      <span data-i18n="logo-help">Logos/favicon can be URLs or files you place in <code>workers/console/public/</code>.
-      The console header (dark) uses the light logo.</span> · <a href="/health.html" style="color:#7ab3ff;text-decoration:none" data-i18n="Run self-check ↗">Run self-check ↗</a>
-    </p>
-    <form class="create" id="tzSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full"><label><span data-i18n="Default timezone for new sites">Default timezone for new sites</span>
-        <input id="tzDefault" list="tzlist" autocomplete="off" placeholder="Search timezone…" data-i18n-ph="Search timezone…"></label></div>
-      <p class="err" id="tzMsg"></p>
-      <button type="submit" data-i18n="Save default timezone">Save default timezone</button>
-    </form>
-    <form class="create" id="aiSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="AI analysis reports">AI analysis reports</strong>
-        <span style="font-size:12px;color:#8b93a1" data-i18n="ai-help"> — used on each site's dashboard to generate a written summary.</span></div>
-      <div><label><span data-i18n="Provider (API format)">Provider (API format)</span>
-        <select id="aiProvider">
-          <option value="openai" data-i18n="OpenAI-compatible">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic (Claude)</option>
-        </select></label></div>
-      <div><label><span data-i18n="Model name">Model name</span><input id="aiModel" maxlength="120" placeholder="gpt-4o-mini / claude-opus-4-8"></label></div>
-      <div class="full"><label><span data-i18n="API base URL">API base URL</span> <span style="color:#8b93a1" data-i18n="(optional — blank uses the provider default)">(optional — blank uses the provider default)</span>
-        <input id="aiBaseUrl" maxlength="300" placeholder="https://api.openai.com/v1 or https://api.anthropic.com"></label></div>
-      <div><label><span data-i18n="API key">API key</span> <span id="aiKeyState" style="color:#8b93a1"></span>
-        <input id="aiKey" type="password" maxlength="300" autocomplete="off" placeholder="sk-…"></label></div>
-      <div><label><span data-i18n="Report language">Report language</span>
-        <select id="aiLang"><option value="en">English</option><option value="zh">中文</option></select></label></div>
-      <p class="err" id="aiMsg"></p>
-      <button type="submit" data-i18n="Save AI settings">Save AI settings</button>
-    </form>
-    <form class="create" id="tokenSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="API tokens">API tokens</strong>
-        <span style="font-size:12px;color:#8b93a1" data-i18n="token-help"> — credentials for the CLI, the MCP server (so your own chatbot can query this data) and other integrations. Read-only tokens can only query reports; read/write tokens (all sites only) can also create, update and archive sites and funnels — give those only to trusted services. Shown once at creation.</span></div>
-      <div><label><span data-i18n="Token name">Token name</span><input id="tokName" maxlength="60" placeholder="Claude Desktop"></label></div>
-      <div><label><span data-i18n="Scope">Scope</span>
-        <select id="tokSite"><option value="" data-i18n="All my sites">All my sites</option></select></label></div>
-      <div><label><span data-i18n="Permission">Permission</span>
-        <select id="tokPermission"><option value="read" data-i18n="Read only">Read only</option><option value="write" data-i18n="Read &amp; manage sites">Read &amp; manage sites</option></select></label></div>
-      <p class="err" id="tokMsg"></p>
-      <div class="full" id="tokNew" hidden style="background:#0c1117;border:1px solid #2b3a2e;border-radius:8px;padding:12px;margin-bottom:4px">
-        <div style="font-size:12px;color:#9ece9e;margin-bottom:6px" data-i18n="Copy it now — it cannot be shown again.">Copy it now — it cannot be shown again.</div>
-        <code id="tokValue" style="font-size:12.5px;word-break:break-all;color:#e6e8eb"></code>
-      </div>
-      <div class="full" id="tokList" style="font-size:12px;color:#8b93a1"></div>
-      <button type="submit" data-i18n="Create token">Create token</button>
-    </form>
-    <form class="create" id="tplSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Site templates">Site templates</strong>
-        <span style="font-size:12px;color:#8b93a1" data-i18n="templates-help"> — presets for sites created through the API (POST /v1/sites with "template"): timezone, engagement threshold, ad protection, AdSense client and default funnels. Empty fields fall back to the usual defaults; fields in the API request override the template.</span></div>
-      <input type="hidden" id="tplId">
-      <div><label><span data-i18n="Template name">Template name</span><input id="tplName" maxlength="60" placeholder="Game site"></label></div>
-      <div><label><span data-i18n="Timezone">Timezone</span>
-        <input id="tplTz" list="tzlist" autocomplete="off" placeholder="blank = your default timezone" data-i18n-ph="blank = your default timezone"></label></div>
-      <div><label><span data-i18n="Ad protection mode">Ad protection mode</span>
-        <select id="tplMode">
-          <option value="" data-i18n="Not set (use default)">Not set (use default)</option>
-          <option value="off" data-i18n="Off">Off</option>
-          <option value="balanced" data-i18n="Balanced — bots &amp; crawlers">Balanced — bots &amp; crawlers</option>
-          <option value="loose" data-i18n="Aggressive — everything not clean">Aggressive — everything not clean</option>
-          <option value="strict" data-i18n="Strictest — clean + interacted">Strictest — clean + interacted</option>
-        </select></label></div>
-      <div><label><span data-i18n="AdSense client (optional)">AdSense client (optional)</span><input id="tplAdclient" placeholder="ca-pub-1234567890123456"></label></div>
-      <div><label><span data-i18n="Engagement threshold (seconds)">Engagement threshold (seconds)</span>
-        <input id="tplEngaged" type="number" min="1" max="300" placeholder="15"></label></div>
-      <div class="full"><label><span data-i18n="Default funnels (JSON)">Default funnels (JSON)</span>
-        <textarea id="tplFunnels" rows="3" style="font:12px/1.4 var(--mono)" placeholder='[{"name":"Play","steps":[{"type":"page","value":"/"},{"type":"event","value":"play_start"}]}]'></textarea></label></div>
-      <p class="err" id="tplMsg"></p>
-      <div class="full" id="tplList" style="font-size:12px;color:#8b93a1"></div>
-      <div class="actions"><button type="submit" data-i18n="Save template">Save template</button>
-      <button type="button" id="tplReset" data-i18n="New template">New template</button></div>
-    </form>
-    <form class="create" id="botdirSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Crawler directory">Crawler directory</strong>
-        <span style="font-size:12px;color:#8b93a1" data-i18n="botdir-help"> — optional. Import a public bots-and-agents catalogue to label crawler traffic by kind (search / AI training / SEO / ads). Classification only: it never changes scoring, verdicts or ad protection.</span></div>
-      <div class="full"><label><span data-i18n="Directory JSON file">Directory JSON file</span>
-        <input id="botdirFile" type="file" accept=".json,application/json"></label></div>
-      <div class="full"><label><span data-i18n="…or paste the JSON">…or paste the JSON</span>
-        <textarea id="botdirText" rows="4" style="font:12px/1.4 var(--mono)" placeholder='[{"name":"Googlebot","category":"Search"}, …]'></textarea></label></div>
-      <p class="err" id="botdirMsg"></p>
-      <div class="full" id="botdirState" style="font-size:12px;color:#8b93a1"></div>
-      <div class="actions"><button type="submit" data-i18n="Import directory">Import directory</button>
-      <button type="button" id="botdirClear" class="danger" data-i18n="Remove">Remove</button></div>
-    </form>
-    <form class="create" id="cfSettings" style="margin-top:16px;border-top:1px solid #262b36;padding-top:16px">
-      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Cloudflare edge requests">Cloudflare edge requests</strong>
-        <span style="font-size:12px;color:#8b93a1" data-i18n="cf-help"> — optional, advanced. The tracking script only sees visitors whose browser ran JavaScript. AI crawlers and scrapers fetch your HTML and leave, so they never appear. Cloudflare saw all of them: add a read-only API token and the daily job pulls those request counts, so your dashboard can show what the script missed. Leave it empty and nothing changes.</span></div>
-      <div class="full helpbox" style="margin-bottom:4px">
-        <span data-i18n="cf-steps">In the Cloudflare dashboard: <b>My Profile → API Tokens → Create Token → Create Custom Token</b>. Give it exactly these two permissions, both read-only:</span>
-        <div style="margin:6px 0 6px 0;font-family:ui-monospace,monospace;color:#c7cdd8">Zone · Zone · Read<br>Zone · Analytics · Read</div>
-        <span data-i18n="cf-steps2">Under <i>Zone Resources</i> choose the zones your sites are on (or all zones in the account), then create the token and paste it below.</span>
-        <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" style="color:#7ab3ff;text-decoration:none;display:inline-block;margin-top:6px" data-i18n="Open Cloudflare API Tokens ↗">Open Cloudflare API Tokens ↗</a>
-      </div>
-      <div class="full"><label><span data-i18n="Cloudflare API token">Cloudflare API token</span> <span id="cfKeyState" style="color:#8b93a1"></span>
-        <input id="cfToken" type="password" maxlength="200" autocomplete="off" placeholder="••••••••••••••••"></label></div>
-      <p class="err" id="cfMsg"></p>
-      <div class="full" id="cfState" style="font-size:12px;color:#8b93a1"></div>
-      <div class="actions"><button type="submit" data-i18n="Save & check">Save &amp; check</button>
-      <button type="button" id="cfTest" data-i18n="Re-check">Re-check</button>
-      <button type="button" id="cfClear" class="danger" data-i18n="Remove">Remove</button></div>
-    </form>
-    <form class="create" id="storageSettings" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px" onsubmit="return false">
-      <div class="full" style="margin-bottom:4px"><strong style="font-size:13px;color:#c7cdd8" data-i18n="Storage & retention">Storage &amp; retention</strong>
-        <span style="font-size:12px;color:#8b93a1" data-i18n="storage-help"> — raw event rows are what fills the D1 database (roughly 0.8 KB each with indexes; a pageview produces several once behavior heartbeats are counted). Dashboards read from rollups that are kept forever; the windows below only decide how far back visitor journeys and the suspicious-visitor drill-down reach. Set them in <code>config.local.toml [retention]</code>, then redeploy the cron and console workers.</span></div>
-      <div class="full" id="storageState"><p class="loading" data-i18n="loading…">loading…</p></div>
-      <div class="actions"><button type="button" id="storagePurge" data-i18n="Run purge now">Run purge now</button>
-        <button type="button" id="storageRefresh" data-i18n="Refresh">Refresh</button></div>
-      <p class="err" id="storageMsg"></p>
-    </form>
-  </section>
-</main>
-<script>
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const t = (s) => window.PVI18N.t(s);
-let ingestHostCfg = ''; // from /api/me — see the snippet builder below
+const I18N = window.PVI18N;
+const ui = window.pvuvUI;
+const { esc, fmt, fill } = ui;
+const t = (s) => I18N.t(s);
 const te = (s) => esc(t(s));
+const tk = (k, en) => I18N.tk(k, en);
+const DAY = 86400000;
+
+// ── persistent UI state: URL first (shareable), localStorage second ─────
+const LS = { cols: 'pvuv.portfolio.cols', sort: 'pvuv.portfolio.sort', period: 'pvuv.portfolio.period', layout: 'pvuv.portfolio.layout' };
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked */ } };
+const qp = new URLSearchParams(location.search);
+const PERIODS = ['today', 'yesterday', '7d', '30d', '90d', 'this_week', 'last_week', 'this_month', 'last_month', 'this_year'];
+const PERIOD_EN = { today: 'Today', yesterday: 'Yesterday', '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', this_week: 'This week', last_week: 'Last week', this_month: 'This month', last_month: 'Last month', this_year: 'This year' };
+const QUICK = ['attention', 'new_week', 'no_google', 'ivt_high'];
+
+// ── columns ─────────────────────────────────────────────────────────────
+// sort: value used when sorting (desc first for numbers); render: HTML string
+const extVal = (s, k) => (s.external ? s.external[k] : null);
+const COLS = [
+  { id: 'stage', label: 'Stage', sort: (s) => ui.STAGES.indexOf(s.stage), render: (s) => `<span title="${s.stage_since ? esc(t('since') + ' ' + fmt.date(s.stage_since)) : ''}">${ui.stageChip(s.stage)}</span>` },
+  { id: 'live', label: 'Live', num: true, sort: (s) => s.days_live, render: (s) => fmt.days(s.days_live) },
+  { id: 'uv', label: 'Visitors', num: true, sort: (s) => s.uv, render: (s) => fmt.num(s.uv) },
+  { id: 'delta', label: 'Change', num: true, sort: (s) => s.delta_pct ?? -1e9, render: (s) => {
+    if (s.delta_pct == null) return `<span class="muted2">${s.days_live < 14 ? te('new') : '–'}</span>`;
+    const d = fmt.delta(s.delta_pct); return `<span class="${d.cls}">${esc(d.text)}</span>`;
+  } },
+  { id: 'trend', label: '14-day trend', render: (s) => ui.areaSpark(s.series, { neg: s.delta_pct != null && s.delta_pct < 0, w: 116, h: 26 }) },
+  { id: 'crawl', label: 'Search crawl', render: (s) => ui.engineChips(s.crawl, { late: (s.attention || []).some((a) => a.code === 'crawl_overdue') }) },
+  { id: 'organic', label: 'Organic search', num: true, sort: (s) => s.organic_uv, render: (s) => fmt.num(s.organic_uv) },
+  { id: 'ai', label: 'AI assistants', num: true, sort: (s) => s.ai_uv, render: (s) => fmt.num(s.ai_uv) },
+  { id: 'ivt', label: 'Invalid traffic', num: true, sort: (s) => s.ivt_pct ?? -1, render: (s, c) => `<span class="${s.ivt_pct != null && s.ivt_pct > c.th.ivt_high_pct ? 'dn' : ''}">${s.ivt_pct == null ? '–' : fmt.pct(s.ivt_pct)}</span>` },
+  { id: 'health', label: 'Daily health', render: (s) => ui.healthBar(s.health) },
+  { id: 'attention', label: 'Needs attention', cls: 'att-c', sort: (s) => (s.attention.length ? 10 - (ui.SEV_RANK[s.attention[0].severity] ?? 9) : 0), render: (s) => ui.attnChip(s.attention) },
+  // more metrics (off by default)
+  { id: 'pv', label: 'Pageviews', num: true, sort: (s) => s.pv, render: (s) => fmt.num(s.pv) },
+  { id: 'uv_prev', label: 'Visitors (previous)', num: true, sort: (s) => s.uv_prev, render: (s) => fmt.num(s.uv_prev) },
+  { id: 'created', label: 'Created', num: true, sort: (s) => s.created_at, render: (s) => fmt.date(s.created_at) },
+  { id: 'adguard', label: 'Ad protection', sort: (s) => s.adguard_mode, render: (s) => esc(t(s.adguard_mode)) },
+  { id: 'last_event', label: 'Last event', num: true, sort: (s) => s.last_event_at || 0, render: (s) => (s.last_event_at ? fmt.ago(s.last_event_at) : '–') },
+  // ranking set (cross-site clean-traffic ranking, /api/ranking)
+  { id: 'rank', label: 'Rank', num: true, set: 'ranking', sort: (s) => -(s._rank ?? 1e9), render: (s) => (s._rank ? '#' + s._rank : '–') },
+  { id: 'ext_clean', label: 'External clean', num: true, set: 'ranking', sort: (s) => s._ext ?? -1, render: (s) => fmt.num(s._ext) },
+  { id: 'internal', label: 'Internal (mutual)', num: true, set: 'ranking', sort: (s) => s._int ?? -1, render: (s) => `<span class="muted2">${fmt.num(s._int)}</span>` },
+  { id: 'clean_pv', label: 'Clean PV', num: true, set: 'ranking', sort: (s) => s._clean ?? -1, render: (s) => fmt.num(s._clean) },
+  { id: 'human', label: 'Human', num: true, set: 'ranking', sort: (s) => s._human ?? -1, render: (s) => (s._human == null ? '–' : s._human + '%') },
+  // external data (only offered when some site has it)
+  { id: 'revenue', label: 'Revenue', num: true, ext: true, sort: (s) => extVal(s, 'revenue_usd') ?? -1, render: (s) => fmt.usd(extVal(s, 'revenue_usd')) },
+  { id: 'rpm', label: 'RPM', num: true, ext: true, sort: (s) => extVal(s, 'rpm_usd') ?? -1, render: (s) => fmt.usd(extVal(s, 'rpm_usd')) },
+  { id: 'adsense', label: 'Ad network', ext: true, sort: (s) => s.external?.adsense?.status || '', render: (s) => (s.external?.adsense ? ui.chip(t(s.external.adsense.status), s.external.adsense.status === 'ready' || s.external.adsense.status === 'approved' ? 'green' : 'amber') : '–') },
+];
+const COL_BY = Object.fromEntries(COLS.map((c) => [c.id, c]));
+const PRESETS = {
+  // external columns (revenue …) are listed but only shown when some site has external data
+  overview: ['stage', 'live', 'uv', 'delta', 'trend', 'crawl', 'organic', 'ivt', 'revenue', 'rpm', 'adsense', 'health', 'attention'],
+  ranking: ['rank', 'uv', 'ext_clean', 'internal', 'clean_pv', 'pv', 'human', 'ivt', 'trend'],
+  growth: ['stage', 'uv', 'uv_prev', 'delta', 'trend', 'organic', 'ai', 'pv'],
+};
+
+// ── data ─────────────────────────────────────────────────────────────────
 async function guard(r) { if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); } return r; }
-
-// collapsible panels: only one open at a time; toolbar buttons toggle them
-function togglePanel(id) {
-  for (const p of ['addPanel', 'homePanel']) {
-    const el = document.getElementById(p);
-    if (p === id) el.hidden = !el.hidden;
-    else el.hidden = true;
-  }
-  const opened = document.getElementById(id);
-  if (!opened.hidden) opened.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+async function fetchPortfolio(period, compare, fresh) {
+  const r = await guard(await fetch(`/api/portfolio?period=${encodeURIComponent(period)}&compare=${compare ? 'previous' : 'none'}${fresh ? '&fresh=1' : ''}`));
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return r.json();
 }
-document.getElementById('btnAdd').addEventListener('click', () => togglePanel('addPanel'));
-document.getElementById('btnSettings').addEventListener('click', () => { togglePanel('homePanel'); loadTokens(); loadTemplates(); loadStorage(); });
-document.querySelectorAll('.panel .close').forEach((b) =>
-  b.addEventListener('click', () => { document.getElementById(b.dataset.close).hidden = true; }));
-
-const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-US');
-const dur = (ms) => ms == null ? '–' : ms >= 60000 ? Math.floor(ms/60000)+'m '+Math.round(ms%60000/1000)+'s' : Math.round((ms||0)/1000)+'s';
-
-async function loadSites() {
-  const period = document.getElementById('period').value;
-  const r = await guard(await fetch('/api/sites'));
-  const { sites } = await r.json();
-  const el = document.getElementById('sites');
-  if (!sites.length) {
-    el.innerHTML = `<p class="empty">${te('No sites yet — use the “＋ New site” button to add one.')}<br>`
-      + `${te('Just deployed?')} <a href="/health.html" style="color:#7ab3ff;text-decoration:none">${te('Run the self-check ↗')}</a></p>`;
-    return;
-  }
-  // one card per site, each showing its own overview so all sites' numbers
-  // are visible at a glance on this page; click a card for the full dashboard
-  el.innerHTML = '<div class="scards">' + sites.map((s) => `
-    <a class="scard" href="/site.html?id=${esc(s.site_id)}" data-id="${esc(s.site_id)}">
-      <div class="name">${esc(s.name)}</div>
-      <div class="dom">${esc(JSON.parse(s.allowed_domains).join(', '))}</div>
-      <div class="stats" id="st-${esc(s.site_id)}">
-        <div class="stat"><div class="v">…</div><div class="k">${te('Pageviews')}</div></div>
-        <div class="stat"><div class="v">…</div><div class="k">${te('Visitors')}</div></div>
-        <div class="stat"><div class="v">…</div><div class="k">${te('Sessions')}</div></div>
-      </div>
-      <div class="foot"><span class="tag" title="${te('Timezone')}">🕒 ${esc(s.timezone || 'UTC')}</span><span class="tag" title="${te('Ad protection mode')}">🛡 ${te(s.adguard_mode || 'off')}</span>${s.status && s.status !== 'active' ? `<span class="tag warn">${te('archived')}</span>` : ''}<span class="spacer"></span><span class="tag good" id="hs-${esc(s.site_id)}"></span></div>
-    </a>`).join('') + '</div>';
-
-  // ONE request for every card. This used to be one /overview per site, and
-  // /overview is a live raw scan of the whole period — a dozen sites meant a
-  // dozen concurrent whole-period scans, so the grid sat on "…" for a long time
-  // whenever one site was busy. /api/sites/summary reads completed days from
-  // the rollups and aggregates all sites in a single pass.
+async function fetchRanking(period) {
   try {
-    const d = await (await fetch(`/api/sites/summary?period=${period}`)).json();
-    for (const o of d.sites || []) {
-      const st = document.getElementById('st-' + o.site_id);
-      const hs = document.getElementById('hs-' + o.site_id);
-      if (!st || !hs) continue;
-      const human = o.pv ? (((o.clean_count + o.suspect_count) / o.pv) * 100).toFixed(0) : 0;
-      st.innerHTML = `
-        <div class="stat"><div class="v">${fmt(o.pv)}</div><div class="k">${te('Pageviews')}</div></div>
-        <div class="stat"${d.uv_approx ? ` title="${te('uv-approx')}"` : ''}><div class="v">${d.uv_approx ? '≈' : ''}${fmt(o.uv)}</div><div class="k">${te('Visitors')}</div></div>
-        <div class="stat"><div class="v">${fmt(o.sessions)}</div><div class="k">${te('Sessions')}</div></div>`;
-      hs.textContent = o.pv ? human + '% ' + t('human') : t('no data yet');
-      hs.className = 'tag ' + (o.pv ? (human >= 90 ? 'good' : human >= 70 ? 'warn' : 'bad') : '');
-    }
-  } catch {
-    document.querySelectorAll('[id^="hs-"]').forEach((el) => { el.textContent = ''; });
-  }
+    const r = await guard(await fetch(`/api/ranking?period=${encodeURIComponent(period)}`));
+    return r.ok ? ((await r.json()).sites || []) : [];
+  } catch { return []; }
 }
-// remember the sites-overview period across refreshes (default: last 24h)
-(() => {
-  const sel = document.getElementById('period');
-  const saved = localStorage.getItem('pvuv.sitesPeriod');
-  if (saved && [...sel.options].some((o) => o.value === saved)) sel.value = saved;
-})();
-// cross-site clean-traffic ranking (§14): self-hides with <2 sites (nothing to
-// rank). "External clean" excludes bots/crawlers and mutual visits between your
-// own sites, so it reflects genuinely external human traffic.
-async function loadRanking() {
-  const sec = document.getElementById('rankingSection');
-  const period = document.getElementById('period').value;
-  let sites = [];
-  try { sites = ((await (await guard(await fetch(`/api/ranking?period=${period}`))).json()).sites) || []; }
-  catch { sec.hidden = true; return; }
-  if (sites.length < 2) { sec.hidden = true; return; }
-  sec.hidden = false;
-  // external/internal come from rollup_source_daily, which the hourly job
-  // fills; right after deploying (or on a brand-new hour) it is empty while
-  // clean_pv already has live numbers — show a dash instead of a misleading 0
-  const pending = sites.every((s) => !s.external_pv && !s.internal_pv) && sites.some((s) => s.clean_pv > 0);
-  const dash = `<span class="muted" title="${te('populated by the hourly rollup — check back after :05')}">—</span>`;
-  const body = sites.map((s, i) => `<tr>
-    <td style="color:#8b93a1">${i + 1}</td>
-    <td><a href="/site.html?id=${esc(s.site_id)}">${esc(s.name)}</a></td>
-    <td class="num"><b>${pending ? dash : fmt(s.external_pv)}</b></td>
-    <td class="num" style="color:#8b93a1">${pending ? dash : fmt(s.internal_pv)}</td>
-    <td class="num">${fmt(s.clean_pv)}</td>
-    <td class="num" style="color:#8b93a1">${fmt(s.pv)}</td>
-    <td class="num">${s.quality_score}%</td>
-  </tr>`).join('');
-  document.getElementById('ranking').innerHTML = `<table>
-    <thead><tr>
-      <th>#</th><th>${te('Site')}</th><th class="num">${te('External clean')}</th><th class="num">${te('Internal (mutual)')}</th>
-      <th class="num">${te('Clean PV')}</th><th class="num">${te('Total PV')}</th><th class="num">${te('Human')}</th>
-    </tr></thead><tbody>${body}</tbody></table>`;
-}
-document.getElementById('period').addEventListener('change', () => {
-  localStorage.setItem('pvuv.sitesPeriod', document.getElementById('period').value);
-  loadSites();
-  loadRanking();
-});
 
-// --- timezones -------------------------------------------------------------
+const startOfWeek = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+const sevSort = (a, b) => {
+  const sa = a.attention.length ? ui.SEV_RANK[a.attention[0].severity] ?? 9 : 99, sb = b.attention.length ? ui.SEV_RANK[b.attention[0].severity] ?? 9 : 99;
+  return sa - sb || b.uv - a.uv;
+};
+function quickMatch(id, s, th) {
+  if (id === 'attention') return s.status === 'active' && s.attention.length > 0;
+  if (id === 'new_week') return s.status === 'active' && s.created_at >= startOfWeek();
+  if (id === 'no_google') return s.status === 'active' && s.uv > 0 && !s.crawl.google;
+  if (id === 'ivt_high') return s.status === 'active' && s.ivt_pct != null && s.ivt_pct > th.ivt_high_pct;
+  return true;
+}
+function viewMatch(view, s) {
+  if (view === 'all') return s.status !== 'archived';
+  if (view === 'archived') return s.status === 'archived';
+  if (view === 'attention') return s.status === 'active' && s.attention.length > 0;
+  if (view === 'starred') return s.starred;
+  if (view.startsWith('stage:')) return s.stage === view.slice(6);
+  if (view.startsWith('tag:')) return s.status !== 'archived' && s.tags.includes(view.slice(4));
+  if (view.startsWith('cohort:')) return s.status !== 'archived' && s.cohort === view.slice(7);
+  return true;
+}
+function textMatch(q, s) {
+  if (!q) return true;
+  q = q.toLowerCase();
+  return s.name.toLowerCase().includes(q) || s.site_id.toLowerCase().includes(q) || s.domains.some((d) => d.toLowerCase().includes(q)) || s.tags.some((d) => d.toLowerCase().includes(q));
+}
+
+// ── components ───────────────────────────────────────────────────────────
+const Raw = ({ h, tag = 'span', cls }) => html`<${tag} class=${cls} dangerouslySetInnerHTML=${{ __html: h }} />`;
+const STAGE_DOT = { setup: '#5d6676', awaiting_crawl: 'var(--p-amber)', crawled: 'var(--p-blue)', organic: 'var(--p-violet)', growing: 'var(--p-green)', declining: 'var(--p-red)', archived: '#3a3f4b' };
+
+function Kpi({ label, value, delta, series, neg }) {
+  const d = delta || { text: '', cls: '' };
+  const mini = useMemo(() => ui.areaSpark(series || [], { w: 300, h: 30, fluid: true, neg, label }), [series, neg, label]);
+  return html`<div class="k p-card"><div class="l">${label}</div><div class="n">${value}${d.text ? html`<small class=${d.cls}>${d.text}</small>` : null}</div>
+    <${Raw} cls="mini" tag="div" h=${mini} /></div>`;
+}
+
+function Menu({ label, children, cls = 'p-btn', title }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  useEffect(() => {
+    if (!open) return;
+    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', off); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return html`<div class="menu" ref=${ref}><button class=${cls} type="button" title=${title} aria-haspopup="true" aria-expanded=${open} onClick=${() => setOpen(!open)}>${label}</button>
+    ${open ? html`<div class="menu-pop" onClick=${(e) => e.stopPropagation()}>${typeof children === 'function' ? children(() => setOpen(false)) : children}</div>` : null}</div>`;
+}
+
+function App() {
+  const [, setTick] = useState(0);
+  const [period, setPeriod] = useState(qp.get('period') || lsGet(LS.period, '7d'));
+  const [compare, setCompare] = useState(qp.get('compare') !== 'none');
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [view, setView] = useState(qp.get('view') || 'all');
+  const [quick, setQuick] = useState(qp.get('quick') || '');
+  const [search, setSearch] = useState(qp.get('q') || '');
+  const [sort, setSort] = useState(() => {
+    const s = qp.get('sort'); if (s) { const [id, dir] = s.split(':'); return { id, dir: dir === 'asc' ? 'asc' : 'desc' }; }
+    return lsGet(LS.sort, { id: 'uv', dir: 'desc' });
+  });
+  const [cols, setCols] = useState(() => (qp.get('cols') ? qp.get('cols').split(',') : lsGet(LS.cols, PRESETS.overview)).filter((c) => COL_BY[c]));
+  const [layout, setLayout] = useState(qp.get('layout') || lsGet(LS.layout, 'table'));
+  const [selected, setSelected] = useState(() => new Set());
+  const [focus, setFocus] = useState(-1);
+  const [ranking, setRanking] = useState(null);
+  const [brand, setBrand] = useState({ name: 'pvuv.ai' });
+  const [modules, setModules] = useState({});
+  const viewHost = useRef(); const bulkHost = useRef(); const bulkMounted = useRef(false);
+  const searchRef = useRef();
+
+  // language switch → re-render everything
+  useEffect(() => { const f = () => setTick((x) => x + 1); document.addEventListener('pvuv:lang', f); return () => document.removeEventListener('pvuv:lang', f); }, []);
+  // optional modules load with `defer` → re-check once the page has loaded
+  useEffect(() => {
+    const check = () => setModules({ drawer: !!window.pvuvDrawer, views: window.pvuvViews || null, bulk: !!window.pvuvBulk });
+    check(); window.addEventListener('load', check); document.addEventListener('pvuv:modules', check);
+    return () => { window.removeEventListener('load', check); document.removeEventListener('pvuv:modules', check); };
+  }, []);
+  useEffect(() => {
+    fetch('/api/home').then((r) => (r.ok ? r.json() : null)).then((b) => {
+      if (!b) return;
+      setBrand(b);
+      document.title = ((b.name || '').trim() || 'pvuv.ai') + ' — ' + t('Sites');
+      if (b.favicon) { let l = document.querySelector('link[rel="icon"]'); if (!l) { l = document.createElement('link'); l.rel = 'icon'; document.head.appendChild(l); } l.href = b.favicon; }
+    }).catch(() => {});
+  }, []);
+
+  const load = useCallback((fresh) => {
+    setErr('');
+    return fetchPortfolio(period, compare, fresh).then((d) => { setData(d); window.pvuvCmdk?.setSites(d.sites); window.pvuvPortfolio = d; })
+      .catch((e) => { if (e.message !== 'auth') setErr(e.message || 'failed'); });
+  }, [period, compare]);
+  useEffect(() => { setData((d) => (d ? { ...d, _stale: true } : d)); load(false); }, [load]);
+  // reload after a write by another module (drawer / bulk): `pvuv:changed`
+  useEffect(() => { const f = () => load(true); document.addEventListener('pvuv:changed', f); return () => document.removeEventListener('pvuv:changed', f); }, [load]);
+
+  const needRanking = cols.some((c) => COL_BY[c]?.set === 'ranking') || sort.id && COL_BY[sort.id]?.set === 'ranking';
+  useEffect(() => { if (needRanking) fetchRanking(period).then(setRanking); }, [needRanking, period]);
+
+  // URL + storage sync
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (period !== '7d') p.set('period', period);
+    if (!compare) p.set('compare', 'none');
+    if (view !== 'all') p.set('view', view);
+    if (quick) p.set('quick', quick);
+    if (search) p.set('q', search);
+    if (!(sort.id === 'uv' && sort.dir === 'desc')) p.set('sort', sort.id + ':' + sort.dir);
+    if (cols.join(',') !== PRESETS.overview.join(',')) p.set('cols', cols.join(','));
+    if (layout !== 'table') p.set('layout', layout);
+    const qs = p.toString();
+    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+    lsSet(LS.period, period); lsSet(LS.sort, sort); lsSet(LS.cols, cols); lsSet(LS.layout, layout);
+  }, [period, compare, view, quick, search, sort, cols, layout]);
+
+  const th = data?.thresholds || { ivt_high_pct: 20, growth_min_uv: 1000 };
+  const sites = useMemo(() => {
+    if (!data) return [];
+    if (!ranking) return data.sites;
+    const by = new Map(ranking.map((r, i) => [r.site_id, { ...r, rank: i + 1 }]));
+    return data.sites.map((s) => { const r = by.get(s.site_id); return r ? { ...s, _rank: r.rank, _ext: r.external_pv, _int: r.internal_pv, _clean: r.clean_pv, _human: r.quality_score } : s; });
+  }, [data, ranking]);
+  const hasExternal = sites.some((s) => s.external);
+  const visibleCols = cols.filter((c) => COL_BY[c] && (!COL_BY[c].ext || hasExternal));
+
+  const rows = useMemo(() => {
+    let r = sites.filter((s) => viewMatch(view, s) && (!quick || quickMatch(quick, s, th)) && textMatch(search, s));
+    const col = COL_BY[sort.id];
+    if ((view === 'attention' || quick === 'attention') && (!col || sort.id === 'uv' && sort.dir === 'desc')) r = r.slice().sort(sevSort);
+    else if (col?.sort) {
+      const dir = sort.dir === 'asc' ? 1 : -1;
+      r = r.slice().sort((a, b) => { const x = col.sort(a), y = col.sort(b); return (x < y ? -1 : x > y ? 1 : 0) * dir || b.uv - a.uv; });
+    } else if (sort.id === 'name') {
+      const dir = sort.dir === 'asc' ? 1 : -1;
+      r = r.slice().sort((a, b) => a.name.localeCompare(b.name) * dir);
+    }
+    return r;
+  }, [sites, view, quick, search, sort, th]);
+
+  const ctx = useMemo(() => ({
+    period, t, te, esc, fmt, ui, thresholds: th,
+    reload: () => load(true),
+    open: (s) => openSite(s),
+    navigate: (s) => { window.pvuvCmdk?.recordRecent(s.site_id); location.href = '/site.html?id=' + encodeURIComponent(s.site_id); },
+  }), [period, th, load]);
+  function openSite(s) {
+    if (window.pvuvDrawer) window.pvuvDrawer.open(s, ctx);
+    else ctx.navigate(s);
+  }
+
+  // cards / heatmap from the management stream
+  useEffect(() => {
+    if (layout === 'table' || !viewHost.current) return;
+    const fn = window.pvuvViews?.[layout];
+    if (fn) fn(viewHost.current, rows, ctx); else viewHost.current.innerHTML = `<p class="loading-state">${te('This view is not available yet.')}</p>`;
+  }, [layout, rows, ctx, modules]);
+
+  // keyboard: j/k move, Enter opens, x selects, Esc clears
+  const rowsRef = useRef(rows); rowsRef.current = rows;
+  const focusRef = useRef(focus); focusRef.current = focus;
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || document.querySelector('dialog[open]') || document.querySelector('.cmdk:not([hidden])')) return;
+      const n = rowsRef.current.length; if (!n) return;
+      if (e.key === 'j' || e.key === 'ArrowDown' && e.shiftKey === false && focusRef.current >= 0) { e.preventDefault(); setFocus((f) => Math.min(n - 1, f + 1)); }
+      else if (e.key === 'k' || e.key === 'ArrowUp' && focusRef.current >= 0) { e.preventDefault(); setFocus((f) => Math.max(0, f - 1)); }
+      else if (e.key === 'Enter' && focusRef.current >= 0) { e.preventDefault(); const s = rowsRef.current[focusRef.current]; if (s) (e.shiftKey ? ctx.navigate(s) : openSite(s)); }
+      else if (e.key === 'x' && focusRef.current >= 0) { e.preventDefault(); toggleSel(rowsRef.current[focusRef.current].site_id); }
+      else if (e.key === 'Escape') { setSelected(new Set()); setFocus(-1); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [ctx]);
+  useEffect(() => { document.querySelector('tr.focus')?.scrollIntoView({ block: 'nearest' }); }, [focus]);
+  useEffect(() => { setFocus(-1); }, [view, quick, search]);
+
+  function toggleSel(id) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  const selRef = useRef(selected); selRef.current = selected;
+  function bulk() {
+    if (!window.pvuvBulk || !bulkHost.current) return;
+    bulkHost.current.hidden = false;
+    if (!bulkMounted.current) {
+      window.pvuvBulk.mount(bulkHost.current, () => [...selRef.current], () => { setSelected(new Set()); load(true); });
+      bulkMounted.current = true;
+    }
+  }
+  function sortBy(id) { setSort((s) => (s.id === id ? { id, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { id, dir: COL_BY[id]?.num || id === 'attention' ? 'desc' : 'asc' })); }
+  // the attention queue always opens in its own order: severity, then visitors
+  function pickView(v) { setView(v); setQuick(''); if (v === 'attention') setSort({ id: 'uv', dir: 'desc' }); }
+
+  // ── render ──
+  if (err && !data) return html`${Top()}<div class="loading-state">${t('failed')}: ${err} <button class="p-btn" onClick=${() => load(true)}>${t('Retry')}</button></div>`;
+  if (!data) return html`${Top()}<p class="loading-state">${t('loading…')}</p>`;
+
+  const counts = (() => {
+    const c = { all: 0, attention: 0, starred: 0, archived: 0, tags: new Map(), cohort: 0 };
+    const thisCohort = sites.find((s) => s.created_at >= startOfWeek())?.cohort;
+    for (const s of sites) {
+      if (s.status === 'archived') { c.archived++; continue; }
+      c.all++; if (s.attention.length) c.attention++; if (s.starred) c.starred++;
+      for (const g of s.tags) c.tags.set(g, (c.tags.get(g) || 0) + 1);
+      if (thisCohort && s.cohort === thisCohort) c.cohort++;
+    }
+    c.thisCohort = thisCohort;
+    return c;
+  })();
+
+  function Top() {
+    const logo = brand.logo_light || brand.logo_dark;
+    return html`<div class="topbar">
+      <a class="brand" href="/sites.html" style="color:inherit">${logo ? html`<img class="logo" src=${logo} alt=${brand.name || 'pvuv.ai'} />` : (brand.name || 'pvuv.ai')}</a>
+      <label class="search"><input ref=${searchRef} type="search" value=${search} placeholder=${t('Search sites, domains, tags…')} aria-label=${t('Search sites, domains, tags…')}
+        onInput=${(e) => setSearch(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Escape') { setSearch(''); e.target.blur(); } else if (e.key === 'Enter' && rows[0]) openSite(rows[0]); }} />
+        <kbd title=${t('Jump to a site (⌘K or /)')} onClick=${(e) => { e.preventDefault(); window.pvuvCmdk?.open(); }}>⌘K</kbd></label>
+      <div class="sp"></div>
+      <select class="p-btn" aria-label=${t('Date range')} value=${period} onChange=${(e) => setPeriod(e.target.value)}>
+        ${PERIODS.map((p) => html`<option value=${p}>${t(PERIOD_EN[p])}</option>`)}</select>
+      <button class=${'p-btn' + (compare ? ' on' : '')} type="button" aria-pressed=${compare} onClick=${() => setCompare(!compare)}>${t('Compare: previous period')}</button>
+      <button class="p-btn" type="button" id="bulkBtn" disabled=${!modules.bulk} title=${modules.bulk ? (selected.size ? fill(t('{n} selected'), { n: selected.size }) : t('Select rows first')) : t('Bulk actions are not available yet.')} onClick=${bulk}>
+        ${t('Bulk actions')}${selected.size ? html` <span class="pchip accent">${selected.size}</span>` : null}</button>
+      <button class="p-btn primary" type="button" onClick=${openAdd}>＋ ${t('New site')}</button>
+      <a class="p-btn" href="/settings.html" title=${t('Settings')} aria-label=${t('Settings')}>⚙</a>
+      <${Menu} label="⋯" title=${t('More')}>
+        <h5>${t('Language')}</h5>
+        <div style="padding:0 6px"><select class="p-btn" style="width:100%" value=${I18N.lang} onChange=${(e) => I18N.setLang(e.target.value)}>${I18N.langs.map((l) => html`<option value=${l.code}>${l.label}</option>`)}</select></div>
+        <hr />
+        <a href="/health.html">${t('Self-check')}</a>
+        <button type="button" onClick=${async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login.html'; }}>${t('Sign out')}</button>
+      <//>
+    </div>`;
+  }
+
+  const T = data.totals;
+  const ser = (k) => T.series.map((x) => ({ uv: x[k] ?? 0 }));
+  const dPct = (a, b) => (compare ? fmt.delta(fmt.change(a, b)) : null);
+  const ivtD = compare && T.ivt_pct != null && T.ivt_pct_prev != null ? fmt.delta(T.ivt_pct - T.ivt_pct_prev, { invert: true, unit: 'pt' }) : null;
+  const F = data.funnel;
+  const fpct = (n) => (F.total ? Math.round((n / F.total) * 100) : 0);
+  const allSetup = counts.all > 0 && sites.filter((s) => s.status === 'active').every((s) => s.stage === 'setup');
+
+  const quickCount = (id) => sites.filter((s) => quickMatch(id, s, th)).length;
+  const QUICK_EN = { attention: 'Needs attention', new_week: 'Launched this week', no_google: 'Traffic, no Google crawl', ivt_high: 'Invalid traffic > {n}%' };
+  const allChecked = rows.length > 0 && rows.every((s) => selected.has(s.site_id));
+
+  return html`
+  ${Top()}
+  <div class="layout">
+    <aside class="side" aria-label=${t('Views')}>
+      <h4>${t('Views')}</h4>
+      <button class=${'v' + (view === 'all' ? ' on' : '')} onClick=${() => pickView('all')}><span>${t('All sites')}</span><b>${counts.all}</b></button>
+      <button class=${'v' + (view === 'attention' ? ' on' : '')} onClick=${() => pickView('attention')}><span><i class="dot" style="background:var(--p-red)"></i>${t('Needs attention')}</span><b>${counts.attention}</b></button>
+      <button class=${'v' + (view === 'starred' ? ' on' : '')} onClick=${() => pickView('starred')}><span><span class="star">★</span> ${t('Starred')}</span><b>${counts.starred}</b></button>
+      <h4>${t('Lifecycle')}</h4>
+      ${ui.STAGES.filter((s) => s !== 'archived').map((s) => html`<button class=${'v' + (view === 'stage:' + s ? ' on' : '')} onClick=${() => pickView('stage:' + s)}>
+        <span><i class="dot" style=${'background:' + STAGE_DOT[s]}></i>${ui.stageLabel(s, true)}</span><b>${data.stage_counts[s] || 0}</b></button>`)}
+      <h4>${t('Groups / tags')}</h4>
+      ${counts.thisCohort ? html`<button class=${'v' + (view === 'cohort:' + counts.thisCohort ? ' on' : '')} onClick=${() => pickView('cohort:' + counts.thisCohort)} title=${counts.thisCohort}><span>${t('Launch batch · this week')}</span><b>${counts.cohort}</b></button>` : null}
+      ${[...counts.tags.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([g, n]) => html`<button class=${'v' + (view === 'tag:' + g ? ' on' : '')} onClick=${() => pickView('tag:' + g)}><span>${g}</span><b>${n}</b></button>`)}
+      <button class=${'v' + (view === 'archived' ? ' on' : '')} onClick=${() => pickView('archived')}><span>${t('Archived')}</span><b>${counts.archived}</b></button>
+    </aside>
+    <main class="pf" aria-busy=${data._stale ? 'true' : 'false'} style=${data._stale ? 'opacity:.6;transition:opacity .2s' : ''}>
+      ${sites.length === 0 ? html`
+        <div class="p-card empty-state">
+          <div style="font-size:34px">🛰️</div>
+          <h2>${t('No sites yet')}</h2>
+          <p>${t('Add your first site to get its tracking snippet. Numbers appear here as soon as it receives a visit.')}</p>
+          <button class="p-btn primary" onClick=${openAdd}>＋ ${t('New site')}</button>
+          <p style="margin-top:14px;font-size:12px">${t('Just deployed?')} <a href="/health.html">${t('Run the self-check ↗')}</a></p>
+        </div>` : html`
+      ${allSetup ? html`<div class="p-card banner"><span class="ic">🧩</span><div><b>${fill(t('{n} sites are waiting for their first visit'), { n: counts.all })}</b>
+        <p>${t('Embed the snippet on each site (open a site for its snippet). Stages, trends and crawl signals fill in as data arrives.')}</p></div></div>` : null}
+      <section class="kpis" aria-label=${t('Totals')}>
+        <${Kpi} label=${t('Visitors')} value=${fmt.num(T.uv)} delta=${dPct(T.uv, T.uv_prev)} series=${ser('uv')} />
+        <${Kpi} label=${t('Pageviews')} value=${fmt.num(T.pv)} delta=${dPct(T.pv, T.pv_prev)} series=${ser('pv')} />
+        <${Kpi} label=${t('Invalid traffic share')} value=${fmt.pct(T.ivt_pct, 1)} delta=${ivtD} series=${ser('ivt_pct')} neg=${true} />
+        <${Kpi} label=${t('Organic search visitors')} value=${fmt.num(T.organic_uv)} delta=${dPct(T.organic_uv, T.organic_uv_prev)} series=${ser('organic_uv')} />
+        <${Kpi} label=${t('From AI assistants')} value=${fmt.num(T.ai_uv)} delta=${dPct(T.ai_uv, T.ai_uv_prev)} series=${ser('ai_uv')} />
+        <${Kpi} label=${t('Top 10% of sites share')} value=${fmt.share(T.top10_share)} series=${ser('uv')} />
+      </section>
+      <section class="funnel" aria-label=${t('Lifecycle funnel')}>
+        ${[['total', 'Total sites'], ['has_data', 'Receiving data'], ['google_crawled', 'Crawled by Google'], ['organic', 'Organic traffic'], ['weekly_1000', 'Weekly visitors > {n}']].map(([k, l]) => html`
+          <div class="fs p-card"><b>${fmt.num(F[k])}</b>${fill(t(l), { n: fmt.num(th.growth_min_uv) })}<div class="pb" style=${'width:' + fpct(F[k]) + '%'}></div></div>`)}
+      </section>
+      <div class="bar">
+        ${QUICK.map((id) => html`<button class=${'qchip' + (quick === id ? ' on' : '')} aria-pressed=${quick === id} onClick=${() => { setQuick(quick === id ? '' : id); if (id === 'attention' && quick !== id) setSort({ id: 'uv', dir: 'desc' }); }}>
+          ${fill(t(QUICK_EN[id]), { n: th.ivt_high_pct })}<b>${quickCount(id)}</b></button>`)}
+        <span class="sp"></span>
+        ${layout === 'table' ? html`<${Menu} label=${t('Columns') + ' ▾'}>${() => html`
+          <h5>${t('Column sets')}</h5>
+          ${Object.keys(PRESETS).map((p) => html`<button type="button" onClick=${() => { setCols(PRESETS[p]); if (p === 'ranking') setSort({ id: 'rank', dir: 'asc' }); }}>${t({ overview: 'Overview', ranking: 'Ranking · clean traffic', growth: 'Growth' }[p])}</button>`)}
+          <hr /><h5>${t('Columns')}</h5>
+          ${COLS.filter((c) => !c.ext || hasExternal).map((c) => html`<label><input type="checkbox" class="pcb" checked=${cols.includes(c.id)}
+            onChange=${(e) => setCols(e.target.checked ? COLS.map((x) => x.id).filter((x) => x === c.id || cols.includes(x)) : cols.filter((x) => x !== c.id))} /> ${t(c.label)}</label>`)}`}<//>` : null}
+        <div class="seg" role="group" aria-label=${t('Layout')}>
+          ${['table', 'cards', 'heatmap'].map((l) => html`<button type="button" class=${layout === l ? 'on' : ''} aria-pressed=${layout === l}
+            disabled=${l !== 'table' && !modules.views?.[l]} title=${l !== 'table' && !modules.views?.[l] ? t('This view is not available yet.') : ''}
+            onClick=${() => setLayout(l)}>${t({ table: 'Table', cards: 'Cards', heatmap: 'Heatmap' }[l])}</button>`)}
+        </div>
+      </div>
+      <div class="bulkbar p-card" ref=${bulkHost} hidden></div>
+      ${layout !== 'table' && modules.views?.[layout] ? html`<div class="viewhost" ref=${viewHost}></div>` : html`
+      <div class="tablewrap">
+        <table class="pt">
+          <thead><tr>
+            <th class="cb"><input type="checkbox" class="pcb" aria-label=${t('Select all')} checked=${allChecked}
+              onChange=${(e) => setSelected(e.target.checked ? new Set(rows.map((s) => s.site_id)) : new Set())} /></th>
+            <th class=${'sortable' + (sort.id === 'name' ? ' sorted' : '')} onClick=${() => sortBy('name')}>${t('Site')}${sort.id === 'name' ? (sort.dir === 'desc' ? ' ▾' : ' ▴') : ''}</th>
+            ${visibleCols.map((id) => { const c = COL_BY[id]; return html`<th class=${[c.num ? 'num' : '', c.sort ? 'sortable' : '', sort.id === id ? 'sorted' : ''].join(' ')}
+              aria-sort=${sort.id === id ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+              onClick=${c.sort ? () => sortBy(id) : undefined}>${t(c.label)}${sort.id === id ? (sort.dir === 'desc' ? ' ▾' : ' ▴') : ''}</th>`; })}
+          </tr></thead>
+          <tbody>
+            ${rows.map((s, i) => html`<tr key=${s.site_id} class=${(i === focus ? 'focus ' : '') + (selected.has(s.site_id) ? 'sel' : '')}
+              onClick=${() => { setFocus(i); openSite(s); }}>
+              <td class="cb" onClick=${(e) => e.stopPropagation()}><input type="checkbox" class="pcb" aria-label=${t('Select') + ' ' + s.name} checked=${selected.has(s.site_id)} onChange=${() => toggleSel(s.site_id)} /></td>
+              <td><div class="site"><${Raw} h=${ui.avatar(s.name, s.site_id)} /><div class="tx">
+                <div><span class="nm">${s.starred ? html`<span class="star" aria-label=${t('Starred')}>★</span>` : null}<a href=${'/site.html?id=' + encodeURIComponent(s.site_id)} style="color:inherit" onClick=${(e) => { if (!e.metaKey && !e.ctrlKey) { e.preventDefault(); e.stopPropagation(); setFocus(i); openSite(s); } }}>${s.name}</a></span>
+                  ${s.tags.slice(0, 2).map((g) => html`<span class="ptag">${g}</span>`)}${s.tags.length > 2 ? html`<span class="ptag">+${s.tags.length - 2}</span>` : null}</div>
+                <div class="dm">${s.domains[0] || s.site_id}${s.domains.length > 1 ? ' +' + (s.domains.length - 1) : ''}</div></div></div></td>
+              ${visibleCols.map((id) => { const c = COL_BY[id]; return html`<td class=${(c.num ? 'num ' : '') + (c.cls || '')}><${Raw} h=${c.render(s, { th })} /></td>`; })}
+            </tr>`)}
+            ${rows.length === 0 ? html`<tr><td colspan=${visibleCols.length + 2} class="loading-state">${t('No sites match this view.')}</td></tr>` : null}
+          </tbody>
+        </table>
+      </div>`}
+      <p class="note">${fill(t('{n} sites'), { n: rows.length })} · ${t('j / k to move, Enter to open, x to select, / or ⌘K to jump to a site.')}
+        ${' '}${fill(t('Updated {ago}.'), { ago: fmt.ago(data.generated_at) })} <a href="#" onClick=${(e) => { e.preventDefault(); load(true); }}>${t('Refresh')}</a></p>
+      `}
+    </main>
+  </div>`;
+}
+
+// ── add-site modal (kept flow: template picker + snippet) ────────────────
+const dlg = document.getElementById('addDlg');
+const $ = (id) => document.getElementById(id);
 const TZ_LIST = (() => {
   try { return Intl.supportedValuesOf('timeZone'); } catch {
-    return ['UTC','Asia/Shanghai','Asia/Hong_Kong','Asia/Tokyo','Asia/Singapore','Asia/Kolkata',
-            'Europe/London','Europe/Paris','Europe/Berlin','America/New_York','America/Chicago',
-            'America/Los_Angeles','America/Sao_Paulo','Australia/Sydney'];
+    return ['UTC', 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Tokyo', 'Asia/Singapore', 'Asia/Kolkata', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+      'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'America/Sao_Paulo', 'Australia/Sydney'];
   }
 })();
 const browserTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } })();
-const validTz = (z) => TZ_LIST.includes(z);
-let userTz = 'UTC';
-async function loadUserTz() {
-  // searchable datalist (type to filter hundreds of zones)
-  document.getElementById('tzlist').innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"></option>`).join('');
-  try {
-    const me = await (await fetch('/api/me')).json();
-    userTz = me.timezone || 'UTC';
-    ingestHostCfg = me.ingest_host || '';
-  } catch { userTz = 'UTC'; }
-  if (!validTz(userTz)) userTz = 'UTC';
-  // new-site form: prefill the browser's timezone (unless a non-UTC default is set),
-  // so the common case needs no searching; submitting saves it for real.
-  const createTz = (userTz !== 'UTC') ? userTz : (validTz(browserTz) ? browserTz : 'UTC');
-  document.getElementById('tz').value = createTz;
-  document.getElementById('tzDefault').value = userTz;
+let me = null, templates = [];
+async function prepAdd() {
+  if (!me) {
+    $('tzlist').innerHTML = TZ_LIST.map((z) => `<option value="${esc(z)}"></option>`).join('');
+    try { me = await (await guard(await fetch('/api/me'))).json(); } catch { me = {}; }
+    try { templates = ((await (await guard(await fetch('/api/templates'))).json()).templates) || []; } catch { templates = []; }
+    $('tpl').innerHTML = `<option value="">${te('No template')}</option>` + templates.map((x) => `<option value="${esc(x.template_id)}">${esc(x.name)}</option>`).join('');
+    $('tpl').closest('div').hidden = !templates.length;
+  }
+  const def = me.timezone && me.timezone !== 'UTC' ? me.timezone : (TZ_LIST.includes(browserTz) ? browserTz : 'UTC');
+  if (!$('tz').value) $('tz').value = def;
 }
-document.getElementById('tzSettings').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const tz = document.getElementById('tzDefault').value.trim();
-  const el = document.getElementById('tzMsg');
-  if (!validTz(tz)) { el.style.color = ''; el.textContent = t('pick a valid timezone from the list'); return; }
-  const r = await guard(await fetch('/api/settings/timezone', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ timezone: tz }),
-  }));
-  if (r.ok) { userTz = tz; document.getElementById('tz').value = tz; el.style.color = '#6ee7a0'; el.textContent = t('saved'); }
-  else { el.style.color = ''; el.textContent = t('save failed'); }
+function openAdd() {
+  $('create').hidden = false; $('snippet').hidden = true; $('err').textContent = '';
+  prepAdd();
+  I18N.applyStatic(dlg);
+  dlg.showModal();
+  setTimeout(() => $('name').focus(), 0);
+}
+window.pvuvOpenAdd = openAdd;
+$('tpl').addEventListener('change', () => {
+  const x = templates.find((y) => y.template_id === $('tpl').value);
+  if (!x) return;
+  if (x.timezone) $('tz').value = x.timezone;
+  if (x.adguard_mode) $('agmode').value = x.adguard_mode;
+  $('adclient').value = x.adclient || '';
+  if (x.engaged_seconds != null) $('engaged').value = x.engaged_seconds;
 });
-
-document.getElementById('create').addEventListener('submit', async (e) => {
+dlg.addEventListener('click', (e) => { if (e.target === dlg || e.target.closest('[data-close]')) dlg.close(); });
+dlg.addEventListener('close', () => { if (!$('snippet').hidden) document.dispatchEvent(new CustomEvent('pvuv:changed')); });
+$('addAnother').addEventListener('click', () => { $('create').reset(); $('tz').value = ''; prepAdd(); $('create').hidden = false; $('snippet').hidden = true; $('name').focus(); document.dispatchEvent(new CustomEvent('pvuv:changed')); });
+$('copySnippet').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('snippetCode').textContent); $('copySnippet').textContent = t('Copied'); } catch { /* no clipboard */ } });
+$('create').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = {
-    name: document.getElementById('name').value,
-    domains: document.getElementById('domains').value.split(',').map((d) => d.trim()).filter(Boolean),
-    adguard_mode: document.getElementById('agmode').value,
-    adclient: document.getElementById('adclient').value.trim() || undefined,
-    timezone: document.getElementById('tz').value,
-    engaged_seconds: parseInt(document.getElementById('engaged').value, 10) || 15,
+    name: $('name').value,
+    domains: $('domains').value.split(',').map((d) => d.trim()).filter(Boolean),
+    adguard_mode: $('agmode').value,
+    adclient: $('adclient').value.trim() || undefined,
+    timezone: $('tz').value,
+    engaged_seconds: parseInt($('engaged').value, 10) || 15,
   };
+  if ($('tpl').value) body.template = $('tpl').value;
   const r = await guard(await fetch('/api/sites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
-  const data = await r.json();
-  if (!r.ok) { document.getElementById('err').textContent = data.error || t('failed'); return; }
-  document.getElementById('err').textContent = '';
-  // src: f.js as hosted by this console deployment (DEPLOY.md step 8);
-  // data-api: ingest host, assumed in.<apex> per the reference layout —
-  // deployers adjust if theirs differs (the SDK default is in.pvuv.ai).
-  // ingest host comes from deployment config; the sibling-subdomain guess is
-  // only a fallback for older deployments that predate INGEST_HOST
-  const ingestHost = ingestHostCfg || 'in.' + location.hostname.replace(/^(www|console)\./, '');
-  const attrs = [`data-site="${data.site_id}"`, `data-api="https://${ingestHost}"`];
-  if (data.adguard_mode !== 'off') attrs.push(`data-adguard="${data.adguard_mode}"`);
-  if (data.adclient) attrs.push(`data-adclient="${data.adclient}"`);
-  document.getElementById('snippetCode').textContent =
-    `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
-  document.getElementById('snippet').style.display = 'block';
-  loadSites();
+  const d = await r.json();
+  if (!r.ok) { $('err').textContent = d.error || t('failed'); return; }
+  $('err').textContent = '';
+  // f.js is served by this console; events go to the ingest host (deployment
+  // config INGEST_HOST, sibling-subdomain guess only for older deployments)
+  const ingestHost = (me && me.ingest_host) || 'in.' + location.hostname.replace(/^(www|console)\./, '');
+  const attrs = [`data-site="${d.site_id}"`, `data-api="https://${ingestHost}"`];
+  if (d.adguard_mode !== 'off') attrs.push(`data-adguard="${d.adguard_mode}"`);
+  if (d.adclient) attrs.push(`data-adclient="${d.adclient}"`);
+  $('snippetCode').textContent = `<script defer src="${location.origin}/f.js"\n        ${attrs.join('\n        ')}><\/script>`;
+  $('copySnippet').textContent = t('Copy');
+  $('create').hidden = true; $('snippet').hidden = false;
 });
 
-document.getElementById('logout').addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
-  location.href = '/login.html';
-});
-
-// apply configured branding to the header, favicon and title (console is dark,
-// so the header uses the LIGHT logo; the dark logo is for light backgrounds).
-function applyBranding(b) {
-  const name = (b.name || '').trim() || 'pvuv.ai';
-  const logo = b.logo_light || b.logo_dark;
-  const brand = document.getElementById('brand');
-  brand.innerHTML = logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}">` : esc(name);
-  document.title = name + ' — Sites';
-  if (b.favicon) {
-    let link = document.querySelector('link[rel="icon"]');
-    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
-    link.href = b.favicon;
-  }
-}
-async function loadHomeSettings() {
-  const r = await fetch('/api/home');
-  if (!r.ok) return;
-  const b = await r.json();
-  applyBranding(b);
-  document.getElementById('hsName').value = b.name || '';
-  document.getElementById('hsDomain').value = b.primary_domain || '';
-  document.getElementById('hsDesc').value = b.description || '';
-  document.getElementById('hsLogoLight').value = b.logo_light || '';
-  document.getElementById('hsLogoDark').value = b.logo_dark || '';
-  document.getElementById('hsFavicon').value = b.favicon || '';
-}
-document.getElementById('homeSettings').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const r = await guard(await fetch('/api/settings', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      name: document.getElementById('hsName').value,
-      primary_domain: document.getElementById('hsDomain').value,
-      description: document.getElementById('hsDesc').value,
-      logo_light: document.getElementById('hsLogoLight').value,
-      logo_dark: document.getElementById('hsLogoDark').value,
-      favicon: document.getElementById('hsFavicon').value,
-    }),
-  }));
-  const el = document.getElementById('hsMsg');
-  el.style.color = r.ok ? '#6ee7a0' : '';
-  el.textContent = r.ok ? t('saved') : t('save failed');
-  if (r.ok) loadHomeSettings(); // re-apply header/favicon immediately
-});
-
-// Crawler directory (§6.6): import a public bots-and-agents catalogue so
-// crawler traffic can be labelled by kind. Purely descriptive — the UI says so
-// explicitly, because an import that silently changed verdicts would be a trap.
-// API tokens (§10) — credentials for the CLI / MCP server / integrations.
-// The plaintext exists only in this one response; the server stores an HMAC.
-async function loadTokens() {
-  const box = document.getElementById('tokList');
-  const sel = document.getElementById('tokSite');
-  // fetch the site list here rather than reusing the one loadSites() renders:
-  // that one is a local, and depending on load order would leave the scope
-  // picker empty whenever the panel opens first
-  while (sel.options.length > 1) sel.remove(1);
-  try {
-    const { sites } = await (await guard(await fetch('/api/sites'))).json();
-    for (const s of sites || []) {
-      const o = document.createElement('option');
-      o.value = s.site_id; o.textContent = s.name;
-      sel.appendChild(o);
-    }
-  } catch { /* scope picker just stays at "All my sites" */ }
-  let d;
-  try { d = await (await guard(await fetch('/api/tokens'))).json(); } catch { box.textContent = ''; return; }
-  const live = (d.tokens || []).filter((x) => !x.revoked_at);
-  if (!live.length) { box.textContent = t('No tokens yet.'); return; }
-  box.innerHTML = '<table style="width:100%;border-collapse:collapse;margin-top:4px">'
-    + live.map((x) => `<tr style="border-top:1px solid #1e2530">
-        <td style="padding:5px 0">${esc(x.name)}</td>
-        <td style="color:#c7cdd8"><code>${esc(x.prefix)}…</code></td>
-        <td>${x.site_id ? esc(x.site_id) : te('all sites')} · ${te(x.permission === 'write' ? 'Read/write' : x.permission === 'ingest' ? 'Ingest only (crawler reports)' : 'Read only')}</td>
-        <td style="color:#8b93a1">${x.last_used_at ? te('used') + ' ' + esc(new Date(x.last_used_at).toISOString().slice(0, 10)) : te('never used')}</td>
-        <td style="text-align:right"><button type="button" data-revoke="${esc(x.token_id)}"
-          style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Revoke')}</button></td>
-      </tr>`).join('') + '</table>';
-  box.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm(t('Revoke this token? Anything using it stops working immediately.'))) return;
-    await guard(await fetch('/api/tokens?id=' + encodeURIComponent(b.dataset.revoke), { method: 'DELETE' }));
-    loadTokens();
-  }));
-}
-document.getElementById('tokenSettings').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msg = document.getElementById('tokMsg');
-  msg.style.color = ''; msg.textContent = '';
-  const r = await guard(await fetch('/api/tokens', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      name: document.getElementById('tokName').value.trim(),
-      site_id: document.getElementById('tokSite').value || undefined,
-      permission: document.getElementById('tokPermission').value,
-    }),
-  }));
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) { msg.textContent = d.error ? t(d.error) : t('Could not create the token.'); return; }
-  document.getElementById('tokValue').textContent = d.token;
-  document.getElementById('tokNew').hidden = false;
-  document.getElementById('tokName').value = '';
-  loadTokens();
-});
-
-// --- site templates (presets for POST /v1/sites {"template": …}) -------------
-// Blank fields are stored as "not set" so the creation-time default applies.
-let tplCache = [];
-function fillTemplate(x) {
-  document.getElementById('tplId').value = x ? x.template_id : '';
-  document.getElementById('tplName').value = x ? x.name : '';
-  document.getElementById('tplTz').value = (x && x.timezone) || '';
-  document.getElementById('tplMode').value = (x && x.adguard_mode) || '';
-  document.getElementById('tplAdclient').value = (x && x.adclient) || '';
-  document.getElementById('tplEngaged').value = x && x.engaged_seconds != null ? x.engaged_seconds : '';
-  document.getElementById('tplFunnels').value = x && x.funnels.length ? JSON.stringify(x.funnels, null, 1) : '';
-}
-async function loadTemplates() {
-  const box = document.getElementById('tplList');
-  try { tplCache = ((await (await guard(await fetch('/api/templates'))).json()).templates) || []; } catch { box.textContent = ''; return; }
-  if (!tplCache.length) { box.textContent = t('No templates yet.'); return; }
-  box.innerHTML = '<table style="width:100%;border-collapse:collapse;margin-top:4px">'
-    + tplCache.map((x) => `<tr style="border-top:1px solid #1e2530">
-        <td style="padding:5px 0">${esc(x.name)} <code style="color:#8b93a1">${esc(x.template_id)}</code></td>
-        <td>${esc(x.timezone || '–')} · ${te(x.adguard_mode || 'off')}${x.adclient ? ' · ' + esc(x.adclient) : ''}</td>
-        <td>${x.funnels.length} ${te('default funnels')}</td>
-        <td style="text-align:right;white-space:nowrap"><button type="button" data-tpl-edit="${esc(x.template_id)}"
-          style="background:none;border:1px solid var(--border-2);color:var(--text-2);border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Edit')}</button>
-          <button type="button" data-tpl-del="${esc(x.template_id)}"
-          style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Remove')}</button></td>
-      </tr>`).join('') + '</table>';
-  box.querySelectorAll('[data-tpl-edit]').forEach((b) => b.addEventListener('click', () =>
-    fillTemplate(tplCache.find((x) => x.template_id === b.dataset.tplEdit))));
-  box.querySelectorAll('[data-tpl-del]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm(t('Remove this template? Sites already created from it are not affected.'))) return;
-    await guard(await fetch('/api/templates/' + encodeURIComponent(b.dataset.tplDel), { method: 'DELETE' }));
-    if (document.getElementById('tplId').value === b.dataset.tplDel) fillTemplate(null);
-    loadTemplates();
-  }));
-}
-document.getElementById('tplReset').addEventListener('click', () => { fillTemplate(null); document.getElementById('tplMsg').textContent = ''; });
-document.getElementById('tplSettings').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msg = document.getElementById('tplMsg');
-  msg.style.color = ''; msg.textContent = '';
-  const raw = document.getElementById('tplFunnels').value.trim();
-  let funnels = [];
-  if (raw) { try { funnels = JSON.parse(raw); } catch { msg.textContent = t('That is not valid JSON.'); return; } }
-  const id = document.getElementById('tplId').value;
-  const r = await guard(await fetch('/api/templates' + (id ? '/' + encodeURIComponent(id) : ''), {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      name: document.getElementById('tplName').value.trim(),
-      timezone: document.getElementById('tplTz').value.trim(),
-      adguard_mode: document.getElementById('tplMode').value,
-      adclient: document.getElementById('tplAdclient').value.trim(),
-      engaged_seconds: document.getElementById('tplEngaged').value.trim(),
-      funnels,
-    }),
-  }));
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) { msg.textContent = d.error || t('save failed'); return; }
-  msg.style.color = '#6ee7a0'; msg.textContent = t('saved');
-  document.getElementById('tplId').value = d.template_id;
-  loadTemplates();
-});
-
-// --- storage & retention -----------------------------------------------------
-const mb = (x) => x >= 1024 ? (x / 1024).toFixed(2) + ' GB' : x.toFixed(1) + ' MB';
-async function loadStorage() {
-  const box = document.getElementById('storageState');
-  box.innerHTML = `<p class="loading">${te('loading…')}</p>`;
-  let d;
-  try { d = await (await guard(await fetch('/api/storage'))).json(); } catch { box.innerHTML = `<p class="muted">${te('failed')}</p>`; return; }
-  const r = d.retention || {};
-  const win = (v) => v ? `${v} ${t('days')}` : t('keep forever');
-  const rows = (d.partitions || []).slice().reverse().map((p) => `<tr><td>${esc(p.table.replace('events_', '').replace(/^(\d{4})(\d{2})$/, '$1-$2'))}</td>
-      <td class="num">${fmt(p.rows)}</td><td class="num muted">${fmt(p.pulse_rows)}</td><td class="num muted">${fmt(p.bot_rows)}</td><td class="num">≈ ${mb(p.est_mb)}</td></tr>`).join('');
-  box.innerHTML = `
-    <div class="cards cards-4" style="margin-bottom:12px">
-      <div class="card"><div class="v">≈ ${mb(d.est_total_mb)}</div><div class="k">${te('Estimated size')}</div><div class="h">${te('exact: wrangler d1 info')}</div></div>
-      <div class="card"><div class="v">${fmt(d.total_events)}</div><div class="k">${te('Raw event rows')}</div><div class="h">${(d.partitions || []).length} ${te('monthly partitions')}</div></div>
-      <div class="card"><div class="v">${fmt(d.sessions)}</div><div class="k">${te('Sessions')}</div><div class="h">${te('kept')} ${win(r.raw_events_days)}</div></div>
-      <div class="card"><div class="v">${fmt(d.profiles)}</div><div class="k">${te('Visitor profiles')}</div><div class="h">${te('idle limit')} ${win(r.profiles_idle_days)}</div></div>
-    </div>
-    <table><tr><th>${te('Month')}</th><th class="num">${te('Rows')}</th><th class="num">${te('heartbeats')}</th><th class="num">${te('bot / crawler')}</th><th class="num">${te('Est. size')}</th></tr>${rows || `<tr><td colspan="5" class="muted">${te('no data yet')}</td></tr>`}</table>
-    <p class="muted" style="font-size:12px;margin:10px 0 0">${te('Windows:')} ${te('raw events')} <b>${win(r.raw_events_days)}</b> · ${te('heartbeats')} <b>${win(r.pulse_events_days)}</b> · ${te('bot / crawler')} <b>${win(r.bot_events_days)}</b> · ${te('idle profiles')} <b>${win(r.profiles_idle_days)}</b>. ${te('The daily job applies them at 03:30 UTC; whole months past the raw window are dropped at once, the rest is trimmed in batches.')}</p>`;
-}
-document.getElementById('storageRefresh').addEventListener('click', loadStorage);
-document.getElementById('storagePurge').addEventListener('click', async () => {
-  const msg = document.getElementById('storageMsg'); const btn = document.getElementById('storagePurge');
-  if (!confirm(t('Run the retention purge now? Raw rows outside the configured windows are deleted permanently; dashboards are unaffected.'))) return;
-  btn.disabled = true; msg.style.color = ''; msg.textContent = t('purging…');
-  try {
-    const d = await (await guard(await fetch('/api/storage/purge', { method: 'POST' }))).json();
-    msg.textContent = `${t('Done:')} ${d.dropped_partitions.length} ${t('partitions dropped')}, ${fmt(d.pulse_rows_deleted)} ${t('heartbeats')}, ${fmt(d.bot_rows_deleted)} ${t('bot / crawler')}, ${fmt(d.sessions_deleted)} ${t('sessions')}, ${fmt(d.profiles_deleted)} ${t('profiles')}${d.more_pending ? ` — ${t('more remains; run again or let the nightly job continue')}` : ''}${d.errors && d.errors.length ? ` · ${d.errors.join(' | ')}` : ''}`;
-    msg.style.color = d.ok ? '#6ee7a0' : '';
-    loadStorage();
-  } catch { msg.textContent = t('failed'); }
-  btn.disabled = false;
-});
-
-async function loadBotdir() {
-  const box = document.getElementById('botdirState');
-  try {
-    const d = await (await guard(await fetch('/api/settings/botdir'))).json();
-    if (!d.imported) { box.textContent = t('No directory imported — crawler traffic is not categorised.'); return; }
-    const cats = Object.entries(d.categories || {}).sort((a, b) => b[1] - a[1]);
-    box.innerHTML = `<b>${esc(String(d.count))}</b> ${te('bots imported')}`
-      + (d.skipped ? ` · ${esc(String(d.skipped))} ${te('skipped')}` : '')
-      + ` · ${te('updated')} ${esc(new Date(d.updated_at).toISOString().slice(0, 16).replace('T', ' '))}<br>`
-      + cats.map(([c, n]) => `${esc(c)} <span style="color:#c7cdd8">${esc(String(n))}</span>`).join(' · ');
-  } catch { box.textContent = ''; }
-}
-document.getElementById('botdirSettings').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msg = document.getElementById('botdirMsg');
-  const file = document.getElementById('botdirFile').files[0];
-  const pasted = document.getElementById('botdirText').value.trim();
-  msg.style.color = ''; msg.textContent = '';
-  let text = pasted;
-  if (file) { try { text = await file.text(); } catch { msg.textContent = t('Could not read that file.'); return; } }
-  if (!text) { msg.textContent = t('Choose a file or paste the JSON first.'); return; }
-  let parsed;
-  try { parsed = JSON.parse(text); } catch { msg.textContent = t('That is not valid JSON.'); return; }
-  const r = await guard(await fetch('/api/settings/botdir', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(parsed),
-  }));
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) { msg.textContent = d.error ? t(d.error) : t('Import failed.'); return; }
-  msg.style.color = '#6ee7a0';
-  msg.textContent = t('Imported {n} bots.').replace('{n}', d.count);
-  document.getElementById('botdirText').value = '';
-  document.getElementById('botdirFile').value = '';
-  loadBotdir();
-});
-document.getElementById('botdirClear').addEventListener('click', async () => {
-  const msg = document.getElementById('botdirMsg');
-  await guard(await fetch('/api/settings/botdir', { method: 'DELETE' }));
-  msg.style.color = ''; msg.textContent = t('Directory removed.');
-  loadBotdir();
-});
-
-async function loadAiSettings() {
-  const r = await fetch('/api/settings/ai');
-  if (!r.ok) return;
-  const a = await r.json();
-  document.getElementById('aiProvider').value = a.provider || 'openai';
-  document.getElementById('aiModel').value = a.model || '';
-  document.getElementById('aiBaseUrl').value = a.base_url || '';
-  document.getElementById('aiLang').value = a.lang || 'en';
-  document.getElementById('aiKeyState').textContent = a.key_set ? t('(a key is saved — leave blank to keep it)') : t('(not set)');
-}
-document.getElementById('aiSettings').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const r = await guard(await fetch('/api/settings/ai', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      provider: document.getElementById('aiProvider').value,
-      model: document.getElementById('aiModel').value,
-      base_url: document.getElementById('aiBaseUrl').value,
-      lang: document.getElementById('aiLang').value,
-      api_key: document.getElementById('aiKey').value,
-    }),
-  }));
-  const el = document.getElementById('aiMsg');
-  const body = await r.json().catch(() => ({}));
-  el.style.color = r.ok ? '#6ee7a0' : '';
-  el.textContent = r.ok ? t('saved') : (body.error || t('save failed'));
-  if (r.ok) { document.getElementById('aiKey').value = ''; loadAiSettings(); }
-});
-
-// --- Cloudflare edge requests (optional) ------------------------------------
-// The token itself is never returned by the API; GET only reports whether one
-// is saved plus the last pull's outcome, so the field stays blank on reload and
-// a blank submit means "keep the saved token, just re-check it".
-function renderCfState(d) {
-  const box = document.getElementById('cfState');
-  document.getElementById('cfKeyState').textContent = d.token_set
-    ? t('(a token is saved — leave blank to keep it)') : t('(not set)');
-  if (!d.token_set) {
-    box.textContent = t('Not configured — the dashboard shows only what the tracking script recorded.');
-    return;
-  }
-  const s = d.status;
-  if (!s) { box.textContent = t('Saved. The first pull runs with tonight’s daily job.'); return; }
-  const when = esc(new Date(s.checked_at).toISOString().slice(0, 16).replace('T', ' '));
-  if (s.error) {
-    box.innerHTML = `<span style="color:#f0a0a0">${te('Last check failed')} · ${when}</span><br>`
-      + `<span style="font-family:ui-monospace,monospace">${esc(s.error)}</span>`;
-    return;
-  }
-  box.innerHTML = `${te('Last pull')} ${when} · <b>${esc(String(s.days_written ?? 0))}</b> ${esc(window.PVI18N.tk('site-days', 'site-days'))}`
-    + ` · ${esc(String(s.sites_matched ?? 0))} ${te('sites matched')} · ${esc(String(s.zones ?? 0))} ${te('zones visible')}`;
-}
-async function loadCfSettings() {
-  try {
-    const d = await (await guard(await fetch('/api/settings/cfedge'))).json();
-    renderCfState(d);
-  } catch { /* leave the panel as-is */ }
-}
-async function saveCf(token) {
-  const msg = document.getElementById('cfMsg');
-  msg.style.color = ''; msg.textContent = t('checking…');
-  const r = await guard(await fetch('/api/settings/cfedge', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }),
-  }));
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    // Cloudflare's own message, verbatim — "Authentication error" vs a missing
-    // permission are different fixes and the deployer needs to know which
-    msg.style.color = '#f0a0a0';
-    msg.textContent = d.error || t('Could not verify that token.');
-    return;
-  }
-  msg.style.color = '#6ee7a0';
-  const matched = (d.sites || []).filter((s) => s.zone);
-  msg.textContent = matched.length
-    ? t('Token works. Matched {n} site(s): ').replace('{n}', matched.length)
-      + matched.map((s) => `${s.name} → ${s.zone}`).join(', ')
-    : t('Token works, but none of your sites are on a zone it can see. Check the token’s Zone Resources.');
-  document.getElementById('cfToken').value = '';
-  loadCfSettings();
-}
-document.getElementById('cfSettings').addEventListener('submit', (e) => {
-  e.preventDefault();
-  saveCf(document.getElementById('cfToken').value.trim());
-});
-document.getElementById('cfTest').addEventListener('click', () => saveCf(''));
-document.getElementById('cfClear').addEventListener('click', async () => {
-  const msg = document.getElementById('cfMsg');
-  await guard(await fetch('/api/settings/cfedge', { method: 'DELETE' }));
-  msg.style.color = ''; msg.textContent = t('Token removed.');
-  loadCfSettings();
-});
-
-// language switcher: mount, apply static labels, and re-render dynamic content
-window.PVI18N.mountSelect(document.getElementById('lang'));
-window.PVI18N.applyStatic();
-document.addEventListener('pvuv:lang', () => {
-  window.PVI18N.applyStatic();
-  loadSites();
-  loadRanking();
-  loadAiSettings(); // refreshes the key-state hint text
-  loadCfSettings();
-});
-
-loadSites();
-loadRanking();
-loadHomeSettings();
-loadUserTz();
-loadAiSettings();
-loadCfSettings();
+I18N.applyStatic();
+render(html`<${App} />`, document.getElementById('app'));
 </script>
 </body>
 </html>

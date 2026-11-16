@@ -62,6 +62,7 @@ that is signed in to the console can call it directly for that owner's sites.
 |---|---|---|
 | `GET /v1/sites` | sites this token can read (`site_id`, `name`, `domains`, `timezone`, `created_at`, `first_search_crawl_at`) — **call first**, ids are not guessable | — |
 | `GET /v1/templates` | the owner's site templates (see [§6](#6-site-provisioning-readwrite-tokens)) | — |
+| `GET /v1/portfolio` | portfolio overview of every site of the token's owner: totals vs the previous period, lifecycle funnel, stage counts, per site trend / crawl / health / stage / attention — see [Portfolio overview](#portfolio-overview). Tokens for all sites only (a site-scoped token gets 403) | `period` (default `7d`; not `24h`) `compare` (`previous` default, or `none`) `fresh=1` (skip the 5-minute cache) |
 | `GET /v1/sites/summary` | per-site totals for every site in scope, in one pass (`uv_approx: true` when visitors are summed per day) | `period` |
 | `GET /v1/sites/{id}/overview` | pageviews, visitors, sessions, both bounce rates, dwell, visit duration, verdict split, conversions, revenue; with `compare=previous` also `compare: {mode, period, values, delta}` | `period` `filters` `compare` |
 | `GET /v1/sites/{id}/realtime` | `{window_minutes, online, pageviews, minutes[]}` for the last `window` minutes (default 30, clamped 5–60); bot/crawler traffic excluded; always live (ignores `period`) | `window` |
@@ -256,6 +257,75 @@ first event), as for `breakdown?dim=channel`.
   `props.not_found = 1` (re-checked per SPA route) → `breakdown?dim=not_found`.
 
 No migration is needed: both ride in the existing `props` column.
+
+### Portfolio overview
+
+`GET /v1/portfolio` (and `GET /api/portfolio` in the console, with the session
+cookie) is one payload for owners of many sites — what the console's site
+list renders. It reads only the daily rollups, crawler milestones and one
+index seek per site for "last event", in chunks of 95 sites per database
+round trip, and is cached for 5 minutes per owner and period (`fresh=1`
+bypasses the cache).
+
+```jsonc
+{
+  "period": { "token": "7d", "start": "2026-11-10", "end": "2026-11-16" },
+  "compare": "previous",
+  "generated_at": 1763270000000,
+  "thresholds": { "growth_min_uv": 1000, "ivt_high_pct": 20, … },
+  "totals": {                       // active sites
+    "uv": 48210, "uv_prev": 43000, "pv": 131904, "pv_prev": 121000,
+    "ivt_pct": 6.8, "ivt_pct_prev": 5.6,
+    "organic_uv": 19377, "organic_uv_prev": 16000, "ai_uv": 1204, "ai_uv_prev": 734,
+    "top10_share": 0.71,            // share of visitors from the top 10 % of sites
+    "series": [{ "day": "2026-11-10", "uv": 6900, "pv": 18800, "ivt_pct": 6.1, "organic_uv": 2700, "ai_uv": 150 }]
+  },
+  "funnel": { "total": 126, "has_data": 124, "google_crawled": 119, "organic": 101, "weekly_1000": 27 },
+  "stage_counts": { "setup": 2, "awaiting_crawl": 5, "crawled": 18, "organic": 61, "growing": 27, "declining": 13, "archived": 4 },
+  "attention_count": 7,             // active sites with at least one attention item
+  "sites": [{
+    "site_id": "Ab3xK9pQ", "name": "…", "domains": ["…"], "status": "active",
+    "created_at": 1753000000000, "days_live": 120, "timezone": "UTC",
+    "starred": false, "tags": ["games"], "cohort": "launch:2026-W30",
+    "adguard_mode": "off", "stage": "declining", "stage_since": 1762000000000,
+    "uv": 1544, "uv_prev": 1755, "pv": 4210, "pv_prev": 4800, "delta_pct": -12.0,
+    "series": [{ "day": "2026-11-03", "uv": 230 }],          // 14 days, oldest first
+    "organic_uv": 512, "ai_uv": 37, "ivt_pct": 31.4,
+    "crawl": { "google": { "first_seen_at": 0, "last_seen_at": 0 }, "bing": null, "yandex": null, "baidu": null },
+    "first_search_crawl_at": 0, "last_event_at": 0,
+    "health": ["ok", "warn", "bad", "none"],                 // 14 days
+    "attention": [{ "code": "ivt_high", "severity": "critical", "params": { "ivt_pct": 31.4, "adguard_mode": "off" } }],
+    "external": null                                          // ad revenue / search data from integrations, when connected
+  }]
+}
+```
+
+- **Visitors** are summed per day (a visitor seen on three days counts three
+  times), like `sites/summary`. "Clean visitors" for the stage rules =
+  visitors × clean pageviews / pageviews. Organic search and AI visitors are
+  clean visitors whose session source is a search engine or an AI assistant.
+- **Invalid traffic** (`ivt_pct`) = bot + suspect pageviews / pageviews.
+- **Today** comes from the hourly rollup (up to an hour behind). When the
+  period includes today, the previous period's last day is counted for the
+  same elapsed fraction of the day, so the change isn't skewed by a partial day.
+- **Stages** (first match from the bottom wins; `archived` is the site status):
+  `setup` no data ever → `awaiting_crawl` data, no search-engine crawl →
+  `crawled` crawled, no organic-search / AI visitor yet → `organic` at least one
+  → `growing` ≥ `growth_min_uv` clean visitors in the last 7 complete days and
+  a 7-day change ≥ `growth_min_delta_pct` → `declining` 28-day clean visitors
+  down more than `decline_pct` (takes precedence).
+- **Attention codes**: `no_data_24h` (critical once the site had data, high
+  before), `crawl_overdue` (live > `crawl_overdue_days`, no search crawl),
+  `organic_overdue` (first crawl > `organic_overdue_days` ago, no search
+  visitor), `declining`, `ivt_high` (> `ivt_high_pct`; critical when ad
+  protection is off), `ivt_spike` (yesterday's share ≥ `ivt_spike_pts` points
+  above the previous period). Integrations may add their own codes.
+- **Thresholds** default to the values above and can be overridden with the
+  instance setting `portfolio_thresholds` (a JSON object with any of
+  `growth_min_uv`, `growth_min_delta_pct`, `decline_pct`, `decline_min_uv`,
+  `crawl_overdue_days`, `organic_overdue_days`, `no_data_hours`,
+  `ivt_high_pct`, `ivt_spike_pts`, `ivt_min_pv`); the payload echoes the
+  values in effect.
 
 ### Crawler / indexing signals
 
