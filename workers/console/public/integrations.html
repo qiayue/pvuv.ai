@@ -8,41 +8,55 @@
 </head>
 <body class="p3">
 <script src="/i18n.js"></script>
-<header>
-  <a href="/sites.html" class="p3-back" data-i18n="← All sites">← All sites</a>
-  <span class="brand" data-i18n="Integrations">Integrations</span>
-  <div class="hdr-right">
-    <select id="lang" aria-label="Language"></select>
-    <a href="/settings.html" class="btn" data-i18n="Settings">Settings</a>
-  </div>
+<header class="p3-top">
+  <a href="/sites.html" class="p3-back"><svg class="p3-i" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span data-i18n="All sites">All sites</span></a>
+  <span class="sp"></span>
+  <select id="lang" aria-label="Language"></select>
+  <a href="/settings.html" class="btn" data-i18n="Settings">Settings</a>
 </header>
 <main class="p3-main">
-  <p class="p3-lead" data-i18n="p3-lead">Bring ad revenue, ad-network status and search data into the portfolio. Credentials are encrypted in your own database and never sent to the browser; data is pulled by the cron worker once a day, with a light refresh every hour.</p>
+  <h1 class="p3-title" data-i18n="Integrations">Integrations</h1>
+  <nav class="p3-tabs" id="tabs">
+    <a href="#connections" data-tab="connections" class="on" data-i18n="Connections">Connections</a>
+    <a href="#mapping" data-tab="mapping" data-i18n="Site ↔ property mapping">Site ↔ property mapping</a>
+  </nav>
+  <div class="p3-toolbar">
+    <p class="p3-lead" data-i18n="p3-lead">Bring ad revenue, ad-network status and search data into the portfolio. Credentials are encrypted in your own database and never sent to the browser; data is pulled by the cron worker once a day, with a light refresh every hour.</p>
+    <span class="sp"></span>
+    <span class="p3-sync" id="syncAllWrap"><span class="p3-synced" id="syncedAll"></span><button class="p3-syncbtn" id="syncAll"><svg class="p3-i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5"/></svg><span data-i18n="Sync all">Sync all</span></button></span>
+  </div>
   <div id="banner"></div>
 
-  <section class="p3-cards" id="cards"><div class="p3-card p3-skel"></div><div class="p3-card p3-skel"></div><div class="p3-card p3-skel"></div></section>
+  <section id="view-connections">
+    <div class="p3-cards" id="cards"><div class="p3-card p3-skel"></div><div class="p3-card p3-skel"></div><div class="p3-card p3-skel"></div></div>
 
-  <div class="p3-sec-head"><h2 data-i18n="Sync status">Sync status</h2><span class="sp"></span><button class="btn" id="syncAll" data-i18n="Sync all now">Sync all now</button></div>
-  <div class="p3-panel"><table class="p3-table" id="sources"><thead><tr>
-    <th data-i18n="Source">Source</th><th data-i18n="Status">Status</th><th data-i18n="Last success">Last success</th>
-    <th class="num" data-i18n="Mapped">Mapped</th><th data-i18n="Last error">Last error</th><th></th>
-  </tr></thead><tbody></tbody></table></div>
+    <div class="p3-card p3-sec">
+      <h3 data-i18n="Sync status">Sync status</h3>
+      <table class="p3-table" id="sources"><thead><tr>
+        <th data-i18n="Source">Source</th><th data-i18n="Status">Status</th>
+        <th class="num" data-i18n="Mapped">Mapped</th><th data-i18n="Last error">Last error</th><th class="num" data-i18n="Sync">Sync</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
 
-  <div class="p3-sec-head"><h2 data-i18n="Alerts">Alerts</h2></div>
-  <div class="p3-panel p3-pad">
-    <label class="p3-inline"><span data-i18n="p3-threshold">Flag "traffic but no revenue" when a site has at least</span>
-      <input id="minUv" type="number" min="1" step="1" class="p3-num-in">
-      <span data-i18n="clean visitors in the selected period and earns less than $0.01.">clean visitors in the selected period and earns less than $0.01.</span>
-      <button class="btn" id="saveMinUv" data-i18n="Save">Save</button><span id="minUvMsg" class="muted"></span></label>
-  </div>
+    <div class="p3-card p3-sec">
+      <h3 data-i18n="Alerts">Alerts</h3>
+      <label class="p3-inline"><span data-i18n="p3-threshold">Flag "traffic but no revenue" when a site has at least</span>
+        <input id="minUv" type="number" min="1" step="1" class="p3-num-in">
+        <span data-i18n="clean visitors in the selected period and earns less than $0.01.">clean visitors in the selected period and earns less than $0.01.</span>
+        <button class="btn" id="saveMinUv" data-i18n="Save">Save</button><span id="minUvMsg" class="muted"></span></label>
+    </div>
+  </section>
 
-  <div class="p3-sec-head"><h2 data-i18n="Site ↔ property mapping">Site ↔ property mapping</h2><span class="sp"></span>
-    <div class="p3-chips" id="filters"></div></div>
-  <p class="p3-hint" data-i18n="p3-mapping-help">Properties are matched to sites by domain (www and the bare domain are the same; a Search Console Domain property also covers subdomains). Pick a site to override a match, or ignore a property. Overrides survive every sync.</p>
-  <div class="p3-panel"><table class="p3-table" id="props"><thead><tr>
-    <th data-i18n="Source">Source</th><th data-i18n="Property">Property</th><th data-i18n="State">State</th>
-    <th data-i18n="Site">Site</th><th data-i18n="Checked">Checked</th><th data-i18n="Note">Note</th>
-  </tr></thead><tbody></tbody></table></div>
+  <section id="view-mapping" hidden>
+    <div class="p3-card p3-tbl">
+      <div class="p3-th"><h3 data-i18n="Site ↔ property mapping">Site ↔ property mapping</h3><span class="sp"></span><div class="p3-seg" id="filters"></div></div>
+      <p class="p3-hint p3-pad" data-i18n="p3-mapping-help">Properties are matched to sites by domain (www and the bare domain are the same; a Search Console Domain property also covers subdomains). Pick a site to override a match, or ignore a property. Overrides survive every sync.</p>
+      <table class="p3-table" id="props"><thead><tr>
+        <th data-i18n="Source">Source</th><th data-i18n="Property">Property</th><th data-i18n="State">State</th>
+        <th data-i18n="Site">Site</th><th data-i18n="Checked">Checked</th><th data-i18n="Note">Note</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
 </main>
 <script>
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -69,8 +83,9 @@ function ago(ts) {
   if (s < 129600) return Math.round(s / 3600) + ' ' + t('h ago');
   return Math.round(s / 86400) + ' ' + t('d ago');
 }
-const chip = (cls, text) => `<span class="p3-chip ${cls}">${esc(text)}</span>`;
-const srcBadge = (s) => `<span class="p3-src"><i></i>${esc(SRC[s] || s)}</span>`;
+// status = small coloured dot + grey text (no filled pills)
+const chip = (cls, text) => `<span class="p3-st ${cls}"><i></i>${esc(text)}</span>`;
+const srcBadge = (s) => `<span class="p3-src">${esc(SRC[s] || s)}</span>`;
 
 function stateChip(source, p) {
   const v = source === 'ads_txt' ? p.ads_txt : p.state;
@@ -129,6 +144,12 @@ function renderCards() {
   document.getElementById('cards').innerHTML = google + adsterra + adsTxtCard;
 }
 
+const REFRESH = '<svg class="p3-i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5"/></svg>';
+function stamp(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts), p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 function renderSources() {
   document.querySelector('#sources tbody').innerHTML = data.sources.map((s) => {
     const status = !s.connected ? chip('', t('Not connected'))
@@ -136,11 +157,16 @@ function renderSources() {
       : s.last_error ? chip('bad', t('Error'))
       : s.last_ok_at ? (Date.now() - s.last_ok_at > 48 * 3600e3 ? chip('warn', t('Stale')) : chip('good', t('OK')))
       : chip('', t('Waiting for first sync'));
-    return `<tr><td>${srcBadge(s.source)}</td><td>${status}</td><td>${esc(ago(s.last_ok_at))}</td>
+    const sync = s.connected
+      ? `<span class="p3-sync"><span class="p3-synced" title="${esc(s.last_ok_at ? new Date(s.last_ok_at).toLocaleString() : '')}">${te('Synced')} ${esc(s.last_ok_at ? ago(s.last_ok_at) : '—')}</span><button class="p3-syncbtn" data-sync="${esc(s.source)}">${REFRESH}<span>${te('Sync')}</span></button></span>`
+      : '';
+    return `<tr><td>${srcBadge(s.source)}</td><td>${status}</td>
       <td class="num">${esc(s.mapped)} / ${esc(s.properties)}</td>
       <td class="p3-err">${s.last_error ? esc(s.last_error) : '<span class="muted">—</span>'}</td>
-      <td class="num">${s.connected ? `<button class="btn sm" data-sync="${esc(s.source)}">${te('Sync now')}</button>` : ''}</td></tr>`;
+      <td class="num">${sync}</td></tr>`;
   }).join('');
+  const last = Math.max(0, ...data.sources.filter((s) => s.connected).map((s) => s.last_ok_at || 0));
+  document.getElementById('syncedAll').textContent = last ? `${t('Synced')} ${stamp(last)}` : '';
 }
 
 function renderFilters() {
@@ -148,7 +174,7 @@ function renderFilters() {
   const opts = [['all', t('All'), n(() => true)], ['unmapped', t('Unmapped'), n((p) => !p.site_id && p.mapping !== 'ignored')],
     ...Object.keys(SRC).map((s) => [s, SRC[s], n((p) => p.source === s)])];
   document.getElementById('filters').innerHTML = opts.map(([k, l, c]) =>
-    `<button class="p3-fchip${filter === k ? ' on' : ''}" data-filter="${k}">${esc(l)} <b>${c}</b></button>`).join('');
+    `<button class="${filter === k ? 'on' : ''}" data-filter="${k}">${esc(l)} <b>${c}</b></button>`).join('');
 }
 
 function siteSelect(p) {
@@ -189,17 +215,27 @@ function render() {
   document.getElementById('minUv').value = data.settings.no_revenue_min_uv;
 }
 
+function showTab(name) {
+  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.tab === name));
+  document.getElementById('view-connections').hidden = name !== 'connections';
+  document.getElementById('view-mapping').hidden = name !== 'mapping';
+}
+
 async function load() { data = await api('/api/integrations'); render(); }
 
 async function sync(source, btn) {
-  const b = btn; if (b) { b.disabled = true; b.textContent = t('Syncing…'); }
+  const lab = btn && btn.querySelector('span');
+  const prev = lab ? lab.textContent : '';
+  if (btn) { btn.disabled = true; btn.classList.add('busy'); if (lab) lab.textContent = t('Syncing…'); }
   try { data = await api('/api/integrations/sync', { method: 'POST', body: JSON.stringify(source ? { source } : {}) }); render(); }
-  catch (e) { alert(e.message); if (b) { b.disabled = false; b.textContent = t('Sync now'); } }
+  catch (e) { alert(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.classList.remove('busy'); if (lab) lab.textContent = prev; } }
 }
 
 document.addEventListener('click', async (ev) => {
-  const el = ev.target.closest('[data-act],[data-sync],[data-filter],#syncAll,#saveMinUv');
+  const el = ev.target.closest('[data-act],[data-sync],[data-filter],[data-tab],#syncAll,#saveMinUv');
   if (!el) return;
+  if (el.dataset.tab) { ev.preventDefault(); showTab(el.dataset.tab); history.replaceState(null, '', location.pathname + location.search + '#' + el.dataset.tab); return; }
   if (el.dataset.filter) { filter = el.dataset.filter; renderFilters(); renderProps(); return; }
   if (el.dataset.sync) return sync(el.dataset.sync, el);
   if (el.id === 'syncAll') return sync(null, el);
@@ -239,6 +275,7 @@ window.PVI18N.mountSelect(document.getElementById('lang'));
 window.PVI18N.applyStatic();
 document.addEventListener('pvuv:lang', () => { if (data) render(); renderBanner(); });
 renderBanner();
+showTab(location.hash === '#mapping' ? 'mapping' : 'connections');
 load().then(() => {
   // right after connecting, kick off a first pull so the page is not empty
   if (new URLSearchParams(location.search).get('connected') === 'google') sync(null, null);
