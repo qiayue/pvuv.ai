@@ -693,6 +693,7 @@
       "Sync all": "全部同步",
       "Sync": "立即同步",
       "Synced": "已同步",
+      'Menu': '菜单',
     },
     ja: {
       'API tokens': 'API トークン',
@@ -1250,6 +1251,7 @@
       "Sync all": "すべて同期",
       "Sync": "今すぐ同期",
       "Synced": "同期済み",
+      'Menu': 'メニュー',
     },
     ko: {
       'API tokens': 'API 토큰',
@@ -1807,6 +1809,7 @@
       "Sync all": "모두 동기화",
       "Sync": "동기화",
       "Synced": "동기화됨",
+      'Menu': '메뉴',
     },
     de: {
       'API tokens': 'API-Tokens',
@@ -2364,6 +2367,7 @@
       "Sync all": "Alle synchronisieren",
       "Sync": "Synchronisieren",
       "Synced": "Synchronisiert",
+      'Menu': 'Menü',
     },
     fr: {
       'API tokens': 'Jetons API',
@@ -2921,6 +2925,7 @@
       "Sync all": "Tout synchroniser",
       "Sync": "Synchroniser",
       "Synced": "Synchronisé",
+      'Menu': 'Menu',
     },
     es: {
       'API tokens': 'Tokens de API',
@@ -3239,6 +3244,7 @@
       '{n} sites, totals for {period}, compared with the previous period. Bots and crawlers excluded.': '{n} sitios, totales de {period}, comparados con el periodo anterior. Bots y rastreadores excluidos.',
       '{n} sites, totals for {period}. Bots and crawlers excluded.': '{n} sitios, totales de {period}. Bots y rastreadores excluidos.',
       '{pct} of visitors': '{pct} de los visitantes',
+      'Menu': 'Menú',
     },
     // English for SYMBOLIC keys only (attn.<code>, …): ordinary
     // English UI strings are their own keys and need no entry.

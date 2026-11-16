@@ -115,14 +115,15 @@ async function shoot(browser, name, scenario, { url = '/sites.html', after, heig
     if (p === '/api/me') return route.fulfill({ json: { user: 'admin', timezone: 'UTC', ingest_host: 'in.example.com' } });
     if (p === '/api/templates') return route.fulfill({ json: { templates: [{ template_id: 't1', name: 'Game site', timezone: 'UTC', adguard_mode: 'balanced', adclient: null, engaged_seconds: 10, funnels: [] }] } });
     if (p === '/api/ranking') return route.fulfill({ json: { sites: [] } });
-    if (p === '/api/sites') return route.fulfill({ json: { sites: data.sites } });
+    if (p === '/api/sites') return route.fulfill({ json: { sites: data.sites.map((x) => ({ ...x, allowed_domains: JSON.stringify(x.domains) })) } });
+    if (p.startsWith('/api/')) return route.fulfill({ json: {} });
     const file = join(ROOT, p === '/' ? 'index.html' : p);
     if (!existsSync(file)) return route.fulfill({ status: 404, body: 'not found' });
     const type = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css' }[extname(file)] || 'application/octet-stream';
     return route.fulfill({ body: readFileSync(file), contentType: type });
   });
   await page.goto('http://console.test' + url);
-  await page.waitForSelector('main.pf .kpis, main.pf .tbl, .empty-state', { timeout: 10000 });
+  await page.waitForSelector(url.startsWith('/site.html') ? 'aside.shell nav' : 'main.pf .kpis, main.pf .tbl, .empty-state', { timeout: 10000 });
   if (after) await after(page);
   await page.waitForTimeout(150);
   await page.screenshot({ path: join(OUT, `p1-${name}.png`), fullPage: full });
@@ -139,6 +140,7 @@ try {
   await shoot(browser, 'new-user', 'newuser', { full: true });
   await shoot(browser, 'overview-zh', 'default', { lang: 'zh', full: true });
   await shoot(browser, 'cmdk', 'default', { height: 860, after: async (p) => { await p.keyboard.press('/'); await p.keyboard.type('gem'); } });
+  await shoot(browser, 'shell-site', 'default', { url: '/site.html?id=' + SCENARIOS.default().sites[0].site_id, height: 760 });
   await shoot(browser, 'add-site', 'default', { height: 860, after: async (p) => { await p.click('aside >> text=New site'); } });
 } finally {
   await browser.close();

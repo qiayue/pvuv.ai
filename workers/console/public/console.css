@@ -624,3 +624,49 @@ body.p3 .p3-main .p3-sel.warn { border-color: var(--warn); }
 .p3-st.warn i, .ext-st.warn i { background: var(--warn, #d97706); }
 .p3-st.bad i, .ext-st.bad i { background: var(--down, #dc2626); }
 /* /portfolio:p3 */
+/* shared page shell (js/shell.js): left sidebar + content column */
+body.has-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+.shell-content { min-width: 0; }
+aside.shell { background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; z-index: 45; font-size: 14px; }
+.shell .logo { display: flex; align-items: center; gap: 10px; padding: 16px 18px; font-weight: 650; font-size: 17px; border-bottom: 1px solid var(--line); color: var(--text); }
+.shell .logo:hover { text-decoration: none; }
+.shell .logo .mark { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--text); display: grid; place-items: center; font-size: 10px; font-weight: 800; }
+.shell .logo img { height: 24px; display: block; }
+.shell .ws { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.shell .ws small { color: var(--mut); font-size: 13px; }
+.shell .ws div { display: flex; align-items: center; gap: 8px; margin-top: 6px; color: var(--text); }
+.shell .cta { margin: 12px; justify-content: center; padding: 9px 0; }
+.shell nav.groups { padding: 4px 8px; flex: 1; overflow: auto; }
+.shell nav.groups h5 { margin: 16px 8px 6px; font-size: 13px; font-weight: 500; color: var(--mut); }
+.shell nav.groups a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--text); text-decoration: none; }
+.shell nav.groups a:hover { background: var(--surface-2); }
+.shell nav.groups a.on { background: #f1f1f3; font-weight: 600; }
+.shell nav.groups a .n { margin-left: auto; font-size: 12px; color: var(--mut); font-weight: 400; font-variant-numeric: tabular-nums; }
+.shell .me { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.shell .me .av { width: 30px; height: 30px; border-radius: 50%; background: #e4e4e7; display: grid; place-items: center; font-size: 13px; color: var(--text-2); flex: none; }
+.shell .me small { display: block; color: var(--mut); font-size: 12px; }
+.shell .me .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell .menu { position: relative; }
+.shell .menu-pop { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(24,24,27,.10); }
+.shell .menu-pop a, .shell .menu-pop button { display: flex; width: 100%; padding: 6px 9px; border-radius: 7px; border: 0; background: none; color: var(--text); font-size: 13px; text-align: left; }
+.shell .menu-pop a:hover, .shell .menu-pop button:hover { background: var(--surface-2); text-decoration: none; }
+.shell .menu-pop h5 { margin: 6px 9px 4px; font-size: 11.5px; color: var(--mut); font-weight: 500; }
+.shell .menu-pop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 2px; }
+.shell .menu-pop select { width: 100%; }
+.iconbtn { background: none; border: 0; color: var(--mut); padding: 4px; border-radius: 6px; display: inline-grid; place-items: center; }
+.iconbtn:hover { background: var(--surface-2); color: var(--text); }
+.shell .shell-toggle { display: none; }
+/* pages inside the shell: their own sticky header sits at the top of the content column */
+body.has-shell header { top: 0; }
+@media (max-width: 900px) {
+  body.has-shell { grid-template-columns: 1fr; }
+  aside.shell { position: sticky; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; border-right: 0; border-bottom: 1px solid var(--line); }
+  .shell .logo { border-bottom: 0; flex: 1; }
+  .shell .shell-toggle { display: inline-grid; margin-right: 10px; }
+  .shell .ws, .shell nav.groups, .shell .me, .shell .cta { display: none; }
+  aside.shell.open { flex-direction: column; align-items: stretch; max-height: 100vh; overflow: auto; }
+  aside.shell.open .ws, aside.shell.open .me, aside.shell.open .cta { display: flex; }
+  aside.shell.open .ws { display: block; }
+  aside.shell.open nav.groups { display: block; }
+  aside.shell.open .shell-toggle { position: absolute; right: 0; top: 14px; }
+}

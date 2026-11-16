@@ -28,6 +28,9 @@ breaking changes, always with a D1 migration and upgrade notes in
     table (column sets incl. the cross-site ranking, state in the URL) with
     quick filters, row selection and j / k / Enter keyboard navigation. The
     settings panel moved to `/settings.html`.
+  - Shared console shell (`js/shell.js`): the grouped left sidebar (sites /
+    analysis / configure, with counts) on the overview, site, visitor and
+    self-check pages.
   - ⌘K / `/` site switcher on every console page, with recent sites.
   - Console site creation accepts a site template (`template`), like
     `POST /v1/sites`.
