@@ -1,0 +1,175 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>站群总览 · 浅色原型</title>
+<style>
+:root{
+  --bg:#f7f7f8; --surface:#fff; --line:#e7e7ea; --line-soft:#f0f0f2;
+  --text:#18181b; --text-2:#52525b; --mut:#8a8a93;
+  --accent:#3b82f6; --accent-soft:#eaf1fe; --track:#ececef;
+  --cta:#5bc477; --cta-text:#0b2e17;
+  --up:#16a34a; --down:#dc2626; --warn:#d97706;
+  --radius:12px; --radius-sm:8px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Inter,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+/* sidebar */
+aside{background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column}
+.logo{display:flex;align-items:center;gap:10px;padding:16px 18px;font-weight:650;font-size:17px;border-bottom:1px solid var(--line)}
+.logo .mark{width:24px;height:24px;border-radius:7px;border:2px solid var(--text);display:grid;place-items:center;font-size:11px;font-weight:800}
+.ws{padding:12px 16px;border-bottom:1px solid var(--line)}
+.ws small{color:var(--mut);font-size:13px}.ws div{display:flex;align-items:center;gap:8px;margin-top:6px;color:var(--text)}
+.ws div span{flex:1}
+.cta{margin:12px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--cta);color:var(--cta-text);border-radius:var(--radius-sm);padding:9px 0;font-weight:600}
+nav{padding:4px 8px;flex:1;overflow:auto}
+nav h5{margin:16px 8px 6px;font-size:13px;font-weight:500;color:var(--mut)}
+nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--radius-sm);color:var(--text);text-decoration:none}
+nav a .n{margin-left:auto;font-size:12px;color:var(--mut)}
+nav a.on{background:#f1f1f3;font-weight:600}
+nav a .dot{width:7px;height:7px;border-radius:50%;background:var(--down)}
+.me{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--line)}
+.me .av{width:30px;height:30px;border-radius:50%;background:#e4e4e7;display:grid;place-items:center;font-size:13px;color:var(--text-2)}
+.me small{display:block;color:var(--mut);font-size:12px}
+/* main */
+main{padding:26px 32px 40px;min-width:0}
+h1{font-size:30px;font-weight:650;letter-spacing:-.01em;margin:0 0 14px}
+.tabs{display:flex;gap:28px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tabs a{padding:0 2px 10px;color:var(--text-2);text-decoration:none}
+.tabs a.on{color:var(--text);border-bottom:2px solid var(--text);font-weight:500}
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden}
+.seg span{padding:6px 12px;color:var(--text-2);border-right:1px solid var(--line);display:flex;gap:6px;align-items:center;font-size:13px}
+.seg span:last-child{border-right:0}.seg span.on{background:#f4f4f5;color:var(--text);font-weight:500}
+.select{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius-sm);padding:6px 12px;display:flex;align-items:center;gap:22px;font-size:13.5px}
+.sp{flex:1}.sync{color:var(--mut);font-size:12.5px}.syncbtn{display:flex;gap:6px;align-items:center;font-weight:600;font-size:14px}
+.caption{color:var(--mut);font-size:13px;margin:18px 0 10px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+.kpi{padding:16px 18px}
+.kpi .h{display:flex;align-items:center;gap:7px;color:var(--text-2);font-size:14px}
+.kpi .d{margin-left:auto;font-size:13px;font-weight:500}
+.kpi .v{font-size:27px;font-weight:650;margin-top:10px;letter-spacing:-.01em}
+.up{color:var(--up)}.down{color:var(--down)}
+.sec{margin-top:16px;padding:18px 20px}
+.sec h3{margin:0 0 14px;font-size:15px;font-weight:500;color:var(--text-2)}
+.bars .r{display:grid;grid-template-columns:150px 1fr 90px 60px 80px;align-items:center;gap:16px;padding:7px 0}
+.bars .lab{display:flex;align-items:center;gap:8px}
+.bars .lab i{width:8px;height:8px;border-radius:50%}
+.track{height:7px;background:var(--track);border-radius:9px;overflow:hidden}.track b{display:block;height:100%;background:var(--accent);border-radius:9px}
+.num{text-align:right;font-variant-numeric:tabular-nums}.m{color:var(--mut);font-size:13px}
+.chart-h{display:flex;align-items:center;gap:10px;margin-bottom:6px}.chart-h h3{margin:0;flex:1}
+.legend{color:var(--mut);font-size:12.5px;margin-top:6px}
+/* table */
+.tbl{margin-top:16px;overflow:hidden}
+.tbl .th{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.tbl .th h3{margin:0;font-size:15px;font-weight:500;color:var(--text-2);flex:1}
+.search{border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px 10px;color:var(--mut);width:240px;display:flex;gap:7px;align-items:center;font-size:13px}
+table{width:100%;border-collapse:collapse}
+th{font-weight:500;color:var(--mut);font-size:12.5px;text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.site b{font-weight:550}.site div{color:var(--mut);font-size:12.5px}
+.fav{width:26px;height:26px;border-radius:7px;border:1px solid var(--line);display:inline-grid;place-items:center;color:var(--text-2);font-size:12px;margin-right:10px;vertical-align:middle;background:#fafafa}
+.stage{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-2)}
+.stage i{width:7px;height:7px;border-radius:50%}
+.eng span{display:inline-block;width:18px;text-align:center;font-size:12px;color:#c4c4cb}.eng span.ok{color:var(--text)}.eng span.late{color:var(--warn)}
+.att{font-size:13px}.att.c{color:var(--down)}.att.w{color:var(--warn)}
+.star{color:#f5b301}
+</style></head><body>
+<div class="app">
+<aside>
+  <div class="logo"><span class="mark">pv</span>pvuv</div>
+  <div class="ws"><small>工作区</small><div><svg class="i" viewBox="0 0 24 24"><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>我的站群</span><svg class="i" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+  <div class="cta"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新建站点</div>
+  <nav>
+    <h5>站点</h5>
+    <a class="on"><svg class="i" viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>总览</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>需要处理<span class="n">7</span></a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>收藏<span class="n">9</span></a>
+    <a><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>全部站点<span class="n">126</span></a>
+    <h5>分析</h5>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5"/></svg>收录与爬虫</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 4.5-9 4.5L3 7.5zM3 12l9 4.5 9-4.5M3 16.5L12 21l9-4.5"/></svg>流量质量</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4 19a1 1 0 0 0 .9 1.5h14.2A1 1 0 0 0 20 19l-6-10V3"/></svg>实验</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>收入</a>
+    <h5>配置</h5>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>集成</a>
+    <a><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2M16 7l3 3M19 4l2 2"/></svg>API 令牌</a>
+    <a><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>设置</a>
+  </nav>
+  <div class="me"><span class="av">Y</span><div>yicheng<small>自部署 · v0.2</small></div></div>
+</aside>
+<main>
+  <h1>站群总览</h1>
+  <div class="tabs"><a class="on">总览</a><a>站点</a><a>生命周期</a></div>
+  <div class="toolbar">
+    <div class="seg"><span class="on">全部</span><span>小游戏</span><span>内容站</span><span>AdSense</span><span>Adsterra</span></div>
+    <div class="select">最近 7 天 <svg class="i" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+    <div class="sp"></div>
+    <span class="sync">已同步 11-16 09:16</span>
+    <span class="syncbtn"><svg class="i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5"/></svg>刷新</span>
+  </div>
+  <div class="caption">126 个站点在本周期的合计，与前 7 天对比。已排除机器人和爬虫。</div>
+  <div class="kpis">
+    <div class="card kpi"><div class="h"><svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>真人访客<span class="d up">+12%</span></div><div class="v">48,210</div></div>
+    <div class="card kpi"><div class="h"><svg class="i" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9h16M9 20V9"/></svg>浏览量<span class="d up">+9%</span></div><div class="v">131.9K</div></div>
+    <div class="card kpi"><div class="h"><svg class="i" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5"/></svg>自然搜索<span class="d up">+21%</span></div><div class="v">19,377</div></div>
+    <div class="card kpi"><div class="h"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>AI 助手带来<span class="d up">+64%</span></div><div class="v">1,204</div></div>
+    <div class="card kpi"><div class="h"><svg class="i" viewBox="0 0 24 24"><path d="M19 5L5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></svg>无效流量<span class="d down">+1.2pt</span></div><div class="v">6.8%</div></div>
+  </div>
+
+  <div class="card sec">
+    <h3>站点按生命周期</h3>
+    <div class="bars" id="bars"></div>
+  </div>
+
+  <div class="card sec">
+    <div class="chart-h"><h3>每日真人访客</h3>
+      <div class="seg"><span class="on">访客</span><span>浏览量</span><span>无效流量</span></div>
+      <div class="seg"><span class="on">按天</span><span>按周</span></div></div>
+    <svg id="chart" width="100%" height="260" viewBox="0 0 1000 260" preserveAspectRatio="none"></svg>
+    <div id="xaxis" style="display:flex;justify-content:space-between;color:var(--mut);font-size:12px;padding:0 6px 0 46px"></div>
+    <div class="legend">灰色柱：当天新上线的站点数</div>
+  </div>
+
+  <div class="card tbl">
+    <div class="th"><h3>站点</h3><div class="search"><svg class="i" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5"/></svg>搜索站点或域名 <span style="margin-left:auto">⌘K</span></div>
+      <div class="seg"><span class="on">全部</span><span>需要处理 7</span><span>本周上线 7</span></div></div>
+    <table><thead><tr><th></th><th>站点</th><th>阶段</th><th class="num">上线</th><th class="num">真人访客 ↓</th><th class="num">环比</th><th>近 14 天</th><th>搜索抓取</th><th class="num">自然搜索</th><th class="num">无效流量</th><th>需要处理</th></tr></thead><tbody id="rows"></tbody></table>
+  </div>
+</main></div>
+<script>
+const STAGE={s4:['稳定增长','#16a34a'],s3:['有自然流量','#3b82f6'],s2:['已被抓取','#8b5cf6'],s1:['等抓取','#d97706'],s0:['待接入','#a1a1aa'],s9:['下滑','#dc2626']};
+const R=[
+['★','Snake Rush','snakerush.io','s4',182,9120,18,[3,4,4,5,6,6,7,7,8,8,9,9,10,11],'oooo',6210,4.1,'',''],
+['★','Gem Swap','gemswap.games','s4',150,6833,7,[6,6,7,6,7,7,7,8,7,8,8,8,8,9],'ooo-',4120,5.0,'',''],
+['','Word Hunt','wordhunt.fun','s9',96,2104,-38,[9,9,8,8,7,7,6,5,5,4,4,3,3,3],'ooo-',1301,3.2,'c','访客 7 天下滑 38%'],
+['','Tile Merge','tilemerge.app','s3',41,1980,64,[1,1,2,2,2,3,3,4,4,5,6,6,7,8],'oo--',1460,2.8,'',''],
+['','Pixel Golf','pixelgolf.io','s9',120,1544,-12,[7,7,7,6,6,7,6,6,5,6,5,5,5,5],'oooo',512,31.4,'c','无效流量 31%，广告保护未开启'],
+['','Neon Run','neonrun.games','s2',9,212,null,[0,0,0,0,0,1,1,1,2,2,2,3,3,3],'o---',38,4.0,'',''],
+['','Hex Puzzle','hexpuzzle.fun','s1',4,96,null,[0,0,0,0,0,0,0,0,0,0,1,1,2,2],'l---',0,2.1,'w','上线 4 天，Google 还没来抓'],
+['','Car Drift','cardrift.io','s0',1,0,null,[0,0,0,0,0,0,0,0,0,0,0,0,0,0],'----',0,0,'w','24 小时没收到数据，检查嵌入代码'],
+];
+const spark=(a,neg)=>{const m=Math.max(...a,1),w=90,h=22;const p=a.map((v,i)=>`${(i/(a.length-1)*w).toFixed(1)},${(h-2-v/m*(h-5)).toFixed(1)}`).join(' ');return `<svg width="${w}" height="${h}"><polyline fill="none" stroke="${neg?'#dc2626':'#3b82f6'}" stroke-width="1.5" points="${p}"/></svg>`};
+document.getElementById('rows').innerHTML=R.map(r=>`<tr><td style="width:24px;color:#c4c4cb">☐</td>
+<td class="site"><span class="fav">${r[1][0]}</span><span style="display:inline-block;vertical-align:middle"><b>${r[1]}</b> <span class="star">${r[0]}</span><div>${r[2]}</div></span></td>
+<td><span class="stage"><i style="background:${STAGE[r[3]][1]}"></i>${STAGE[r[3]][0]}</span></td>
+<td class="num m">${r[4]} 天</td><td class="num">${r[5].toLocaleString()}</td>
+<td class="num ${r[6]==null?'m':r[6]>=0?'up':'down'}">${r[6]==null?'新站':(r[6]>0?'+':'')+r[6]+'%'}</td>
+<td>${spark(r[7],r[6]!=null&&r[6]<0)}</td>
+<td class="eng">${['G','B','Y','百'].map((n,i)=>`<span class="${r[8][i]==='o'?'ok':r[8][i]==='l'?'late':''}">${n}</span>`).join('')}</td>
+<td class="num">${r[9].toLocaleString()}</td><td class="num ${r[10]>20?'down':''}">${r[10]}%</td>
+<td class="att ${r[11]}">${r[12]}</td></tr>`).join('');
+const B=[['稳定增长','#16a34a',27,'61% 的访客'],['有自然流量','#3b82f6',61,'34% 的访客'],['已被抓取','#8b5cf6',18,'3% 的访客'],['等抓取','#d97706',5,'<1%'],['待接入','#a1a1aa',2,'—'],['下滑','#dc2626',13,'2% 的访客']];
+document.getElementById('bars').innerHTML=B.map(b=>`<div class="r"><span class="lab"><i style="background:${b[1]}"></i>${b[0]}</span><div class="track"><b style="width:${b[2]/126*100*1.4}%"></b></div><span class="num">${b[2]} 个</span><span class="num m">${Math.round(b[2]/126*100)}%</span><span class="num m">${b[3]}</span></div>`).join('');
+// chart
+const pts=[5200,5600,6100,5800,7400,6900,6600,7100,8200,7600,7900,9100,8600,9400,10200,9800,10900,11600,10800,12100,12900,12400,13600,14100,13200,14800,15600,15100,16400,17200];
+const nb=[1,1,0,1,1,2,1,1,1,0,1,1,1,1,2,1,1,0,1,1,1,1,1,2,1,1,1,0,1,1];
+const W=1000,H=260,L=46,T=10,Bm=24,max=20000;const x=i=>L+i*(W-L-8)/(pts.length-1),y=v=>T+(H-T-Bm)*(1-v/max);
+let s=`<defs><linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b82f6" stop-opacity=".14"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs>`;
+[0,5000,10000,15000,20000].forEach(v=>{s+=`<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="#ececef" stroke-dasharray="${v?'3 4':''}"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="#8a8a93">${v?v/1000+'K':0}</text>`});
+nb.forEach((n,i)=>{if(n){const h=n*26;s+=`<rect x="${x(i)-7}" y="${H-Bm-h}" width="14" height="${h}" rx="2" fill="#e4e4e7"/>`}});
+let d=`M${x(0)},${y(pts[0])}`;for(let i=1;i<pts.length;i++){const cx=(x(i-1)+x(i))/2;d+=` C${cx},${y(pts[i-1])} ${cx},${y(pts[i])} ${x(i)},${y(pts[i])}`}
+s+=`<path d="${d} L${x(pts.length-1)},${H-Bm} L${x(0)},${H-Bm}Z" fill="url(#f)"/><path d="${d}" fill="none" stroke="#3b82f6" stroke-width="2.2"/>`;
+document.getElementById('chart').innerHTML=s;
+document.getElementById('xaxis').innerHTML=['10-18','10-21','10-24','10-27','10-30','11-02','11-05','11-08','11-11','11-14'].map(t=>`<span>${t}</span>`).join('');
+</script></body></html>
