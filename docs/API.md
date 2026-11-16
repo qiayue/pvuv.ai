@@ -75,6 +75,7 @@ that is signed in to the console can call it directly for that owner's sites.
 | `GET /v1/sites/{id}/adguard` | per-tier block/false-positive estimates, block reasons | `period` |
 | `GET /v1/sites/{id}/edge` | Cloudflare edge requests vs reported pageviews — the traffic that never ran JS | `period` |
 | `GET /v1/sites/{id}/crawlers` | crawler / indexing signals per engine (first/last seen, hits, daily series) + top crawled pages — a separate metric, see below | `period` `limit` (top pages, default 20, max 100) `bot` (one engine id, case-insensitive) `search` (truthy → only `kind = search` engines) |
+| `GET /v1/sites/{id}/external` | ad revenue (AdSense + Adsterra), RPM, AdSense site state + ads.txt, Adsterra status, Search Console clicks/impressions/indexed pages, attention codes, daily series and mapped properties — see [External data](#external-data-ad-revenue-adsense-adsterra-search-console) | `period` |
 | `GET /v1/sites/{id}/traffic` | individual suspicious visitors with their evidence | `period` `verdict` `min_score` `limit` (default 50, max 1000) `filters` |
 | `GET /v1/sites/{id}/anomalies` | the 40 most recent pending baseline anomaly reports (`day`, `dimension`, `baseline`, `actual`, `deviation`, `kind`, `message`, `top_sig`, `unit`); ignores `period` | — |
 | `GET /v1/sites/{id}/funnels` | saved funnels: `{funnels:[{funnel_id, name, steps, created_at, updated_at}]}` | — |
@@ -326,6 +327,45 @@ bypasses the cache).
   are fixed: `decline_min_uv` 100, `crawl_overdue_days` 3,
   `organic_overdue_days` 14, `no_data_hours` 24, `ivt_spike_pts` 10,
   `ivt_min_pv` 50. The payload echoes every value in effect.
+### External data (ad revenue, AdSense, Adsterra, Search Console)
+
+`GET /v1/sites/{id}/external?period=7d` (console: `GET /api/sites/{id}/external`)
+returns what the integrations sync pulled for one site. The integrations must
+be connected first: see [INTEGRATIONS.md](./INTEGRATIONS.md). Auth and scoping
+are the same as every other site endpoint. Credentials are never part of a
+response.
+
+```json
+{
+  "available": true,
+  "period": { "start": "2026-11-10", "end": "2026-11-16" },
+  "external": {
+    "revenue_usd": 21.0, "revenue_prev_usd": 19.4, "rpm_usd": 3.33,
+    "adsense": { "status": "ready", "ads_txt": "ok", "checked_at": 1763290000000, "revenue_usd": 21.0, "policy": null },
+    "adsterra": null,
+    "search": { "indexed_pages": 184, "impressions": 700, "clicks": 28, "checked_at": 1763290000000,
+                "home_verdict": "PASS", "home_coverage": "Submitted and indexed" },
+    "attention": []
+  },
+  "series": [{ "day": "2026-11-10", "adsense_usd": 3, "adsterra_usd": 0, "adsense_impressions": 1100,
+               "adsterra_impressions": 0, "search_clicks": 4, "search_impressions": 100 }],
+  "properties": [{ "source": "gsc", "property_id": "sc-domain:example.com", "label": "sc-domain:example.com",
+                   "mapping": "auto", "state": "active", "indexed_pages": 184, "detail": { "home_verdict": "PASS" },
+                   "error": null, "checked_at": 1763290000000 }],
+  "sources": [{ "source": "adsense", "connected": true, "last_ok_at": 1763290000000, "last_run_at": 1763290000000 }]
+}
+```
+
+- `external` is `null` when nothing external is known about the site. It has
+  the same shape as the `external` field of each site in `/api/portfolio`.
+- `revenue_usd` is `null` when no ad network is connected. `rpm_usd` is revenue
+  per 1,000 **clean pageviews measured by pvuv**.
+- `indexed_pages` counts pages with at least one Google impression in 28 days.
+  It is a lower bound, because Search Console has no API for the indexed total.
+- Attention codes: `traffic_no_revenue`, `adsense_needs_attention`,
+  `ads_txt_problem`, `network_declined`, `external_stale`. The rules are in
+  [INTEGRATIONS.md §4](./INTEGRATIONS.md#4-metrics-and-alerts).
+- `available: false` means migration 0028 has not been applied.
 
 ### Crawler / indexing signals
 

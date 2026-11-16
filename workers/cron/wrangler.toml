@@ -4,6 +4,12 @@
 #   Daily:   population batch analysis + blocklist refresh + retention purge
 #
 # All ids are PLACEHOLDERS — see root wrangler.toml for security notes.
+#
+# Optional — external integrations (docs/INTEGRATIONS.md). Only needed if you
+# connect AdSense / Search Console / Adsterra in the console:
+#   wrangler secret put HMAC_KEY             -c workers/cron/wrangler.toml  (same value as the console)
+#   wrangler secret put GOOGLE_CLIENT_SECRET -c workers/cron/wrangler.toml  (or EXT_GOOGLE_CLIENT_SECRET)
+#   + GOOGLE_CLIENT_ID (or EXT_GOOGLE_CLIENT_ID) as a [vars] entry
 
 name = "pvuv-cron"
 main = "src/index.ts"

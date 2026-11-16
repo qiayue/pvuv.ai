@@ -664,6 +664,35 @@ Notes:
 - If a pull fails, Cloudflare's own error text is shown verbatim in the settings
   panel. "Authentication error" and a missing permission need different fixes.
 
+## Ad revenue & Search Console (optional)
+
+The portfolio overview can show each site's AdSense / Adsterra revenue, RPM,
+AdSense site state, ads.txt status and Google Search clicks, and flag sites
+with traffic but no revenue. The full guide is
+[`docs/INTEGRATIONS.md`](./docs/INTEGRATIONS.md). Minimum setup:
+
+1. Apply migration `0028` (`npm run db:migrate:remote`).
+2. In Google Cloud, enable the **AdSense Management API** and the **Google
+   Search Console API**. Add the `adsense.readonly` and `webmasters.readonly`
+   scopes to the consent screen, and set it to **In production** (in *Testing*,
+   refresh tokens expire after 7 days).
+3. On the OAuth client, add the redirect URI
+   `https://<console-domain>/api/integrations/google/callback`. You can reuse
+   the login client, or set a dedicated `EXT_GOOGLE_CLIENT_ID` var and
+   `EXT_GOOGLE_CLIENT_SECRET` secret.
+4. The **cron** worker needs the same client and the same `HMAC_KEY` as the
+   console, because it decrypts the stored credentials:
+   ```bash
+   wrangler secret put HMAC_KEY             -c workers/cron/wrangler.toml   # same value as the console
+   wrangler secret put GOOGLE_CLIENT_SECRET -c workers/cron/wrangler.toml   # or EXT_GOOGLE_CLIENT_SECRET
+   # and GOOGLE_CLIENT_ID (or EXT_GOOGLE_CLIENT_ID) under [vars] in workers/cron/wrangler.toml
+   ```
+5. Redeploy console and cron, then open **Integrations** in the console:
+   **Connect Google**, and paste an Adsterra API token if you use Adsterra.
+
+Credentials are stored AES-GCM-encrypted in D1 and never sent to the browser.
+Without this setup nothing changes, and the sync is a no-op.
+
 ## External ranking / scoring API (optional)
 
 An external ranking system can pull a cross-site, clean-traffic leaderboard in

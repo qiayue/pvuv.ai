@@ -14,6 +14,7 @@
  *   GET /v1/sites/:id/visitors?path=/pay&limit=50
  *   GET /v1/sites/:id/visitors/:vid/profile
  *   GET /v1/sites/:id/crawlers?period=30d             — crawler/indexing signals (separate metric)
+ *   GET /v1/sites/:id/external?period=7d              — ad revenue / AdSense / Adsterra / Search Console (external.ts)
  *   GET /v1/sites/:id/experiment?experiment=…&goal=…  — A/B readout (reports.ts)
  *   GET /v1/sites/:id/experiments | event_inventory | ai_referrals
  *   GET /v1/templates                               — the owner's site templates
@@ -40,6 +41,7 @@ import {
 } from '../../../shared/crawler_hits';
 import { extraReport } from './reports';
 import { cachedPortfolio } from './portfolio';
+import { siteExternal } from './external';
 import { hmacSign } from '../../../shared/ids';
 import { CONFIG } from '../../../shared/config.gen';
 import { applyBulk, putLabels, LabelError } from '../../../shared/labels';
@@ -178,6 +180,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
   if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
+  if (resource === 'external') return json(await siteExternal(env.DB, siteId, period)); // portfolio:p3
   // funnel: ad-hoc `steps`, or a saved funnel by `funnel_id` (so an agent can
   // ask about "the checkout funnel" without being told its steps)
   if (resource === 'funnels') {

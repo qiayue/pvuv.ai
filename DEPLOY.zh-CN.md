@@ -578,6 +578,23 @@ Create Custom Token*。只给这两个权限，都是只读：
 - 拉取失败时，设置面板里会原样显示 Cloudflare 自己的报错文本。"Authentication
   error" 和权限没给全是两种完全不同的修法。
 
+## 广告收入与 Search Console(可选)
+
+站群总览可以显示每个站点的 AdSense / Adsterra 收入、RPM、AdSense 网站状态、ads.txt 状态和 Google 搜索点击，并标出“有流量没收入”的站点。完整说明见 [`docs/INTEGRATIONS.md`](./docs/INTEGRATIONS.md)。最少需要以下步骤：
+
+1. 应用迁移 `0028`(`npm run db:migrate:remote`)。
+2. 在 Google Cloud 中启用 **AdSense Management API** 和 **Google Search Console API**。在 OAuth 同意屏幕中加入 `adsense.readonly` 和 `webmasters.readonly` 权限范围，并把发布状态设为 **In production**(处于 *Testing* 时，刷新令牌 7 天后过期)。
+3. 在 OAuth 客户端中添加重定向 URI `https://<控制台域名>/api/integrations/google/callback`。可以复用登录用的客户端，也可以单独设置变量 `EXT_GOOGLE_CLIENT_ID` 和密钥 `EXT_GOOGLE_CLIENT_SECRET`。
+4. **cron** worker 也需要同一个客户端，以及与 console 相同的 `HMAC_KEY`(用于解密已保存的凭证):
+   ```bash
+   wrangler secret put HMAC_KEY             -c workers/cron/wrangler.toml   # 与 console 相同的值
+   wrangler secret put GOOGLE_CLIENT_SECRET -c workers/cron/wrangler.toml   # 或 EXT_GOOGLE_CLIENT_SECRET
+   # 并在 workers/cron/wrangler.toml 的 [vars] 中设置 GOOGLE_CLIENT_ID(或 EXT_GOOGLE_CLIENT_ID)
+   ```
+5. 重新部署 console 和 cron，在控制台打开**集成**页面：点击**连接 Google**;如果使用 Adsterra,再粘贴它的 API 令牌。
+
+凭证以 AES-GCM 加密后存入 D1,不会发送到浏览器。不做以上配置时一切照旧，同步任务不执行任何操作。
+
 ## 外部排名 / 评分 API（可选）
 
 外部排名系统可以用第 7 步的服务端 `API_TOKEN`（`npm run setup` 不会设置它，需要手动添加），一次拉取跨站点、基于清洗流量的榜单：

@@ -277,8 +277,10 @@ test('500 sites: statement count bounded by chunks, fast', async () => {
   assert.equal(p.sites.length, 500);
   const chunks = Math.ceil(500 / PORTFOLIO_CHUNK);
   // thresholds + site list (+ slack), then one batch per chunk (≤ 6 statements)
-  // and one more batch for first-organic (one statement per chunk)
-  assert.ok(stats.statements <= 3 + chunks * 7, `statements: ${stats.statements}`);
+  // and one more batch for first-organic (one statement per chunk), plus the
+  // external-data presence check (2 statements; nothing connected here, so no
+  // per-chunk external queries)
+  assert.ok(stats.statements <= 3 + 2 + chunks * 7, `statements: ${stats.statements}`);
   assert.ok(stats.batches <= chunks + 1, `round trips: ${stats.batches}`);
   assert.ok(ms < 5000, `took ${ms.toFixed(0)} ms`);
 });

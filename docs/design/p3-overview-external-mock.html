@@ -1,0 +1,75 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>站群总览 · 收入/广告/搜索列 · 原型 (P3)</title>
+<!-- Mock of the portfolio "sites" table once integrations are connected: the
+     columns P1 renders when any site carries `external` data (contract §3.3),
+     in the light neutral style of portfolio-mock-light.*. Fictional data.
+     Rendered to docs/design/screens/p3-overview-external.png. -->
+<style>
+:root{
+  --bg:#f7f7f8; --surface:#fff; --line:#e7e7ea; --line-soft:#f0f0f2;
+  --text:#18181b; --text-2:#52525b; --mut:#8a8a93;
+  --accent:#3b82f6; --accent-soft:#eaf1fe; --track:#ececef;
+  --cta:#5bc477; --cta-text:#0b2e17;
+  --up:#16a34a; --down:#dc2626; --warn:#d97706;
+  --radius:12px; --radius-sm:8px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Inter,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+main{padding:26px 32px 32px}
+h1{font-size:30px;font-weight:650;letter-spacing:-.01em;margin:0 0 14px}
+.tabs{display:flex;gap:28px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tabs a{padding:0 2px 10px;color:var(--text-2)}.tabs a.on{color:var(--text);border-bottom:2px solid var(--text);font-weight:500}
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden}
+.seg span{padding:6px 12px;color:var(--text-2);border-right:1px solid var(--line);font-size:13px}.seg span:last-child{border-right:0}.seg span.on{background:#f4f4f5;color:var(--text);font-weight:500}
+.sp{flex:1}.sync{color:var(--mut);font-size:12.5px}.syncbtn{font-weight:600;margin-left:10px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+.kpi{padding:16px 18px}.kpi .h{display:flex;color:var(--text-2)}.kpi .d{margin-left:auto;font-size:13px;font-weight:500}
+.kpi .v{font-size:27px;font-weight:650;margin-top:10px;letter-spacing:-.01em}
+.up{color:var(--up)}.down{color:var(--down)}
+.th{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}.th h3{margin:0;font-size:15px;font-weight:500;color:var(--text-2);flex:1}
+table{width:100%;border-collapse:collapse}
+th{font-weight:500;color:var(--mut);font-size:12.5px;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th.ext{color:var(--accent)}
+td{padding:11px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap}tr:last-child td{border-bottom:0}
+.num{text-align:right;font-variant-numeric:tabular-nums}.m{color:var(--mut)}
+.fav{width:26px;height:26px;border-radius:7px;border:1px solid var(--line);display:inline-grid;place-items:center;color:var(--text-2);font-size:12px;margin-right:10px;vertical-align:middle;background:#fafafa}
+.site{display:flex;align-items:center}.site b{font-weight:550}.site div{color:var(--mut);font-size:12.5px}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-2)}.st i{width:7px;height:7px;border-radius:50%;background:#a1a1aa}
+.st.g i{background:var(--up)}.st.w i{background:var(--warn)}.st.b i{background:var(--down)}.st.p i{background:#8b5cf6}.st.a i{background:var(--accent)}
+.att{font-size:13px}.att.c{color:var(--down)}.att.w{color:var(--warn)}
+.note{color:var(--mut);font-size:12.5px;margin-top:10px}
+</style></head><body><main>
+<h1>站群总览</h1>
+<div class="tabs"><a class="on">总览</a><a>站点</a><a>生命周期</a></div>
+<div class="toolbar"><div class="seg"><span class="on">全部</span><span>小游戏</span><span>内容站</span><span>AdSense</span><span>Adsterra</span></div>
+<div class="seg"><span>最近 7 天</span></div><span class="sp"></span><span class="sync">已同步 11-16 09:16</span><span class="syncbtn">刷新</span></div>
+<div class="kpis">
+<div class="card kpi"><div class="h">真人访客<span class="d up">+12%</span></div><div class="v">48,210</div></div>
+<div class="card kpi"><div class="h">广告收入<span class="d up">+9%</span></div><div class="v">$1,284</div></div>
+<div class="card kpi"><div class="h">RPM<span class="d down">-3%</span></div><div class="v">$9.73</div></div>
+<div class="card kpi"><div class="h">搜索点击<span class="d up">+18%</span></div><div class="v">21,904</div></div>
+<div class="card kpi"><div class="h">收入异常站点</div><div class="v">4</div></div>
+</div>
+<div class="card"><div class="th"><h3>站点</h3><div class="seg"><span>全部</span><span class="on">需要处理 6</span><span>有流量没收入 2</span><span>ads.txt 2</span></div></div>
+<table><thead><tr><th>站点</th><th>阶段</th><th class="num">真人访客</th><th class="num">环比</th>
+<th class="num ext">收入</th><th class="num ext">环比</th><th class="num ext">RPM</th><th class="ext">AdSense</th><th class="ext">ads.txt</th><th class="ext">Adsterra</th><th class="num ext">搜索点击</th><th class="num ext">有展示页面*</th><th>需要处理</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="note">原型示意，数据为虚构。收入 = AdSense + Adsterra(美元);RPM = 每千次真人浏览收入(pvuv 自己测量)。*有展示页面 = 28 天内至少有 1 次 Google 展示的页面数，是已索引页面的下限(API 不提供索引总数)。</p>
+</main>
+<script>
+const R=[
+['Snake Rush','snakerush.io','g','稳定增长',9120,18,412.3,11,11.2,['g','已就绪'],['g','正常'],null,6210,184,''],
+['Gem Swap','gemswap.games','g','稳定增长',6833,7,288.9,4,10.1,['g','已就绪'],['b','不匹配'],null,4120,122,'w|ads.txt 有问题:不匹配'],
+['Word Hunt','wordhunt.fun','b','下滑',2104,-38,61.2,-41,8.4,null,null,['g','正常'],1301,61,''],
+['Tile Merge','tilemerge.app','a','有自然流量',1980,64,0,null,0,null,null,['w','无展示'],1460,12,'c|1,980 名真人访客，但没有广告收入'],
+['Pixel Golf','pixelgolf.io','b','下滑',1544,-12,9.8,-70,2.1,['b','需要处理'],['b','缺失'],null,512,48,'c|AdSense 需要处理 · ads.txt 缺失'],
+['Neon Run','neonrun.games','p','已被抓取',212,null,0,null,0,['w','审核中'],['g','正常'],null,38,3,''],
+];
+const f=(n)=>n.toLocaleString('en-US');const d=(v)=>v==null?'<span class="m">新站</span>':`<span class="${v<0?'down':'up'}">${v>0?'+':''}${v}%</span>`;
+const st=(x)=>x?`<span class="st ${x[0]}"><i></i>${x[1]}</span>`:'<span class="m">—</span>';
+document.getElementById('rows').innerHTML=R.map(r=>{const [w,txt]=(r[14]||'|').split('|');return `<tr><td><span class="site"><span class="fav">${r[0][0]}</span><span><b>${r[0]}</b><div>${r[1]}</div></span></span></td>
+<td>${st([r[2],r[3]])}</td><td class="num">${f(r[4])}</td><td class="num">${d(r[5])}</td>
+<td class="num">$${r[6].toFixed(2)}</td><td class="num">${d(r[7])}</td><td class="num">${r[8]?'$'+r[8].toFixed(2):'<span class="m">—</span>'}</td>
+<td>${st(r[9])}</td><td>${st(r[10])}</td><td>${st(r[11])}</td><td class="num">${f(r[12])}</td><td class="num">${r[13]}</td>
+<td>${txt?`<span class="att ${w}">${txt}</span>`:''}</td></tr>`}).join('');
+</script></body></html>

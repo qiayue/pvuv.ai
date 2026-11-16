@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Integrations — pvuv.ai</title>
+<link rel="stylesheet" href="/console.css">
+</head>
+<body class="p3">
+<script src="/i18n.js"></script>
+<header class="p3-top">
+  <a href="/sites.html" class="p3-back"><svg class="p3-i" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span data-i18n="All sites">All sites</span></a>
+  <span class="sp"></span>
+  <select id="lang" aria-label="Language"></select>
+  <a href="/settings.html" class="btn" data-i18n="Settings">Settings</a>
+</header>
+<main class="p3-main">
+  <h1 class="p3-title" data-i18n="Integrations">Integrations</h1>
+  <nav class="p3-tabs" id="tabs">
+    <a href="#connections" data-tab="connections" class="on" data-i18n="Connections">Connections</a>
+    <a href="#mapping" data-tab="mapping" data-i18n="Site ↔ property mapping">Site ↔ property mapping</a>
+  </nav>
+  <div class="p3-toolbar">
+    <p class="p3-lead" data-i18n="p3-lead">Bring ad revenue, ad-network status and search data into the portfolio. Credentials are encrypted in your own database and never sent to the browser; data is pulled by the cron worker once a day, with a light refresh every hour.</p>
+    <span class="sp"></span>
+    <span class="p3-sync" id="syncAllWrap"><span class="p3-synced" id="syncedAll"></span><button class="p3-syncbtn" id="syncAll"><svg class="p3-i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5"/></svg><span data-i18n="Sync all">Sync all</span></button></span>
+  </div>
+  <div id="banner"></div>
+
+  <section id="view-connections">
+    <div class="p3-cards" id="cards"><div class="p3-card p3-skel"></div><div class="p3-card p3-skel"></div><div class="p3-card p3-skel"></div></div>
+
+    <div class="p3-card p3-sec">
+      <h3 data-i18n="Sync status">Sync status</h3>
+      <table class="p3-table" id="sources"><thead><tr>
+        <th data-i18n="Source">Source</th><th data-i18n="Status">Status</th>
+        <th class="num" data-i18n="Mapped">Mapped</th><th data-i18n="Last error">Last error</th><th class="num" data-i18n="Sync">Sync</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="p3-card p3-sec">
+      <h3 data-i18n="Alerts">Alerts</h3>
+      <label class="p3-inline"><span data-i18n="p3-threshold">Flag "traffic but no revenue" when a site has at least</span>
+        <input id="minUv" type="number" min="1" step="1" class="p3-num-in">
+        <span data-i18n="clean visitors in the selected period and earns less than $0.01.">clean visitors in the selected period and earns less than $0.01.</span>
+        <button class="btn" id="saveMinUv" data-i18n="Save">Save</button><span id="minUvMsg" class="muted"></span></label>
+    </div>
+  </section>
+
+  <section id="view-mapping" hidden>
+    <div class="p3-card p3-tbl">
+      <div class="p3-th"><h3 data-i18n="Site ↔ property mapping">Site ↔ property mapping</h3><span class="sp"></span><div class="p3-seg" id="filters"></div></div>
+      <p class="p3-hint p3-pad" data-i18n="p3-mapping-help">Properties are matched to sites by domain (www and the bare domain are the same; a Search Console Domain property also covers subdomains). Pick a site to override a match, or ignore a property. Overrides survive every sync.</p>
+      <table class="p3-table" id="props"><thead><tr>
+        <th data-i18n="Source">Source</th><th data-i18n="Property">Property</th><th data-i18n="State">State</th>
+        <th data-i18n="Site">Site</th><th data-i18n="Checked">Checked</th><th data-i18n="Note">Note</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+</main>
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const t = (s) => window.PVI18N.t(s);
+const tk = (k, en) => window.PVI18N.tk(k, en);
+const te = (s) => esc(t(s));
+const SRC = { adsense: 'AdSense', gsc: 'Search Console', adsterra: 'Adsterra', ads_txt: 'ads.txt' };
+let data = null;
+let filter = 'all';
+
+async function api(path, init) {
+  const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...init });
+  if (r.status === 401) { location.href = '/login.html'; throw new Error('auth'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+function ago(ts) {
+  if (!ts) return '—';
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 90) return t('just now');
+  if (s < 5400) return Math.round(s / 60) + ' ' + t('min ago');
+  if (s < 129600) return Math.round(s / 3600) + ' ' + t('h ago');
+  return Math.round(s / 86400) + ' ' + t('d ago');
+}
+// status = small coloured dot + grey text (no filled pills)
+const chip = (cls, text) => `<span class="p3-st ${cls}"><i></i>${esc(text)}</span>`;
+const srcBadge = (s) => `<span class="p3-src">${esc(SRC[s] || s)}</span>`;
+
+function stateChip(source, p) {
+  const v = source === 'ads_txt' ? p.ads_txt : p.state;
+  if (!v) return chip('', '—');
+  const good = ['ready', 'ok', 'active', 'listed'], warn = ['getting_ready', 'requires_review', 'duplicate', 'error'];
+  const cls = good.includes(v) ? 'good' : warn.includes(v) ? 'warn' : 'bad';
+  return chip(cls, tk('ext.state.' + v, v.replace(/_/g, ' ')));
+}
+
+function renderBanner() {
+  const q = new URLSearchParams(location.search);
+  const el = document.getElementById('banner');
+  if (q.get('connected') === 'google') el.innerHTML = `<div class="p3-banner good">${te('Google connected. The first sync runs now in the background of this page; full history arrives with the next daily run.')}</div>`;
+  else if (q.get('error')) {
+    const msgs = {
+      google_not_configured: 'Google is not configured on this deployment: set the OAuth client id and secret (see docs/INTEGRATIONS.md).',
+      google_denied: 'Google access was not granted.',
+      bad_state: 'The sign-in link expired or was opened in another browser. Try again.',
+      no_refresh_token: 'Google did not return offline access. Remove pvuv.ai from your Google account\'s third-party access and connect again.',
+      token_exchange: 'Google rejected the authorization code. Check the redirect URI registered for the OAuth client.',
+    };
+    el.innerHTML = `<div class="p3-banner bad">${te(msgs[q.get('error')] || 'Connection failed.')}</div>`;
+  }
+}
+
+function renderCards() {
+  const g = data.google, a = data.adsterra;
+  const st = Object.fromEntries(data.sources.map((s) => [s.source, s]));
+  const gStatus = !g.configured ? chip('', t('Not configured')) : g.connected ? (st.adsense?.last_error || st.gsc?.last_error ? chip('warn', t('Connected · errors')) : chip('good', t('Connected'))) : chip('', t('Not connected'));
+  const google = `<div class="p3-card">
+    <div class="p3-card-h"><span class="p3-logo">G</span>
+      <div><b>Google</b><div class="muted">AdSense · Search Console</div></div><span class="sp"></span>${gStatus}</div>
+    <p class="p3-hint">${te('Read-only access to AdSense earnings and site status, and Search Console clicks, impressions and index status.')}</p>
+    ${g.connected ? `<div class="p3-kv"><span>${te('Account')}</span><b>${esc(g.account || '—')}</b></div>
+      <div class="p3-kv"><span>${te('Connected')}</span><b>${esc(ago(g.updated_at))}</b></div>
+      <div class="p3-kv"><span>${te('Scopes')}</span><b>${esc(g.scopes.filter((s) => s.includes('/auth/')).map((s) => s.split('/').pop()).join(', ') || '—')}</b></div>` : ''}
+    <div class="p3-actions">
+      ${g.configured ? `<a class="btn p" href="/api/integrations/google/start">${te(g.connected ? 'Reconnect' : 'Connect Google')}</a>` : `<span class="muted">${te('Set the Google OAuth client on the console worker to enable this.')}</span>`}
+      ${g.connected ? `<button class="btn" data-act="gtest">${te('Test')}</button><button class="btn danger" data-act="gdisc">${te('Disconnect')}</button>` : ''}
+    </div><div class="p3-msg" id="gmsg"></div></div>`;
+  const adsterra = `<div class="p3-card">
+    <div class="p3-card-h"><span class="p3-logo">A</span>
+      <div><b>Adsterra</b><div class="muted">${te('Publisher API')}</div></div><span class="sp"></span>${a.connected ? chip(st.adsterra?.last_error ? 'warn' : 'good', t('Connected')) : chip('', t('Not connected'))}</div>
+    <p class="p3-hint">${te('Paste an API token from the Adsterra publisher dashboard (Profile → API). It is checked, then stored encrypted.')}</p>
+    ${a.connected ? `<div class="p3-kv"><span>${te('Token')}</span><b class="mono">${esc(a.token_hint || '••••')}</b></div>` : ''}
+    <div class="p3-actions"><input id="adstToken" type="password" autocomplete="off" placeholder="${te(a.connected ? 'Replace token' : 'API token')}" class="p3-in">
+      <button class="btn p" data-act="asave">${te('Save')}</button>${a.connected ? `<button class="btn danger" data-act="adisc">${te('Disconnect')}</button>` : ''}</div>
+    <div class="p3-msg" id="amsg"></div></div>`;
+  const adstxt = st.ads_txt?.stats || {};
+  const adsTxtCard = `<div class="p3-card">
+    <div class="p3-card-h"><span class="p3-logo">T</span>
+      <div><b>ads.txt</b><div class="muted">${te('No credentials needed')}</div></div><span class="sp"></span>${chip(adstxt.targets ? 'good' : '', adstxt.targets ? t('Active') : t('Idle'))}</div>
+    <p class="p3-hint">${te('Every monetized site\'s /ads.txt is fetched once a day and checked for a DIRECT line with your AdSense publisher id (from the site\'s ad client or the connected AdSense account).')}</p>
+    <div class="p3-kv"><span>${te('Checked sites')}</span><b>${esc(adstxt.targets ?? 0)}</b></div>
+    <div class="p3-kv"><span>${te('Problems')}</span><b>${esc((adstxt.missing ?? 0) + (adstxt.mismatch ?? 0))}</b></div></div>`;
+  document.getElementById('cards').innerHTML = google + adsterra + adsTxtCard;
+}
+
+const REFRESH = '<svg class="p3-i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5"/></svg>';
+function stamp(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts), p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function renderSources() {
+  document.querySelector('#sources tbody').innerHTML = data.sources.map((s) => {
+    const status = !s.connected ? chip('', t('Not connected'))
+      : s.backoff_until && s.backoff_until > Date.now() ? chip('warn', t('Backing off'))
+      : s.last_error ? chip('bad', t('Error'))
+      : s.last_ok_at ? (Date.now() - s.last_ok_at > 48 * 3600e3 ? chip('warn', t('Stale')) : chip('good', t('OK')))
+      : chip('', t('Waiting for first sync'));
+    const sync = s.connected
+      ? `<span class="p3-sync"><span class="p3-synced" title="${esc(s.last_ok_at ? new Date(s.last_ok_at).toLocaleString() : '')}">${te('Synced')} ${esc(s.last_ok_at ? ago(s.last_ok_at) : '—')}</span><button class="p3-syncbtn" data-sync="${esc(s.source)}">${REFRESH}<span>${te('Sync')}</span></button></span>`
+      : '';
+    return `<tr><td>${srcBadge(s.source)}</td><td>${status}</td>
+      <td class="num">${esc(s.mapped)} / ${esc(s.properties)}</td>
+      <td class="p3-err">${s.last_error ? esc(s.last_error) : '<span class="muted">—</span>'}</td>
+      <td class="num">${sync}</td></tr>`;
+  }).join('');
+  const last = Math.max(0, ...data.sources.filter((s) => s.connected).map((s) => s.last_ok_at || 0));
+  document.getElementById('syncedAll').textContent = last ? `${t('Synced')} ${stamp(last)}` : '';
+}
+
+function renderFilters() {
+  const n = (f) => data.properties.filter(f).length;
+  const opts = [['all', t('All'), n(() => true)], ['unmapped', t('Unmapped'), n((p) => !p.site_id && p.mapping !== 'ignored')],
+    ...Object.keys(SRC).map((s) => [s, SRC[s], n((p) => p.source === s)])];
+  document.getElementById('filters').innerHTML = opts.map(([k, l, c]) =>
+    `<button class="${filter === k ? 'on' : ''}" data-filter="${k}">${esc(l)} <b>${c}</b></button>`).join('');
+}
+
+function siteSelect(p) {
+  const auto = p.mapping === 'auto';
+  const cur = p.mapping === 'ignored' ? '__ignore' : auto ? '__auto' : p.site_id;
+  const autoSite = auto && p.site_id ? data.sites.find((s) => s.site_id === p.site_id) : null;
+  const opts = [`<option value="__auto"${cur === '__auto' ? ' selected' : ''}>${te('Auto')}${autoSite ? ' · ' + esc(autoSite.name) : ' · ' + te('no match')}</option>`]
+    .concat(data.sites.map((s) => `<option value="${esc(s.site_id)}"${cur === s.site_id ? ' selected' : ''}>${esc(s.name)} — ${esc(s.domains[0] || '')}</option>`))
+    .concat([`<option value="__ignore"${cur === '__ignore' ? ' selected' : ''}>${te('Ignore')}</option>`]);
+  return `<select class="p3-sel${!p.site_id && p.mapping !== 'ignored' ? ' warn' : ''}" data-src="${esc(p.source)}" data-pid="${esc(p.property_id)}">${opts.join('')}</select>`;
+}
+
+function note(p) {
+  if (p.error) return `<span class="p3-err">${esc(p.error)}</span>`;
+  const d = p.detail || {};
+  if (p.source === 'gsc') {
+    if (p.state === 'duplicate') return `<span class="muted">${te('Overlaps a preferred property of the same site — not synced')}</span>`;
+    const parts = [];
+    if (p.indexed_pages != null) parts.push(`${esc(p.indexed_pages)} ${te('pages with impressions')}`);
+    if (d.home_coverage) parts.push(`${te('Home')}: ${esc(d.home_coverage)}`);
+    return `<span class="muted">${parts.join(' · ') || '—'}</span>`;
+  }
+  if (p.source === 'adsense' && d.policy) return `<span class="p3-err">${esc(tk('ext.policy.' + d.policy.action, d.policy.action.replace(/_/g, ' ').toLowerCase()))}${d.policy.topics?.length ? ' · ' + esc(d.policy.topics.join(', ')) : ''}</span>`;
+  if (p.source === 'ads_txt' && p.ads_txt !== 'ok') return `<span class="muted">${te('Expected')}: ${esc((d.expected || []).join(', '))}${d.http ? ' · HTTP ' + esc(d.http) : ''}</span>`;
+  return '<span class="muted">—</span>';
+}
+
+function renderProps() {
+  const rows = data.properties.filter((p) => filter === 'all' ? true : filter === 'unmapped' ? !p.site_id && p.mapping !== 'ignored' : p.source === filter);
+  document.querySelector('#props tbody').innerHTML = rows.length ? rows.map((p) => `<tr class="${p.mapping === 'ignored' ? 'p3-dim' : ''}">
+    <td>${srcBadge(p.source)}</td><td><b>${esc(p.label || p.property_id)}</b>${p.mapping === 'manual' ? ` <span class="p3-tag">${te('manual')}</span>` : ''}</td>
+    <td>${stateChip(p.source, p)}</td><td>${siteSelect(p)}</td><td class="nowrap">${esc(ago(p.checked_at))}</td><td>${note(p)}</td></tr>`).join('')
+    : `<tr><td colspan="6" class="p3-empty">${te(data.properties.length ? 'Nothing matches this filter.' : 'No properties yet. Connect an account, then run a sync.')}</td></tr>`;
+}
+
+function render() {
+  renderCards(); renderSources(); renderFilters(); renderProps();
+  document.getElementById('minUv').value = data.settings.no_revenue_min_uv;
+}
+
+function showTab(name) {
+  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.tab === name));
+  document.getElementById('view-connections').hidden = name !== 'connections';
+  document.getElementById('view-mapping').hidden = name !== 'mapping';
+}
+
+async function load() { data = await api('/api/integrations'); render(); }
+
+async function sync(source, btn) {
+  const lab = btn && btn.querySelector('span');
+  const prev = lab ? lab.textContent : '';
+  if (btn) { btn.disabled = true; btn.classList.add('busy'); if (lab) lab.textContent = t('Syncing…'); }
+  try { data = await api('/api/integrations/sync', { method: 'POST', body: JSON.stringify(source ? { source } : {}) }); render(); }
+  catch (e) { alert(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.classList.remove('busy'); if (lab) lab.textContent = prev; } }
+}
+
+document.addEventListener('click', async (ev) => {
+  const el = ev.target.closest('[data-act],[data-sync],[data-filter],[data-tab],#syncAll,#saveMinUv');
+  if (!el) return;
+  if (el.dataset.tab) { ev.preventDefault(); showTab(el.dataset.tab); history.replaceState(null, '', location.pathname + location.search + '#' + el.dataset.tab); return; }
+  if (el.dataset.filter) { filter = el.dataset.filter; renderFilters(); renderProps(); return; }
+  if (el.dataset.sync) return sync(el.dataset.sync, el);
+  if (el.id === 'syncAll') return sync(null, el);
+  if (el.id === 'saveMinUv') {
+    const msg = document.getElementById('minUvMsg');
+    try { await api('/api/integrations/settings', { method: 'POST', body: JSON.stringify({ no_revenue_min_uv: Number(document.getElementById('minUv').value) }) }); msg.textContent = t('Saved'); }
+    catch (e) { msg.textContent = e.message; }
+    return;
+  }
+  const act = el.dataset.act;
+  if (act === 'gdisc' && confirm(t('Disconnect Google? Stored AdSense and Search Console data is kept; syncing stops.'))) { await api('/api/integrations/google/disconnect', { method: 'POST' }); return load(); }
+  if (act === 'adisc' && confirm(t('Disconnect Adsterra?'))) { await api('/api/integrations/adsterra', { method: 'DELETE' }); return load(); }
+  if (act === 'gtest') {
+    const m = document.getElementById('gmsg');
+    try { await api('/api/integrations/google/test', { method: 'POST' }); m.className = 'p3-msg good'; m.textContent = t('Google access works.'); }
+    catch (e) { m.className = 'p3-msg bad'; m.textContent = e.message; }
+  }
+  if (act === 'asave') {
+    const m = document.getElementById('amsg');
+    const token = document.getElementById('adstToken').value.trim();
+    if (!token) return;
+    el.disabled = true;
+    try { const r = await api('/api/integrations/adsterra', { method: 'PUT', body: JSON.stringify({ token }) }); await load(); const m2 = document.getElementById('amsg'); m2.className = 'p3-msg good'; m2.textContent = `${t('Saved')} · ${r.domains} ${t('domains')}`; }
+    catch (e) { m.className = 'p3-msg bad'; m.textContent = e.message; el.disabled = false; }
+  }
+});
+
+document.addEventListener('change', async (ev) => {
+  const s = ev.target.closest('select.p3-sel');
+  if (!s) return;
+  const v = s.value;
+  const body = { source: s.dataset.src, property_id: s.dataset.pid, mode: v === '__auto' ? 'auto' : v === '__ignore' ? 'ignored' : 'manual', site_id: v.startsWith('__') ? null : v };
+  try { await api('/api/integrations/mapping', { method: 'PUT', body: JSON.stringify(body) }); await load(); } catch (e) { alert(e.message); }
+});
+
+window.PVI18N.mountSelect(document.getElementById('lang'));
+window.PVI18N.applyStatic();
+document.addEventListener('pvuv:lang', () => { if (data) render(); renderBanner(); });
+renderBanner();
+showTab(location.hash === '#mapping' ? 'mapping' : 'connections');
+load().then(() => {
+  // right after connecting, kick off a first pull so the page is not empty
+  if (new URLSearchParams(location.search).get('connected') === 'google') sync(null, null);
+}).catch((e) => { document.getElementById('cards').innerHTML = `<div class="p3-banner bad">${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>

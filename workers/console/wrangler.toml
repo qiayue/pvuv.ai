@@ -8,6 +8,7 @@
 #   wrangler secret put HMAC_KEY             -c workers/console/wrangler.toml  (session cookies)
 #   wrangler secret put GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml  (Google login)
 #   wrangler secret put GITHUB_CLIENT_SECRET -c workers/console/wrangler.toml  (GitHub login)
+#   wrangler secret put EXT_GOOGLE_CLIENT_SECRET -c workers/console/wrangler.toml  (optional: dedicated integrations client)
 # Login is OAuth-only (Google / GitHub). Configure at least one provider or
 # nobody can sign in.
 #
@@ -42,6 +43,8 @@ ADMIN_EMAILS = "you@example.com"
 # is offered only when BOTH are set. Register these callback URLs:
 #   https://<your-console-domain>/api/auth/google/callback
 #   https://<your-console-domain>/api/auth/github/callback
+# Integrations (AdSense / Search Console, docs/INTEGRATIONS.md) also need:
+#   https://<your-console-domain>/api/integrations/google/callback
 # Hostname of the ingest worker, used to build the embed snippet shown after
 # creating a site. Declared rather than derived: the console cannot infer it
 # from its own hostname once the two are not siblings (e.g. console on
