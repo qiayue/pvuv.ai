@@ -30,6 +30,7 @@ import { localYMD, addDays, dayStr, localMidnightUtc } from '../../../shared/tz'
 import { classifyChannel, searchOrAiSourceSql } from '../../../shared/channel';
 import { loadExternal, type Attention, type ExternalSite } from './external';
 import { cohortTag } from '../../../shared/labels';
+import { readPortfolioThresholds, PORTFOLIO_DEFAULTS, type PortfolioThresholds } from '../../../shared/thresholds';
 
 export { cohortTag };
 
@@ -37,17 +38,12 @@ export type Stage = 'setup' | 'awaiting_crawl' | 'crawled' | 'organic' | 'growin
 export const STAGES: Stage[] = ['setup', 'awaiting_crawl', 'crawled', 'organic', 'growing', 'declining', 'archived'];
 export type Health = 'ok' | 'warn' | 'bad' | 'none';
 
-/** Lifecycle / attention thresholds. Defaults are the contract's (§1);
- *  overridable per instance via instance_settings key `portfolio_thresholds`
- *  (a JSON object with any subset of these keys). */
-export const DEFAULT_THRESHOLDS = {
-  /** stable growth: ≥ this many clean visitors in the last 7 complete days … */
-  growth_min_uv: 1000,
-  /** … and a 7-day change of at least this many percent (negative = allowed dip) */
-  growth_min_delta_pct: -10,
-  /** declining: 28-day clean visitors down by more than this many percent */
-  decline_pct: 30,
-  /** …and only once the previous 28 days had at least this many clean visitors */
+/** Lifecycle / attention thresholds. The four the owner can tune (contract
+ *  §1) come from shared/thresholds.ts — instance setting
+ *  `portfolio_thresholds`, edited on the settings page. The rest are fixed by
+ *  the contract and shipped here so the payload documents every number used. */
+export const FIXED_THRESHOLDS = {
+  /** declining needs at least this many clean visitors in the previous 28 days */
   decline_min_uv: 100,
   /** waiting for a crawl longer than this many days since going live */
   crawl_overdue_days: 3,
@@ -55,29 +51,16 @@ export const DEFAULT_THRESHOLDS = {
   organic_overdue_days: 14,
   /** no event for this many hours */
   no_data_hours: 24,
-  /** invalid-traffic share (bot + suspect pageviews) above this percent */
-  ivt_high_pct: 20,
-  /** IVT spike: the last complete day's share at least this many points above the period's previous value */
+  /** IVT spike: the last complete day's share at least this many points above the previous period */
   ivt_spike_pts: 10,
   /** ignore IVT on fewer pageviews than this (too noisy) */
   ivt_min_pv: 50,
 };
-export type Thresholds = typeof DEFAULT_THRESHOLDS;
-export const THRESHOLDS_KEY = 'portfolio_thresholds';
+export const DEFAULT_THRESHOLDS = { ...PORTFOLIO_DEFAULTS, ...FIXED_THRESHOLDS };
+export type Thresholds = PortfolioThresholds & typeof FIXED_THRESHOLDS;
 
 export async function loadThresholds(db: D1Database): Promise<Thresholds> {
-  const out = { ...DEFAULT_THRESHOLDS };
-  try {
-    const row = await db.prepare('SELECT value FROM instance_settings WHERE key = ?').bind(THRESHOLDS_KEY).first<{ value: string }>();
-    if (row?.value) {
-      const parsed = JSON.parse(row.value) as Record<string, unknown>;
-      for (const k of Object.keys(out) as (keyof Thresholds)[]) {
-        const v = Number(parsed[k]);
-        if (parsed[k] !== undefined && parsed[k] !== null && Number.isFinite(v)) out[k] = v;
-      }
-    }
-  } catch { /* table missing or malformed JSON → defaults */ }
-  return out;
+  return { ...(await readPortfolioThresholds(db)), ...FIXED_THRESHOLDS };
 }
 
 /** The four engines shown as chips; values are shared/crawlers.ts engine ids. */
@@ -111,7 +94,7 @@ export interface StageInput {
 const pct = (cur: number, prev: number): number | null => (prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null);
 
 export function isGrowing(i: StageInput, th: Thresholds): boolean {
-  if (i.clean_uv_7d < th.growth_min_uv) return false;
+  if (i.clean_uv_7d < th.growth_uv_7d) return false;
   const d = pct(i.clean_uv_7d, i.clean_uv_prev_7d);
   return d === null || d >= th.growth_min_delta_pct;
 }
@@ -165,7 +148,7 @@ export function computeAttention(i: AttentionInput, th: Thresholds, now: number)
   if (i.stage === 'declining') {
     out.push({ code: 'declining', severity: 'high', params: { pct: pct(i.clean_uv_28d, i.clean_uv_prev_28d) ?? 0, days: 28 } });
   }
-  const ivtHigh = i.ivt_pct != null && i.pv >= th.ivt_min_pv && i.ivt_pct > th.ivt_high_pct;
+  const ivtHigh = i.ivt_pct != null && i.pv >= th.ivt_min_pv && i.ivt_pct > th.ivt_pct;
   if (ivtHigh) {
     out.push({
       code: 'ivt_high', severity: i.adguard_mode === 'off' ? 'critical' : 'high',
@@ -174,7 +157,7 @@ export function computeAttention(i: AttentionInput, th: Thresholds, now: number)
   } else if (
     i.last_day_ivt_pct != null && i.last_day_pv >= th.ivt_min_pv
     && i.last_day_ivt_pct >= (i.ivt_pct_prev ?? 0) + th.ivt_spike_pts
-    && i.last_day_ivt_pct > th.ivt_high_pct / 2
+    && i.last_day_ivt_pct > th.ivt_pct / 2
   ) {
     out.push({ code: 'ivt_spike', severity: 'high', params: { ivt_pct: i.last_day_ivt_pct, prev_pct: i.ivt_pct_prev ?? 0 } });
   }
@@ -216,7 +199,7 @@ export interface PortfolioPayload {
     ivt_pct: number | null; ivt_pct_prev: number | null;
     organic_uv: number; organic_uv_prev: number; ai_uv: number; ai_uv_prev: number;
     top10_share: number | null;
-    series: { day: string; uv: number; pv: number; ivt_pct: number | null; organic_uv: number; ai_uv: number }[];
+    series: { day: string; uv: number; pv: number; ivt_pct: number | null; organic_uv: number; ai_uv: number; launched_per_day: number }[];
   };
   funnel: { total: number; has_data: number; google_crawled: number; organic: number; weekly_1000: number };
   stage_counts: Record<Stage, number>;
@@ -475,7 +458,7 @@ export async function portfolio(
       else if (!d || d.pv === 0) health.push(day === w.today ? 'none' : 'bad');
       else {
         const share = d.pv >= th.ivt_min_pv ? (d.ivt / d.pv) * 100 : 0;
-        health.push(share > th.ivt_high_pct ? 'bad' : share > th.ivt_high_pct / 2 ? 'warn' : 'ok');
+        health.push(share > th.ivt_pct ? 'bad' : share > th.ivt_pct / 2 ? 'warn' : 'ok');
       }
     }
 
@@ -531,7 +514,17 @@ export async function portfolio(
   const tUv = sum((s) => s.uv), tPv = sum((s) => s.pv), tUvP = sum((s) => s.uv_prev), tPvP = sum((s) => s.pv_prev);
   const sorted = active.map((s) => s.uv).sort((x, y) => y - x);
   const topN = Math.max(1, Math.ceil(active.length * 0.1));
-  const days = [...totalSeries.keys()].sort();
+  // every day of the period (UTC-resolved), zero-filled, plus sites launched that day
+  const days: string[] = [];
+  for (let d = anyPeriod.start; d <= anyPeriod.end && days.length < 800; d = shift(d, 1)) days.push(d);
+  for (const k of totalSeries.keys()) if (!days.includes(k)) days.push(k);
+  days.sort();
+  const launched = new Map<string, number>();
+  for (const s of active) {
+    const c = localYMD(s.created_at, s.timezone);
+    const d = dayStr(c.y, c.m0, c.d);
+    launched.set(d, (launched.get(d) ?? 0) + 1);
+  }
   const stageCounts = Object.fromEntries(STAGES.map((s) => [s, 0])) as Record<Stage, number>;
   for (const s of sites) stageCounts[s.stage]++;
 
@@ -547,8 +540,8 @@ export async function portfolio(
       ai_uv: sum((s) => s._o.a), ai_uv_prev: sum((s) => s._o.ap),
       top10_share: tUv > 0 ? Math.round((sorted.slice(0, topN).reduce((a, b) => a + b, 0) / tUv) * 1000) / 1000 : null,
       series: days.map((day) => {
-        const t = totalSeries.get(day)!;
-        return { day, uv: t.uv, pv: t.pv, ivt_pct: ivtPct(t.ivt, t.pv), organic_uv: t.o, ai_uv: t.a };
+        const t = totalSeries.get(day) ?? { uv: 0, pv: 0, ivt: 0, o: 0, a: 0 };
+        return { day, uv: t.uv, pv: t.pv, ivt_pct: ivtPct(t.ivt, t.pv), organic_uv: t.o, ai_uv: t.a, launched_per_day: launched.get(day) ?? 0 };
       }),
     },
     funnel: {
@@ -556,7 +549,7 @@ export async function portfolio(
       has_data: active.filter((s) => s.stage !== 'setup').length,
       google_crawled: active.filter((s) => s.crawl.google).length,
       organic: active.filter((s) => firstOrganicDay.has(s.site_id) || s._o.o + s._o.a > 0).length,
-      weekly_1000: active.filter((s) => s._clean7 >= th.growth_min_uv).length,
+      weekly_1000: active.filter((s) => s._clean7 >= th.growth_uv_7d).length,
     },
     stage_counts: stageCounts,
     attention_count: active.filter((s) => s.attention.length > 0).length,
@@ -577,7 +570,7 @@ function growingSince(series: { day: string; uv: number }[], w: Windows, th: Thr
   for (let k = series.length - 1; k >= 6; k--) {
     let s = 0;
     for (let j = k - 6; j <= k; j++) s += series[j].uv;
-    if (s >= th.growth_min_uv) since = series[k - 6].day; else break;
+    if (s >= th.growth_uv_7d) since = series[k - 6].day; else break;
   }
   return since ? dayStart(since, w.tz) : null;
 }

@@ -113,7 +113,9 @@ test('GET /api/portfolio returns the contract shape', async () => {
   for (const k of ['uv', 'uv_prev', 'pv', 'pv_prev', 'ivt_pct', 'ivt_pct_prev', 'organic_uv', 'organic_uv_prev', 'ai_uv', 'ai_uv_prev', 'top10_share', 'series']) {
     assert.ok(k in p.totals, 'totals.' + k);
   }
-  assert.ok(p.totals.series.length >= 7 && p.totals.series.every((x) => typeof x.day === 'string' && typeof x.uv === 'number'));
+  assert.equal(p.totals.series.length, 7, 'every day of the period');
+  assert.ok(p.totals.series.every((x) => typeof x.day === 'string' && typeof x.uv === 'number' && typeof x.launched_per_day === 'number'));
+  assert.equal(p.totals.series.reduce((a, x) => a + x.launched_per_day, 0), 1, 'setupA was created 3 days ago');
   assert.deepEqual(Object.keys(p.funnel).sort(), ['google_crawled', 'has_data', 'organic', 'total', 'weekly_1000']);
   assert.deepEqual(Object.keys(p.stage_counts).sort(), ['archived', 'awaiting_crawl', 'crawled', 'declining', 'growing', 'organic', 'setup']);
   assert.equal(typeof p.attention_count, 'number');
@@ -193,7 +195,7 @@ test('stage rules (pure)', () => {
   assert.equal(computeStage({ ...decl, clean_uv_28d: 700 }, TH).stage, 'growing', 'exactly −30 % is not declining');
   assert.equal(computeStage({ ...decl, first_search_crawl_at: null, first_organic_at: null }, TH).stage, 'declining');
   // configurable
-  assert.equal(computeStage({ ...base, clean_uv_7d: 200 }, { ...TH, growth_min_uv: 100 }).stage, 'growing');
+  assert.equal(computeStage({ ...base, clean_uv_7d: 200 }, { ...TH, growth_uv_7d: 100 }).stage, 'growing');
 });
 
 test('attention rules (pure)', () => {
@@ -243,9 +245,9 @@ test('auth and scoping', async () => {
 
 test('thresholds come from instance settings', async () => {
   const { env, db } = seeded();
-  db.prepare("INSERT INTO instance_settings(key,value,updated_at) VALUES('portfolio_thresholds',?,1)").run(JSON.stringify({ ivt_high_pct: 50, growth_min_uv: 100 }));
+  db.prepare("INSERT INTO instance_settings(key,value,updated_at) VALUES('portfolio_thresholds',?,1)").run(JSON.stringify({ ivt_pct: 50, growth_uv_7d: 100 }));
   const p = await (await getConsole(env, '/api/portfolio')).json();
-  assert.equal(p.thresholds.ivt_high_pct, 50);
+  assert.equal(p.thresholds.ivt_pct, 50);
   const by = Object.fromEntries(p.sites.map((s) => [s.site_id, s]));
   assert.deepEqual(by.ivtF.attention, []);
   assert.equal(by.orgD.stage, 'growing', '50 clean visitors a day ≥ 100 a week');
