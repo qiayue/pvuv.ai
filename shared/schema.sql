@@ -231,8 +231,8 @@ CREATE TABLE crawler_milestones (
   kind          TEXT NOT NULL,          -- search / ai / ads / seo / other
   first_seen_at INTEGER NOT NULL,       -- ms; edge-sourced = start of that local day
   last_seen_at  INTEGER NOT NULL,
-  first_source  TEXT,                   -- beacon | edge
-  first_path    TEXT,                   -- first page crawled (beacon only)
+  first_source  TEXT,                   -- beacon | edge | server
+  first_path    TEXT,                   -- first page crawled (beacon / server)
   updated_at    INTEGER,
   PRIMARY KEY (site_id, engine)
 );
@@ -242,15 +242,27 @@ CREATE TABLE rollup_crawler_daily (
   site_id  TEXT NOT NULL,
   day      TEXT NOT NULL,               -- YYYY-MM-DD in the site's timezone
   engine   TEXT NOT NULL,
-  source   TEXT NOT NULL,               -- beacon (JS-rendering crawlers) | edge (Cloudflare HTML requests)
+  source   TEXT NOT NULL,               -- beacon (JS-rendering crawlers) | edge (Cloudflare HTML requests) | server (0025: reported by the site's Worker)
   kind     TEXT NOT NULL,
   hits     INTEGER DEFAULT 0,
-  pages    INTEGER,                     -- distinct paths (beacon only; NULL for edge)
+  pages    INTEGER,                     -- distinct paths (beacon only; NULL for edge/server)
   first_ts INTEGER, last_ts INTEGER,
+  error_hits INTEGER,                   -- server only (0025): hits answered with status >= 400
+  verified_hits INTEGER,                -- server only (0025): hits the reporter marked verified (self-asserted)
   PRIMARY KEY (site_id, day, engine, source)
 );
 -- ... and the pages crawlers fetched (beacon only, top paths per engine-day)
 CREATE TABLE rollup_crawler_page_daily (
+  site_id TEXT NOT NULL,
+  day     TEXT NOT NULL,
+  engine  TEXT NOT NULL,
+  path    TEXT NOT NULL,
+  hits    INTEGER DEFAULT 0,
+  PRIMARY KEY (site_id, day, engine, path)
+);
+-- ... and the pages reported by the site's own Worker (0025, server source;
+-- accumulated per request, capped at 200 new paths per engine-day)
+CREATE TABLE rollup_crawler_server_page_daily (
   site_id TEXT NOT NULL,
   day     TEXT NOT NULL,
   engine  TEXT NOT NULL,

@@ -5,7 +5,10 @@
  * newly launched site, durably: raw crawler events are trimmed early by
  * retention (bot_events_days), so first-seen has to be recorded as it happens.
  *
- * Two sources, each written by the job that already owns its data:
+ * Two of the three sources are written here, each by the job that already
+ * owns its data (the third, `server`, is reported by the site's own Worker
+ * through POST /v1/sites/:id/crawler_hits — shared/crawler_hits.ts — and
+ * accumulates in its own rows, which nothing here deletes):
  *   beacon — crawler pageviews (crawlers that render JS), recomputed for the
  *            site's local today (+ yesterday while it can still change) by the
  *            hourly rollup, from the crawler_engine stamped at ingest.
@@ -25,6 +28,7 @@ import { localYMD, localDaySpan, addDays, dayStr } from '../../../shared/tz';
 import { classifyCrawler, kindForEngine, otherEngine, type CrawlerKind } from '../../../shared/crawlers';
 import { matchBot, type BotEntry } from '../../../shared/botdir';
 import { monthSuffix, eventsTableName } from '../../../shared/events';
+import { milestoneUpsert } from '../../../shared/crawler_hits';
 
 /** Paths stored per engine per day. A new site's crawl is a few dozen pages;
  *  the cap only bounds a large site being swept. `pages` keeps the true count. */
@@ -75,29 +79,6 @@ export function foldBeacon(groups: BeaconGroup[]): Map<string, EngineDay> {
     e.paths.set(g.path, (e.paths.get(g.path) ?? 0) + g.hits);
   }
   return out;
-}
-
-function milestoneUpsert(
-  db: D1Database, siteId: string, engine: string, kind: string,
-  firstAt: number, lastAt: number, source: 'beacon' | 'edge', firstPath: string | null, now: number,
-): D1PreparedStatement {
-  // SET expressions all see the OLD row (SQLite assigns simultaneously), so the
-  // CASEs compare against the stored first_seen_at before MIN() lowers it.
-  return db.prepare(`
-    INSERT INTO crawler_milestones (site_id, engine, kind, first_seen_at, last_seen_at, first_source, first_path, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(site_id, engine) DO UPDATE SET
-      kind = excluded.kind,
-      first_source = CASE WHEN excluded.first_seen_at < crawler_milestones.first_seen_at
-                          THEN excluded.first_source ELSE crawler_milestones.first_source END,
-      first_path = CASE WHEN excluded.first_seen_at < crawler_milestones.first_seen_at THEN excluded.first_path
-                        WHEN excluded.first_seen_at = crawler_milestones.first_seen_at
-                          THEN COALESCE(crawler_milestones.first_path, excluded.first_path)
-                        ELSE crawler_milestones.first_path END,
-      first_seen_at = MIN(crawler_milestones.first_seen_at, excluded.first_seen_at),
-      last_seen_at = MAX(crawler_milestones.last_seen_at, excluded.last_seen_at),
-      updated_at = excluded.updated_at
-  `).bind(siteId, engine, kind, firstAt, lastAt, source, firstPath, now);
 }
 
 /** Existing monthly partitions covering a UTC [start, end) span. */

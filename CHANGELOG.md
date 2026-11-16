@@ -20,6 +20,27 @@ breaking changes, always with a D1 migration and upgrade notes in
   a one-time backfill. New `GET /v1/sites/{id}/crawlers`, console "Crawlers"
   tab, MCP `get_crawlers`, CLI `pvuv crawlers`, and `first_search_crawl_at` on
   every `/v1/sites` item. Never feeds PV/UV, scoring, verdicts or ad protection.
+- Server-side crawler reporting, a third crawler source (`server`) next to
+  `beacon` and `edge`, for sites served by their own Worker (crawlers do not
+  run JavaScript). `POST /v1/sites/{id}/tokens` now mints a **site-scoped
+  ingest-only token** (`{token, token_id, site_id, scopes: ["ingest"], name,
+  created_at}`; shown once, stored hashed, max 20 live per site, a new token
+  per call) — it replaces the former `{"token": null, "supported": false}`
+  stub. New `POST /v1/sites/{id}/crawler_hits` (`{hits:[{ua, path, ip?,
+  status?, country?, ts?, verified?}]}` → `{accepted, ignored}`; ≤ 100 hits /
+  64 KB per request; non-crawler user agents ignored; query strings dropped;
+  hits older than 48 h ignored) writes one batch per request into the crawler
+  tables only — never events, PV/UV, scoring, verdicts or ad protection.
+  Ingest tokens cannot read anything or write anything else; they are listed
+  ("Ingest only (crawler reports)") and revocable in the console.
+- `GET /v1/sites/{id}/crawlers`: `sources.server`, per-engine `server_hits`,
+  `server_error_hits` (status ≥ 400), `server_verified_hits`, `days[].server`;
+  `hits` is now the per-day max of all three sources; top pages include
+  server-reported paths (so non-JS crawlers show up); new `bot` (one engine,
+  case-insensitive) and `search` (search engines only) parameters. The console
+  "Crawlers" tab shows the new source.
+- Migration `0025_crawler_server_hits.sql` (`error_hits` / `verified_hits`
+  columns, `rollup_crawler_server_page_daily`).
 - Migration `0024_crawler_milestones.sql`. Event partitions gain a
   `crawler_engine` column through the existing automatic partition repair.
   Order-independent: before the migration lands the crawler step logs and
@@ -61,9 +82,10 @@ breaking changes, always with a D1 migration and upgrade notes in
   in all 7 languages); archived sites are tagged in the site list.
 
 ### Upgrade notes
-- Apply migrations `0022`, `0023` and `0024` before deploying the api, console
+- Apply migrations `0022`, `0023`, `0024` and `0025` before deploying the api, console
   and cron workers (0024 is order-independent: until it lands the crawler step
-  skips itself).
+  skips itself; until 0025 lands `crawler_hits` answers `503` and the crawler
+  report simply shows no server source).
 - `workers/api/wrangler.toml` has new `[vars]` `CONSOLE_HOST` and `INGEST_HOST`
   (used for the returned snippet); set them to your hosts.
 

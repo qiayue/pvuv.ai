@@ -510,7 +510,7 @@ async function loadTokens() {
     + live.map((x) => `<tr style="border-top:1px solid #1e2530">
         <td style="padding:5px 0">${esc(x.name)}</td>
         <td style="color:#c7cdd8"><code>${esc(x.prefix)}…</code></td>
-        <td>${x.site_id ? esc(x.site_id) : te('all sites')} · ${te(x.permission === 'write' ? 'Read/write' : 'Read only')}</td>
+        <td>${x.site_id ? esc(x.site_id) : te('all sites')} · ${te(x.permission === 'write' ? 'Read/write' : x.permission === 'ingest' ? 'Ingest only (crawler reports)' : 'Read only')}</td>
         <td style="color:#8b93a1">${x.last_used_at ? te('used') + ' ' + esc(new Date(x.last_used_at).toISOString().slice(0, 10)) : te('never used')}</td>
         <td style="text-align:right"><button type="button" data-revoke="${esc(x.token_id)}"
           style="background:none;border:1px solid #5a2020;color:#f87171;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">${te('Revoke')}</button></td>

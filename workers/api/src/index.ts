@@ -17,7 +17,11 @@
  *   GET /v1/templates                               — the owner's site templates
  *
  * Site provisioning (write tokens only — see handleWrite):
- *   POST  /v1/sites, PATCH /v1/sites/:id, POST /v1/sites/:id/funnels
+ *   POST  /v1/sites, PATCH /v1/sites/:id, POST /v1/sites/:id/funnels,
+ *   POST  /v1/sites/:id/tokens (mints a site-scoped ingest-only token)
+ *
+ * Server-side crawler reporting (ingest token, or the owner's write token):
+ *   POST  /v1/sites/:id/crawler_hits — the `server` source of /crawlers
  *
  * Auth (§10): external systems send `Authorization: Bearer <API_TOKEN>`
  * (server-side token, full read access); owners use the console's signed
@@ -26,8 +30,11 @@
 
 import { parsePeriod, siteTimezone, overview, sitesSummary, realtime, timeseries, breakdown, quality, alerts, anomalies, funnel, funnelDropoff, traffic, visitorsList, visitorProfile, ranking, adguardImpact, edge, vitals, conversionTiming, ApiError, FILTERABLE, type Filter, type FunnelStep } from './queries';
 import { verifySession } from './auth';
-import { crawlers, firstSearchCrawls } from './crawlers';
-import { bearerFrom, hashToken, looksLikeApiToken } from '../../../shared/tokens';
+import { crawlers, firstSearchCrawls, truthyParam } from './crawlers';
+import { bearerFrom, hashToken, looksLikeApiToken, createToken } from '../../../shared/tokens';
+import {
+  prepareCrawlerHits, crawlerHitStatements, CRAWLER_HITS_MAX_BODY_BYTES, CRAWLER_HITS_MAX_PER_REQUEST, MAX_INGEST_TOKENS_PER_SITE,
+} from '../../../shared/crawler_hits';
 import { hmacSign } from '../../../shared/ids';
 import { CONFIG } from '../../../shared/config.gen';
 import {
@@ -149,7 +156,9 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (resource === 'ctit') return json(await conversionTiming(env.DB, siteId, period));
   if (resource === 'adguard') return json(await adguardImpact(env.DB, siteId, period));
   if (resource === 'edge') return json(await edge(env.DB, siteId, period));
-  if (resource === 'crawlers') return json(await crawlers(env.DB, siteId, period, { limit: parseInt(q.get('limit') ?? '20', 10) }));
+  if (resource === 'crawlers') {
+    return json(await crawlers(env.DB, siteId, period, { limit: parseInt(q.get('limit') ?? '20', 10), bot: q.get('bot'), search: truthyParam(q.get('search')) }));
+  }
   if (resource === 'alerts') return json(await alerts(env.DB, siteId, period, filters));
   if (resource === 'anomalies') return json(await anomalies(env.DB, siteId));
   // funnel: ad-hoc `steps`, or a saved funnel by `funnel_id` (so an agent can
@@ -202,10 +211,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 //   POST  /v1/sites                  find-or-create a site by domain (+ template)
 //   PATCH /v1/sites/:id              rename, change domains, archive / restore
 //   POST  /v1/sites/:id/funnels      find-or-create a saved funnel by name
-//   POST  /v1/sites/:id/tokens       stub — crawler reporting is unavailable
+//   POST  /v1/sites/:id/tokens       mint a site-scoped ingest-only token
+//   POST  /v1/sites/:id/crawler_hits server-side crawler reports (ingest token)
 //
-// Every call is safe to retry: an integration that times out and tries again
-// gets the same site / funnel back rather than a duplicate.
+// Every call except /tokens is safe to retry: an integration that times out
+// and tries again gets the same site / funnel back rather than a duplicate.
+// /tokens mints a new token per call (a plaintext cannot be shown twice);
+// /crawler_hits is additive (a retried report is counted again).
 // ---------------------------------------------------------------------------
 
 /** Route a non-GET request. Unknown paths are a 404 BEFORE any auth, so a typo
@@ -213,10 +225,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 async function handleWrite(request: Request, env: Env): Promise<Response> {
   const path = new URL(request.url).pathname;
   const siteMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})$/);
-  const subMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/(tokens|funnels)$/);
+  const subMatch = path.match(/^\/v1\/sites\/([A-Za-z0-9]{4,16})\/(tokens|funnels|crawler_hits)$/);
   const method = path === '/v1/sites' || subMatch ? 'POST' : siteMatch ? 'PATCH' : null;
   if (!method) return json({ error: 'not found' }, 404);
   if (request.method !== method) return json({ error: 'method not allowed' }, 405);
+  // crawler reports have their own auth (ingest tokens) and limits
+  if (subMatch && subMatch[2] === 'crawler_hits') return crawlerHits(request, env, subMatch[1]);
 
   const token = bearerFrom(request);
   if (!token || !looksLikeApiToken(token)) throw new ApiError(401, 'auth required');
@@ -231,7 +245,11 @@ async function handleWrite(request: Request, env: Env): Promise<Response> {
   const text = await request.text();
   if (new TextEncoder().encode(text).byteLength > 16384) return json({error:'request too large'},413);
   let body: Record<string, unknown>;
-  try { body = JSON.parse(text); } catch { return json({error: 'bad json'}, 400); }
+  // POST /tokens: the body (just an optional name) may be empty
+  if (!text.trim() && subMatch?.[2] === 'tokens') body = {};
+  else {
+    try { body = JSON.parse(text); } catch { return json({error: 'bad json'}, 400); }
+  }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return json({error: 'bad json'}, 400);
 
   try {
@@ -242,10 +260,7 @@ async function handleWrite(request: Request, env: Env): Promise<Response> {
     }
     const siteId = subMatch![1];
     await requireOwner(env, siteId, caller.owner_id);
-    // GeFeiSites treats an absent token as disabled crawler reporting. The
-    // self-hosted analytics schema counts crawler pageviews in overall UV, so
-    // minting an ingest token here would misrepresent crawlers as visitors.
-    if (subMatch![2] === 'tokens') return json({token:null, supported:false, reason:'crawler reporting is unavailable'});
+    if (subMatch![2] === 'tokens') return await mintIngestToken(env, caller.owner_id, siteId, body);
     const steps = validateSteps(body.steps);
     if (steps.length < 2) return json({ error: `a funnel needs 2–8 steps with a value (max ${MAX_STEP_LENGTH} chars)` }, 400);
     return json(await ensureFunnel(env.DB, siteId, funnelName(body.name), steps));
@@ -253,6 +268,86 @@ async function handleWrite(request: Request, env: Env): Promise<Response> {
     if (err instanceof SiteError) throw new ApiError(err.status, err.message);
     throw err;
   }
+}
+
+/** POST /v1/sites/:id/tokens — mint a site-scoped, ingest-only token for
+ *  server-side crawler reporting. NOT idempotent: the plaintext cannot be
+ *  recovered, so every call mints a new token (callers ask only when they hold
+ *  none). Capped at MAX_INGEST_TOKENS_PER_SITE live tokens per site; old ones
+ *  are revoked in the console token list. */
+async function mintIngestToken(env: Env, owner: string, siteId: string, body: Record<string, unknown>): Promise<Response> {
+  const live = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM api_tokens WHERE site_id = ? AND permission = 'ingest' AND revoked_at IS NULL",
+  ).bind(siteId).first<{ n: number }>();
+  if ((live?.n ?? 0) >= MAX_INGEST_TOKENS_PER_SITE) {
+    return json({ error: `this site already has ${MAX_INGEST_TOKENS_PER_SITE} live ingest tokens — revoke unused ones in the console` }, 409);
+  }
+  const name = (typeof body.name === 'string' ? body.name.trim() : '') || 'crawler ingest';
+  const { plaintext, row } = await createToken(env.HMAC_KEY, owner, name, siteId);
+  await env.DB.prepare(`
+    INSERT INTO api_tokens (token_id, owner_id, name, token_hash, prefix, site_id, created_at, permission)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'ingest')
+  `).bind(row.token_id, row.owner_id, row.name, row.token_hash, row.prefix, row.site_id, row.created_at).run();
+  return json({
+    token: plaintext, token_id: row.token_id, site_id: siteId, scopes: ['ingest'],
+    name: row.name, prefix: row.prefix, created_at: row.created_at,
+  });
+}
+
+/** POST /v1/sites/:id/crawler_hits — server-side crawler reports (the `server`
+ *  source of the crawler metric). Auth: an ingest token scoped to THIS site, or
+ *  the owner's all-sites read/write token. One point read (token + site) and one
+ *  batched write per request; nothing reaches events / PV/UV / scoring. */
+async function crawlerHits(request: Request, env: Env, siteId: string): Promise<Response> {
+  const token = bearerFrom(request);
+  if (!token || !looksLikeApiToken(token)) throw new ApiError(401, 'auth required');
+  const hash = await hashToken(env.HMAC_KEY, token);
+  const row = await env.DB.prepare(`
+    SELECT t.token_id, t.owner_id, t.site_id, t.permission, t.revoked_at, t.last_used_at,
+           s.owner_id AS site_owner, s.status, s.timezone
+    FROM api_tokens t LEFT JOIN sites s ON s.site_id = ?
+    WHERE t.token_hash = ?
+  `).bind(siteId, hash).first<{
+    token_id: string; owner_id: string; site_id: string | null; permission: string; revoked_at: number | null;
+    last_used_at: number | null; site_owner: string | null; status: string | null; timezone: string | null;
+  }>();
+  if (!row || row.revoked_at) throw new ApiError(401, 'bad token');
+  if (row.permission === 'ingest') {
+    if (row.site_id !== siteId) throw new ApiError(403, 'token not valid for this site');
+  } else if (row.permission !== 'write' || row.site_id) {
+    throw new ApiError(403, 'ingest or write permission required');
+  }
+  if (!row.site_owner || row.site_owner !== row.owner_id) throw new ApiError(403, 'not your site');
+  if (row.status && row.status !== 'active') throw new ApiError(403, 'site is not active');
+
+  const length = Number(request.headers.get('content-length') || 0);
+  if (length > CRAWLER_HITS_MAX_BODY_BYTES) return json({ error: 'request too large' }, 413);
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > CRAWLER_HITS_MAX_BODY_BYTES) return json({ error: 'request too large' }, 413);
+  let body: { hits?: unknown };
+  try { body = JSON.parse(text); } catch { return json({ error: 'bad json' }, 400); }
+  if (!body || typeof body !== 'object' || !Array.isArray(body.hits)) return json({ error: 'body must be {"hits": [...]}' }, 400);
+  if (body.hits.length > CRAWLER_HITS_MAX_PER_REQUEST) {
+    return json({ error: `at most ${CRAWLER_HITS_MAX_PER_REQUEST} hits per request` }, 413);
+  }
+
+  const now = Date.now();
+  const { accepted, ignored, groups } = prepareCrawlerHits(body.hits, row.timezone || 'UTC', now);
+  const stmts = crawlerHitStatements(env.DB, siteId, groups, now);
+  // last_used_at at most once an hour per token: every crawler hit lands here
+  if (!row.last_used_at || row.last_used_at < now - 3600e3) {
+    stmts.push(env.DB.prepare('UPDATE api_tokens SET last_used_at = ? WHERE token_id = ?').bind(now, row.token_id));
+  }
+  if (stmts.length) {
+    try {
+      await env.DB.batch(stmts);
+    } catch (err) {
+      // most likely migration 0025 not applied yet — say so instead of a bare 500
+      console.error('crawler_hits write failed', err);
+      throw new ApiError(503, 'crawler reporting is not available on this deployment yet (apply migration 0025)');
+    }
+  }
+  return json({ accepted, ignored });
 }
 
 /** Public shape of a site in write responses (a superset of GET /v1/sites). */

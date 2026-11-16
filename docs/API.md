@@ -73,7 +73,7 @@ that is signed in to the console can call it directly for that owner's sites.
 | `GET /v1/sites/{id}/alerts` | rule checks, their ratios and thresholds (`stats`, `thresholds`, `muted`) | `period` `filters` |
 | `GET /v1/sites/{id}/adguard` | per-tier block/false-positive estimates, block reasons | `period` |
 | `GET /v1/sites/{id}/edge` | Cloudflare edge requests vs reported pageviews — the traffic that never ran JS | `period` |
-| `GET /v1/sites/{id}/crawlers` | crawler / indexing signals per engine (first/last seen, hits, daily series) + top crawled pages — a separate metric, see below | `period` `limit` (top pages, default 20, max 100) |
+| `GET /v1/sites/{id}/crawlers` | crawler / indexing signals per engine (first/last seen, hits, daily series) + top crawled pages — a separate metric, see below | `period` `limit` (top pages, default 20, max 100) `bot` (one engine id, case-insensitive) `search` (truthy → only `kind = search` engines) |
 | `GET /v1/sites/{id}/traffic` | individual suspicious visitors with their evidence | `period` `verdict` `min_score` `limit` (default 50, max 1000) `filters` |
 | `GET /v1/sites/{id}/anomalies` | the 40 most recent pending baseline anomaly reports (`day`, `dimension`, `baseline`, `actual`, `deviation`, `kind`, `message`, `top_sig`, `unit`); ignores `period` | — |
 | `GET /v1/sites/{id}/funnels` | saved funnels: `{funnels:[{funnel_id, name, steps, created_at, updated_at}]}` | — |
@@ -141,19 +141,23 @@ ad protection, and it reads only its own tables.
   "first_search_crawl_at": 1762905600000,
   "sources": {
     "beacon": { "available": true, "note": "…JS-rendering crawlers only…" },
-    "edge":   { "available": false, "note": "…no Cloudflare API token…" }
+    "edge":   { "available": false, "note": "…no Cloudflare API token…" },
+    "server": { "available": true, "note": "…reported by the site's own server…" }
   },
+  "filters": { "bot": null, "search": false },
+  "merge": "…hits = max(beacon, edge, server) per engine per day, summed…",
   "engines": [
     {
       "engine": "googlebot", "label": "Googlebot", "kind": "search",
       "first_seen_at": 1762905600000, "first_source": "beacon", "first_path": "/",
       "last_seen_at": 1763251200000,
-      "hits": 42, "beacon_hits": 42, "edge_hits": 0, "pages": 17,
-      "days": [ { "day": "2026-11-12", "beacon": 5, "edge": 0 } ]
+      "hits": 57, "beacon_hits": 42, "edge_hits": 0, "server_hits": 57,
+      "server_error_hits": 3, "server_verified_hits": 0, "pages": 17,
+      "days": [ { "day": "2026-11-12", "beacon": 5, "edge": 0, "server": 7 } ]
     }
   ],
   "top_pages": {
-    "source": "beacon", "note": "Beacon data only: …",
+    "source": "beacon+server", "note": "Beacon and server-reported pages …",
     "pages": [ { "path": "/", "hits": 9, "engines": { "googlebot": 7, "bingbot": 2 } } ]
   }
 }
@@ -172,9 +176,15 @@ ad protection, and it reads only its own tables.
 - `first_seen_at` / `last_seen_at` are **all-time** and durable — they survive
   raw-event retention. Every engine ever seen is listed, even with no hits in
   `period`. An edge-sourced time is day-granular (start of that local day).
-- `hits` counts are in `period`. Both sources can see the same fetch (a crawler
-  that runs JavaScript also made an HTML request), so `hits` is the larger of
-  `beacon` and `edge` per day, summed — not their sum.
+- `hits` counts are in `period`. Several sources can see the same fetch (a
+  crawler that runs JavaScript also made an HTML request, which the edge and a
+  reporting server both see), so `hits` is the largest of `beacon`, `edge` and
+  `server` per day, summed — not their sum. `beacon_hits` / `edge_hits` /
+  `server_hits` and `days[]` keep each source separately.
+- `server_error_hits` — server-reported hits answered with HTTP status ≥ 400
+  (a crawler fetching pages that do not exist). `server_verified_hits` — hits
+  the reporter marked `verified: true` (see §6, Crawler reporting).
+- `pages` — distinct paths in `period` across beacon and server data.
 - `first_search_crawl_at` — earliest `first_seen_at` of any `search`-kind
   engine; `null` until one has come. The same field is on every `/v1/sites`
   item, so a launch overview can show "days since launch → first crawl".
@@ -182,14 +192,22 @@ ad protection, and it reads only its own tables.
   tracking script (Googlebot does; many crawlers do not). `sources.edge` is
   available only when the deployer configured the optional Cloudflare token and
   the site's zone is visible to it; it adds non-JS crawlers from Cloudflare's
-  top user agents per completed day, with no paths. User agents are as
-  declared, in both sources — not verified.
-- `top_pages` is beacon data only.
+  top user agents per completed day, with no paths. `sources.server` is
+  available once the site's own server has reported crawler hits
+  (§6, Crawler reporting): every crawler that reached it, with paths and
+  status. User agents are as declared, in every source — not verified.
+- `top_pages` merges beacon and server data (max of the two per day, engine
+  and path; `source` says which were present). Edge data has no paths.
+- `bot=<engine>` restricts everything (engines, top pages,
+  `first_search_crawl_at`) to one engine id, case-insensitive; `search=1`
+  (any value but `0` / `false` / `no` / `off` / empty) to `kind = search`
+  engines. `filters` echoes what was applied.
 - `available: false` means the deployment has not applied migration 0024 yet.
 
-Data is written by the cron worker: the hourly rollup (beacon, today and
-yesterday), the daily edge pull (edge), and a one-time backfill from data
-already present when 0024 is first deployed.
+Beacon and edge data are written by the cron worker: the hourly rollup
+(beacon, today and yesterday), the daily edge pull (edge), and a one-time
+backfill from data already present when 0024 is first deployed. Server data is
+written as it is reported (migration 0025).
 
 ---
 
@@ -301,7 +319,7 @@ rename and archive your sites.
 Read-only tokens, session cookies and the legacy `API_TOKEN` get `403` on every
 write endpoint. Unknown paths return `404` before any authentication; a known
 path with the wrong method returns `405`. Request bodies are JSON, at most
-16 KB.
+16 KB (`crawler_hits`: 64 KB, see below).
 
 | Endpoint | Does |
 |---|---|
@@ -309,9 +327,10 @@ path with the wrong method returns `405`. Request bodies are JSON, at most
 | `PATCH /v1/sites/{id}` | rename, replace / add / remove domains, archive or restore |
 | `POST /v1/sites/{id}/funnels` | find-or-create a saved funnel by name |
 | `GET /v1/templates` | the owner's site templates (any of the owner's tokens, read-only included) |
-| `POST /v1/sites/{id}/tokens` | compatibility stub — always `{"token": null, "supported": false}` (see below) |
+| `POST /v1/sites/{id}/tokens` | mint a site-scoped **ingest-only** token for server-side crawler reporting (see below) |
+| `POST /v1/sites/{id}/crawler_hits` | report crawler requests (ingest token of that site, or the read/write token) |
 
-**Every write is safe to retry.** A launcher that times out and tries again
+**Every write except `/tokens` and `/crawler_hits` is safe to retry.** A launcher that times out and tries again
 gets the same site and the same funnels back (`created: false`), never a
 duplicate — including when several identical requests race.
 
@@ -442,10 +461,73 @@ curl -H "Authorization: Bearer $PVUV_TOKEN" "$PVUV_API_URL/v1/templates"
 
 ### Crawler reporting
 
-`POST /v1/sites/{id}/tokens` returns `{"token": null, "supported": false}`:
-server-side crawler reporting is unavailable, because this self-hosted version
-would count crawler pageviews in the overall visitor numbers. Browser tracking
-is unaffected.
+Crawlers do not run JavaScript, so a site served by its own Worker (or any
+server) reports the crawler requests it answers. These hits go **only** into
+the crawler metric (`GET /v1/sites/{id}/crawlers`, source `server`): never into
+events, PV/UV, sessions, scoring, verdicts or ad protection, so a reported
+crawler can never be counted as a visitor.
+
+**1. Get an ingest token** — once per site, with the read/write token:
+
+```bash
+curl -X POST "$PVUV_API_URL/v1/sites/Ab3xK9pQ/tokens" \
+  -H "Authorization: Bearer $PVUV_WRITE_TOKEN" -H "content-type: application/json" \
+  -d '{"name":"launcher snake.com"}'
+```
+
+```json
+{ "token": "pvuv_…", "token_id": "q3Lr0x8aZ1", "site_id": "Ab3xK9pQ", "scopes": ["ingest"],
+  "name": "launcher snake.com", "prefix": "pvuv_Xy12ab", "created_at": 1764633600000 }
+```
+
+- The plaintext is returned **once**; only its HMAC is stored. It appears in
+  the console token list as "Ingest only (crawler reports)" and is revoked
+  there like any other token.
+- **Not idempotent:** every call mints a new token, because an existing
+  token's plaintext cannot be shown again. Call it only when you hold none (or
+  lost it), and revoke the old one. A site can hold at most 20 live ingest
+  tokens; past that the call is a `409`.
+- `name` is optional (default `crawler ingest`); the body may be empty.
+- An ingest token can do exactly one thing: `POST /v1/sites/{its site}/crawler_hits`.
+  Every report, the site list, every other write and every other site answer
+  `403`.
+
+**2. Report hits** — in the background, after answering the crawler:
+
+```bash
+curl -X POST "$PVUV_API_URL/v1/sites/Ab3xK9pQ/crawler_hits" \
+  -H "Authorization: Bearer $PVUV_INGEST_TOKEN" -H "content-type: application/json" \
+  -d '{"hits":[{"ua":"Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)","path":"/privacy","ip":"203.0.113.9","status":200,"country":"US","ts":1764633600000}]}'
+```
+
+```json
+{ "accepted": 1, "ignored": 0 }
+```
+
+Auth: that site's ingest token, or the owner's read/write token. Read-only
+tokens get `403`; an archived site `403`.
+
+| Field | |
+|---|---|
+| `ua` | required. Classified with the built-in engine list; a user agent that is not a known crawler (a person, an unknown bot) is **ignored** — counted in `ignored`, stored nowhere. |
+| `path` | required. Must start with `/` (an absolute `http(s)://` URL is reduced to its path). The **query string and fragment are dropped** (cardinality, and they can carry session ids); longer than 512 characters is cut. |
+| `status` | optional HTTP status you answered with; `>= 400` is counted in `server_error_hits`. |
+| `ts` | optional, ms. Missing, malformed or in the future → now. Older than 48 hours → ignored. |
+| `verified` | optional `true` when *your* server has a trustworthy verified-bot signal for the request (e.g. Cloudflare Bot Management's `verifiedBot`); counted in `server_verified_hits`. |
+| `ip`, `country` | accepted, **not stored**. |
+
+Limits: at most 100 hits and 64 KB per request (`413` beyond). Hits are
+grouped per local day (site timezone) and engine and written in one batch;
+reports are **additive** — a retried request is counted again. Up to 200
+distinct paths are kept per engine per day (the daily hit count stays exact).
+
+**Spoofing.** Anyone can send a `Googlebot` user agent, and the report is
+trusted as sent by the token holder (the site owner's own server). pvuv does
+no reverse-DNS check. `verified` is self-asserted by the reporter; on plans
+without Cloudflare's verified-bot signal, leave it unset — `hits` then counts
+declared user agents, like the beacon and edge sources do.
+
+Requires migration `0025`; before it is applied the endpoint answers `503`.
 
 ### Tests
 
